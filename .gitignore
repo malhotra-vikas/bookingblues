@@ -1,15 +1,17 @@
-   node_modules
-   .pnpm-store
-   dist
-   build
-   .next
-   .turbo
-   coverage
-   .env
-   .env.local
-   .env.*.local
-   .DS_Store
-   *.log
-   .vscode
-   .idea
-   .supabase
+node_modules
+.pnpm-store
+dist
+build
+.next
+.turbo
+coverage
+.env
+.env.local
+.env.*.local
+.DS_Store
+*.log
+.vscode
+.idea
+.supabase
+node_modules
+apps/web/.next/
