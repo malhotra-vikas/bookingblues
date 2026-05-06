@@ -13,6 +13,9 @@
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
+    "gen:db": "supabase gen types typescript --local --schema public > packages/db-types/src/database.types.ts && prettier --write packages/db-types/src/database.types.ts",
+    "db:migration:new": "supabase migration new",
+    "db:reset": "supabase db reset",
     "clean": "turbo run clean && rm -rf node_modules .turbo",
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\"",
     "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,md}\""

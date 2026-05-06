@@ -13,6 +13,7 @@ When a section is wrong or stale, fix it in the same commit as the change.
 - **Last updated**: 2026-05-05
 - **Active slice**: none — ready to start the next one
 - **Production target**: EC2 (Slice 14). Railway is staging only (Slice 13).
+- **HITL**: Slack-based (Slice 7.5).
 
 ---
 
@@ -35,6 +36,30 @@ When a section is wrong or stale, fix it in the same commit as the change.
 - **EncryptionService** — AES-256-GCM, wire format `v<N>:<iv_b64>:<tag_b64>:<ct_b64>`. Multi-key decrypt support for rotation; constructor tolerant of missing keys in dev (deferred error on actual use). 7/7 unit tests pass.
 - **Bootstrap** — `dotenv` loads `.env.local` then `.env` at startup; production relies on platform-injected env.
 
+### Slice 2 — Database foundations (2026-05-05)
+- **Migration 0001 — init schema** — All §8 tables (`categories`, `operators`, `twilio_numbers`, `calendar_connections`, `conversations`, `messages`, `appointments`, `payments`, `webhook_events`, `audit_log`) with enums, FKs, CHECKs (E.164 phone format, fee≥0, `application_fee_cents ≤ amount_cents`, scheduled-range validity), indexes for dashboard queries, `set_updated_at` trigger function. `unique (source, event_id)` on `webhook_events` is the idempotency key.
+- **Migration 0002 — RLS policies** — `auth_operator_id()` helper. `operators`: SELECT/UPDATE own; `appointments/conversations/messages/payments/calendar_connections`: SELECT-own only. `webhook_events/audit_log/twilio_numbers/categories`: RLS on, no policy → service-role only.
+- **Migration 0003 — seed categories** — 5 launch categories per §16 (plumbing, hvac, electrical, roofing, garage_door). Vetting question stubs included; `system_prompt_template` is a placeholder, replaced in Slice 7.
+- **`packages/db-types`** — workspace package with hand-written stub `Database` type covering rows we touch in Slice 2. Replaced wholesale by `pnpm gen:db` once Docker is up.
+- **Root scripts** — `pnpm gen:db`, `pnpm db:migration:new`, `pnpm db:reset`.
+- **`SupabaseService`** — service-role client (api-only). Constructor tolerant of missing creds (deferred-error pattern matching EncryptionService). `auth.persistSession` and `autoRefreshToken` disabled (server context).
+- **`WebhookIdempotencyService`** — `record/markProcessed/markFailed` API. Detects PG `23505` to return `{status:'duplicate'}`. 4 unit tests with a mock Supabase client.
+- **Test helpers** — `apps/api/test/helpers/tenants.ts` provisions N independent operator+user fixtures via the admin API and returns RLS-bound clients. `describeIfSupabase` skips tests when env vars are absent.
+- **RLS regression scaffold** — `apps/api/test/rls.spec.ts` with 3 cases (own-row visible, other-tenant-invisible, webhook_events invisible). Currently skipped pending live Supabase; will run unattended in CI once Slice 12 wires up an ephemeral Supabase test project.
+- **TS config split** — `tsconfig.json` (typecheck + tests, no rootDir), `tsconfig.build.json` (nest build, src/ only). nest-cli.json points to the build config so test files don't end up in `dist/`.
+- **Status** — typecheck clean · 11 passed + 3 skipped tests · `nest build` succeeds · API boots and `/v1/health` responds.
+
+### Slice 3 — Auth + operators (2026-05-06)
+- **Local stack live** — Docker Desktop installed; `supabase start` boots the full local stack; `pnpm gen:db` generates real `Database` types from the live DB (replaces hand-written stub). Migrations renamed to 14-digit timestamps (`20260505000001_*` etc.) — Supabase CLI parses everything before the first `_` as version, so the original `<date>_<seq>_<name>` convention from CLAUDE.md §8 collapses three files to one version. CLAUDE.md §8 example needs updating in the next doc PR.
+- **Jest env loading** — `apps/api/test/setup-env.ts` + `setupFiles` in jest config so `.env.local` is loaded; flips the RLS regression suite from skipped → live (no longer needs Slice 12 to activate locally).
+- **Auth primitives** (`apps/api/src/common/auth/`) — `JwtVerifierService` delegates to `supabase.auth.getUser(token)` (handles both legacy HS256 and current ES256/JWKS — local Supabase issues ES256 now). `AuthGuard` Bearer extraction → `AuthedRequest.user`. `@CurrentUser()` param decorator. `@Global` `AuthModule` exports both.
+- **`ZodBodyPipe`** (`common/pipes/`) — generic body validation; surfaces `ValidationError` with structured `issues` extension.
+- **Operators module** (`modules/operators/`) — `OperatorsService` (getByUserId, update with FK→400 / unique→409 mapping, getOnboardingStatus). Controller: `GET/PATCH /v1/operators/me`, `GET /v1/operators/me/onboarding-status`. `UpdateOperatorSchema` zod DTO is `.strict()`, validates IANA timezone, business_hours `{day: [{start,end}]}`, refines `booking_fee_enabled ⇒ booking_fee_cents`. Service rejects the same fee-without-cents condition defensively for partial-patch sequences.
+- **Me module** (`modules/me/`) — `GET /v1/me` returns `{id, email, created_at}` via `auth.admin.getUserById`. `PATCH /v1/me` updates email via `auth.admin.updateUserById` (Supabase sends confirmation).
+- **Cross-tenant isolation suite** (`apps/api/test/cross-tenant.spec.ts`) — supertest against the test app under two separate user JWTs. 12 cases: own-row visible, B not leaked under A's token, 401 on missing/malformed token, PATCH updates only caller's row, strict zod rejects unknown fields, fee-without-cents → 400, unknown category slug → 400 (FK violation surfaced), known seed slug accepted, onboarding-status shape, `/v1/me` happy path + 401. Helper `setupTenants` now exposes the access token alongside the authed client.
+- **AppModule wiring** — registers `AuthModule`, `MeModule`, `OperatorsModule`. Both feature modules import `SupabaseModule` per existing convention.
+- **Status** — typecheck clean · 26/26 tests pass (was 11+3) · dev server smoke: `/v1/me` 401, `/v1/operators/me` 401, `/v1/health` 200.
+
 ---
 
 ## 🔄 In progress
@@ -44,23 +69,6 @@ _(none)_
 ---
 
 ## ⏭ Next up — recommended order
-
-### Slice 2: Database foundations
-- [ ] First Supabase migration: §8 core schema (`operators`, `categories`, `twilio_numbers`, `calendar_connections`, `conversations`, `messages`, `appointments`, `payments`, `webhook_events`, `audit_log`)
-- [ ] RLS policies (default deny; operator-scoped reads via `auth.uid()`; service-role-only writes for sensitive tables)
-- [ ] Seed `categories` lookup
-- [ ] `pnpm gen:db` script + `packages/db-types` package
-- [ ] Supabase service-role client wrapper (server-only, never imported by web)
-- [ ] Webhook idempotency helper using `webhook_events (source, event_id)` unique key
-- [ ] RLS regression test scaffold (CI)
-- [ ] Cross-tenant isolation test helper
-
-### Slice 3: Auth + operators
-- [ ] Supabase JWT verification guard
-- [ ] `GET /v1/me`, `PATCH /v1/me`
-- [ ] `operators` module (profile read/write; settings: hours, timezone, fee config)
-- [ ] `GET/PATCH /v1/operators/me`, `GET /v1/operators/me/onboarding-status`
-- [ ] Cross-tenant isolation tests for every operator-scoped controller
 
 ### Slice 4: Billing (BookingBlues SaaS subscription)
 - [ ] Stripe SDK wrapper + platform webhook signature verification
@@ -91,6 +99,20 @@ _(none)_
 - [ ] `book_appointment` advisory lock on `(operator_id, slot_start)` (§17 race)
 - [ ] Conversation state machine + pg-boss workers (24h abandon, 1h reminder, fee timeout)
 - [ ] Caller-message delimiter wrapping; max-turn cap; output-token tracking
+
+### Slice 7.5: Human-in-the-loop (HITL) via Slack
+The bot escalates to a human operator/agent in Slack when (a) it cannot help the caller, or (b) the caller explicitly asks for a human. This is a higher-fidelity replacement for the `escalate_to_human` email path in §9.3 — emails turn into Slack threads with two-way bridging.
+- [ ] Slack app: bot user, OAuth scopes (`chat:write`, `channels:history`, `app_mentions:read`, `commands`), event subscription URL
+- [ ] Per-operator Slack workspace install flow (OAuth) + `slack_connections` table (encrypted bot token, team_id, default channel id)
+- [ ] New `escalations` table: `id`, `operator_id`, `conversation_id`, `caller_phone_e164`, `slack_channel_id`, `slack_thread_ts`, `reason ('bot_stuck'|'caller_requested')`, `status ('open'|'resolved'|'abandoned')`, `resolved_by_user_id`, `created_at`, `resolved_at`
+- [ ] Bot tool `escalate_to_slack({ reason })` — replaces or augments `escalate_to_human`
+- [ ] On escalation: post a parent message in the operator's configured Slack channel with caller phone (last 4), conversation summary, recent transcript; capture `thread_ts`
+- [ ] Agent replies in the Slack thread → bridge service forwards as SMS to caller (rate-limited per §9.3)
+- [ ] Caller SMS replies → mirrored as new messages in the same Slack thread (with PII redaction in non-prod)
+- [ ] Slack slash commands: `/bb resolve`, `/bb book <ISO datetime>`, `/bb close-spam` to take terminal actions on the conversation from Slack
+- [ ] Slack webhook signature verification (per CLAUDE.md §11.1 pattern); idempotency via `webhook_events` with `source='slack'` (requires migration adding `'slack'` to `webhook_source` enum)
+- [ ] Cap: only one open escalation per conversation; second trigger reuses existing thread
+- [ ] Update CLAUDE.md §3 (architecture diagram), §4 (tech stack adds Slack), §9.3 (tool list), §10 (webhooks endpoint), §11 (signature validation, allowlist channels) when this slice lands
 
 ### Slice 8: Payments (Stripe Connect)
 - [ ] `POST /v1/operators/me/connect/onboarding-link`
@@ -172,3 +194,8 @@ Record any deviation from CLAUDE.md here, then update CLAUDE.md in the same PR.
 
 - **2026-05-05** — `EncryptionService` constructor is tolerant of zero keys in dev (defers `crypto.no_keys` error to first encrypt/decrypt). Production env validation still requires `ENCRYPTION_KEY`. Reason: lets the API boot for non-crypto work in dev (health checks, schema introspection) before anyone has filled in `.env.local`.
 - **2026-05-05** — Production target is **EC2** (Slice 14), not Railway. Railway remains the staging target (Slice 13). CLAUDE.md §4 and §14 currently say "Railway" only — they will be updated in the PR that lands Slice 14, not before. Reason: user prefers AWS control plane for go-live; Railway is faster for iteration during build-out.
+- **2026-05-05** — HITL via **Slack** added as Slice 7.5. Replaces (or augments) the email-only `escalate_to_human` path described in CLAUDE.md §9.3. Triggered when the bot can't help OR the caller asks for a human. Two-way bridging (Slack thread ↔ SMS) so the operator/agent can take over without leaving Slack. Reason: contractors live in Slack/messaging more than email — faster takeover and resolution. CLAUDE.md §3, §4, §9.3, §10, §11 will be updated in the PR that lands this slice.
+- **2026-05-05** — `packages/db-types/src/database.types.ts` is hand-written for Slice 2 (only covers `operators` and `webhook_events`). Replaced wholesale by `pnpm gen:db` output the first time it's run (requires Docker + `supabase start`). Reason: Docker isn't installed on the dev machine yet; this lets us ship typed code now and swap in autogen later without code changes.
+- **2026-05-05** — `calendar_connections.status` enum (`active`/`revoked`) added beyond what CLAUDE.md §8 lists. Reason: §9.4 requires marking connections revoked on Google 401, and a single-flag column models that more cleanly than a boolean. Will be reflected in CLAUDE.md §8 the next time §8 is touched.
+- **2026-05-06** — Migration filename format changed from `<YYYYMMDD>_<NNNN>_<name>.sql` (per CLAUDE.md §8 example) to `<YYYYMMDDHHMMSS>_<name>.sql` (14-digit timestamp). Reason: the Supabase CLI parses everything before the first `_` as the migration version, so all `20260505_NNNN_*` files collapsed to version `20260505` and the second one duplicate-keyed `supabase_migrations.schema_migrations`. CLAUDE.md §8 example is misleading — should be updated in the next doc PR.
+- **2026-05-06** — User JWT verification uses `supabase.auth.getUser(token)` (one HTTP call to the Supabase auth API) rather than local HS256 verification with `SUPABASE_JWT_SECRET`. Reason: local Supabase issues asymmetric ES256 tokens with a JWKS endpoint; HS256 with the shared secret no longer works. The remote call is correct in all configs (HS256 / ES256, current / rotated keys). Trade-off: ~5–50ms latency per authenticated request. Swap to local JWKS verification (`jose` library) if/when latency matters; tracked as a follow-up for Slice 11 (observability) where we'll already be measuring request-path performance.
