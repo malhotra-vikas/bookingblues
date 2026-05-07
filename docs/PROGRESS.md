@@ -179,6 +179,25 @@ Goal: everything non-product-feature — security, observability, CI/CD discipli
 - [ ] Output to `$GITHUB_STEP_SUMMARY` + 90-day artifact
 - [ ] v2: commit each report to `security-reports` branch (avoid main push-loop)
 
+### Service-area follow-up: city/town centers via Google Maps Geocoding (Phase C)
+Today the operator can express service area as (a) explicit ZIPs and (b) radius
+zones around a center ZIP. Phase C adds:
+- Operator types "Pasadena, CA" or "Austin, TX" instead of a center ZIP
+- Server calls Google Maps Geocoding API to resolve to lat/lng, then runs the
+  same haversine math to expand into the implied ZIP set
+- Same denormalized output: ZIPs the AI sees in its prompt
+
+**Blocked on:** waiting on Google to allow more projects on the user's billing
+account. Once approved:
+- Enable **Geocoding API** in `bookingblues-staging` (already exists for Calendar OAuth)
+- Create an API-key credential restricted to **Geocoding API** + Railway egress IPs
+- Add `GOOGLE_MAPS_API_KEY` to Railway api Variables
+- Implement: extend `service_radius_zones` jsonb entries with `{kind: 'city'|'zip', value, radius_miles}`; service.expand caches geocoded results to limit API spend
+- Free tier covers $200/month (~40k geocoding calls); after that $5/1000
+
+Free fallback: **Nominatim (OpenStreetMap)** — no key, max 1 req/s/IP, attribute
+OSM. Less accurate but acceptable for occasional operator setup.
+
 ### Slice 4-followup: billing flow gaps (surfaced during E2E 2026-05-07)
 - [ ] **Trial → paid conversion test** — manually advance the trial via Stripe dashboard "Cancel trial / charge now", verify `customer.subscription.updated` flips status to `active`, dashboard reflects, no double-billing
 - [ ] **Cancellation flow test** — operator clicks "Cancel" via Customer Portal (Settings → Billing → Open billing portal), verify `customer.subscription.deleted` → `subscription_status='canceled'`, dashboard banner, AI conversations gracefully degrade per §9.1 (greeting still plays, no booking, no fee). 7-day Twilio number grace then release.
@@ -276,6 +295,57 @@ Triggered on every PR and push to `main`. Blocks merge on failures.
 - [ ] Staging Supabase + Stripe test mode + Twilio subaccount
 - [ ] Domain + HSTS preload (§11.20)
 - [ ] End-to-end smoke run on staging before any production traffic
+
+### Slice 13.5: Custom domain cutover (pre-launch)
+Currently we run on Railway-generated URLs (`bookingbluesapi-production.up.railway.app` /
+`bookingbluesweb-production.up.railway.app`). Every provider config + env var
+references them. Need a coordinated swap to a real owned domain
+(e.g. `bookingblues.com` for web, `api.bookingblues.com` for API, or whatever
+the chosen domain ends up being).
+
+**DNS + TLS**
+- [ ] Register / configure DNS records (A / CNAME) pointing to Railway services
+- [ ] Configure custom domains in Railway dashboard for both api + web services — Railway provisions ACME certs automatically
+- [ ] Verify HSTS preload still active on the new domains; submit to https://hstspreload.org/ once the production domain is stable
+- [ ] Email sending: Resend domain verification (DKIM, SPF, DMARC) on the same root domain or a subdomain (e.g. `mail.bookingblues.com`)
+
+**Provider config swap** (every URL referenced explicitly somewhere)
+- [ ] **Supabase** (Auth → URL Configuration): Site URL + redirect URL allowlist updated to the new web domain. Old Railway URL removed once the cutover is verified to avoid open-redirect risk.
+- [ ] **Stripe**:
+  - Platform webhook endpoint URL (Developers → Webhooks → existing endpoint → Update) → new `https://<api domain>/webhooks/stripe`
+  - Connect webhook endpoint URL → new `https://<api domain>/webhooks/stripe/connect`
+  - Verify webhook signing secrets DON'T change on URL update (they shouldn't — but smoke a test event after each)
+  - Checkout success_url / cancel_url already env-driven via `APP_URL`; updates with env var change
+- [ ] **Google OAuth**:
+  - Authorized redirect URIs in the OAuth Client → add the new `https://<api domain>/webhooks/google/oauth/callback`. Keep the old one until cutover, remove after.
+  - OAuth Consent Screen → app domain + privacy policy URL + terms URL → update to the new domain
+  - When ready to leave Testing mode and submit for verification, the production domain must be the one on file
+- [ ] **Twilio**:
+  - Existing provisioned numbers' voice + SMS webhook URLs (Console → Phone Numbers → each number) → swap from old Railway URL to new API domain. Or: write a one-shot script that iterates `incomingPhoneNumbers.list()` and updates each `voiceUrl` + `smsUrl`
+  - Future provisions auto-pick up the new URL because the code uses `${env.API_URL}` — just update the env var
+- [ ] **Sentry**:
+  - Project → Settings → URL — update for nicer DSN URLs (cosmetic; existing DSNs keep working)
+  - Add the new domain as the environment's "URL" so error events link to the right page
+- [ ] **Resend** (when Slice 10 lands):
+  - Sending domain swap (DKIM/SPF/DMARC); old domain decommission
+
+**Env vars to update simultaneously** (every place we have hard-coded the Railway URL or its variants)
+- [ ] `APP_URL` (api service)
+- [ ] `API_URL` (api service)
+- [ ] `NEXT_PUBLIC_APP_URL` (web service)
+- [ ] `NEXT_PUBLIC_API_URL` (web service)
+- [ ] `GOOGLE_OAUTH_REDIRECT_URI` (api service)
+- [ ] `OUTBOUND_SMS_ALLOWLIST` — unchanged; phone numbers, not URLs
+- [ ] CORS allowlist in `apps/api/src/main.ts` already pulls from `env.APP_URL` — auto-updates
+- [ ] `docs/DEPLOY_RAILWAY.md` — replace example URLs throughout
+
+**Validation gates**
+- [ ] Sign up on new domain → email confirm link points to new domain (Supabase Site URL working)
+- [ ] Onboarding step 1 trial → Stripe Checkout → return URL is new domain (Stripe webhook reaches new API)
+- [ ] Onboarding step 4 Google connect → consent screen shows new domain → callback hits new API
+- [ ] Onboarding step 3 Twilio number provisioning → number's voice/sms webhook URLs in Twilio Console show new API domain
+- [ ] Real test call to the Twilio number → bot greeting + opening SMS works
+- [ ] Run `curl -sI` against the new API + web domain — verify all the helmet headers + HSTS preload, no `X-Powered-By`
 
 ### Slice 15: Internal admin dashboard (REQUIRED pre-revenue)
 Operating a customer-facing SaaS without an internal control plane is untenable

@@ -25,6 +25,8 @@ const baseOperator: Tables<'operators'> = {
   onboarding_completed_at: null,
   timezone: 'America/New_York',
   business_hours: {},
+  service_zip_codes: [],
+  service_radius_zones: [],
   created_at: '2026-01-01T00:00:00Z',
   updated_at: '2026-01-01T00:00:00Z',
 };

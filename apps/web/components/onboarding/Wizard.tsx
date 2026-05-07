@@ -20,6 +20,8 @@ interface Operator {
   stripe_connect_payouts_enabled: boolean;
   booking_fee_enabled: boolean;
   booking_fee_cents: number | null;
+  service_zip_codes: string[];
+  service_radius_zones: Array<{ center_zip: string; radius_miles: number }>;
   subscription_status: string | null;
   onboarding_completed_at: string | null;
 }
@@ -61,6 +63,14 @@ export function Wizard({ initial }: { initial: Operator | null }): JSX.Element {
       ? (op.booking_fee_cents / 100).toFixed(2)
       : (publicEnv.NEXT_PUBLIC_DEFAULT_BOOKING_FEE_CENTS / 100).toFixed(2),
   );
+  const [pendingZipsText, setPendingZipsText] = useState(
+    (op?.service_zip_codes ?? []).join(', '),
+  );
+  const [pendingZones, setPendingZones] = useState<
+    Array<{ center_zip: string; radius_miles: number }>
+  >(op?.service_radius_zones ?? []);
+  const [zoneCenter, setZoneCenter] = useState('');
+  const [zoneRadius, setZoneRadius] = useState('30');
 
   const [releaseModalOpen, setReleaseModalOpen] = useState(false);
   const [disconnectGoogleOpen, setDisconnectGoogleOpen] = useState(false);
@@ -152,6 +162,58 @@ export function Wizard({ initial }: { initial: Operator | null }): JSX.Element {
     });
   }
 
+  async function saveServiceArea(): Promise<void> {
+    await handle(async () => {
+      const zips = pendingZipsText
+        .split(/[\s,]+/)
+        .map((z) => z.trim())
+        .filter(Boolean);
+      const invalid = zips.filter((z) => !/^\d{5}$/.test(z));
+      if (invalid.length > 0) {
+        throw new Error(
+          `These don't look like 5-digit US ZIP codes: ${invalid.slice(0, 3).join(', ')}${
+            invalid.length > 3 ? ` and ${invalid.length - 3} more` : ''
+          }`,
+        );
+      }
+      const res = await authedFetch('/v1/operators/me', {
+        method: 'PATCH',
+        body: JSON.stringify({
+          service_zip_codes: zips,
+          service_radius_zones: pendingZones,
+        }),
+      });
+      if (!res.ok) {
+        const detail = await res.json().catch(() => ({}));
+        throw new Error(detail.detail ?? 'Could not save service area');
+      }
+      router.refresh();
+    });
+  }
+
+  function addZone(): void {
+    setError(null);
+    if (!/^\d{5}$/.test(zoneCenter.trim())) {
+      setError('Zone center must be a 5-digit US ZIP code.');
+      return;
+    }
+    const r = Number(zoneRadius);
+    if (!Number.isFinite(r) || r < 1 || r > 500) {
+      setError('Radius must be a whole number between 1 and 500 miles.');
+      return;
+    }
+    setPendingZones([
+      ...pendingZones,
+      { center_zip: zoneCenter.trim(), radius_miles: Math.floor(r) },
+    ]);
+    setZoneCenter('');
+    setZoneRadius('30');
+  }
+
+  function removeZone(idx: number): void {
+    setPendingZones(pendingZones.filter((_, i) => i !== idx));
+  }
+
   async function saveFee(): Promise<void> {
     await handle(async () => {
       const cents = pendingFeeEnabled
@@ -181,6 +243,7 @@ export function Wizard({ initial }: { initial: Operator | null }): JSX.Element {
     op.stripe_connect_charges_enabled &&
     op.stripe_connect_payouts_enabled;
   const feeDecided = op != null && (!op.booking_fee_enabled || op.booking_fee_cents != null);
+  const serviceAreaSet = (op?.service_zip_codes?.length ?? 0) > 0;
 
   return (
     <div className="space-y-4">
@@ -243,6 +306,102 @@ export function Wizard({ initial }: { initial: Operator | null }): JSX.Element {
           >
             Save
           </button>
+        </div>
+      </StepCard>
+
+      <StepCard
+        number={8}
+        title="Service area"
+        description="The ZIP codes you cover. The AI books only jobs inside this area and sends out-of-area callers a polite handoff. Leave blank to accept any address."
+        done={serviceAreaSet || pendingZones.length > 0}
+      >
+        <div className="space-y-4">
+          {/* Explicit ZIP list */}
+          <div>
+            <label className="block text-xs font-medium mb-1">ZIPs you cover explicitly</label>
+            <textarea
+              value={pendingZipsText}
+              onChange={(e) => setPendingZipsText(e.target.value)}
+              placeholder="e.g. 90210, 90211, 90212"
+              rows={2}
+              className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm font-mono"
+            />
+            <p className="mt-1 text-xs text-muted">
+              Comma, space, or newline separated. Each must be a 5-digit US ZIP. We de-dupe + sort.
+            </p>
+          </div>
+
+          {/* Radius zones */}
+          <div>
+            <label className="block text-xs font-medium mb-1">
+              Radius zones (everything within X miles of a center ZIP)
+            </label>
+            <div className="space-y-1">
+              {pendingZones.map((zone, idx) => (
+                <div
+                  key={`${zone.center_zip}-${idx}`}
+                  className="flex items-center gap-3 rounded-md border bg-slate-50 px-3 py-1.5 text-sm"
+                >
+                  <span className="font-mono">{zone.radius_miles} mi</span>
+                  <span className="text-muted">around</span>
+                  <span className="font-mono">{zone.center_zip}</span>
+                  <button
+                    type="button"
+                    onClick={() => removeZone(idx)}
+                    className="ml-auto text-xs text-red-700 hover:underline"
+                  >
+                    Remove
+                  </button>
+                </div>
+              ))}
+            </div>
+            <div className="mt-2 flex items-center gap-2">
+              <input
+                placeholder="Center ZIP"
+                value={zoneCenter}
+                onChange={(e) => setZoneCenter(e.target.value.replace(/\D/g, '').slice(0, 5))}
+                className="rounded-md border border-slate-300 px-3 py-1.5 text-sm font-mono w-32"
+              />
+              <input
+                placeholder="30"
+                value={zoneRadius}
+                onChange={(e) => setZoneRadius(e.target.value.replace(/\D/g, '').slice(0, 3))}
+                className="rounded-md border border-slate-300 px-3 py-1.5 text-sm w-20"
+              />
+              <span className="text-xs text-muted">miles</span>
+              <button
+                type="button"
+                onClick={addZone}
+                className="rounded-md border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-50"
+              >
+                + Add zone
+              </button>
+            </div>
+            <p className="mt-1 text-xs text-muted">
+              Cities and towns by name will be supported once Google Maps geocoding is wired up
+              (waiting on billing approval).
+            </p>
+          </div>
+
+          {/* Save row */}
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={saveServiceArea}
+              className="rounded-md bg-accent px-4 py-2 text-sm text-white"
+            >
+              Save service area
+            </button>
+            <span className="text-xs text-muted">
+              {(op?.service_zip_codes?.length ?? 0) + (op?.service_radius_zones?.length ?? 0) === 0
+                ? 'Currently accepting any address.'
+                : `Saved: ${op!.service_zip_codes.length} explicit ZIP${
+                    op!.service_zip_codes.length === 1 ? '' : 's'
+                  } + ${op!.service_radius_zones.length} radius zone${
+                    op!.service_radius_zones.length === 1 ? '' : 's'
+                  }.`}
+            </span>
+          </div>
         </div>
       </StepCard>
 

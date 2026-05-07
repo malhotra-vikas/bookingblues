@@ -312,6 +312,8 @@ export type Database = {
           id: string;
           onboarding_completed_at: string | null;
           personal_phone_e164: string | null;
+          service_radius_zones: Json;
+          service_zip_codes: string[];
           stripe_connect_account_id: string | null;
           stripe_connect_charges_enabled: boolean;
           stripe_connect_payouts_enabled: boolean;
@@ -340,6 +342,8 @@ export type Database = {
           id?: string;
           onboarding_completed_at?: string | null;
           personal_phone_e164?: string | null;
+          service_radius_zones?: Json;
+          service_zip_codes?: string[];
           stripe_connect_account_id?: string | null;
           stripe_connect_charges_enabled?: boolean;
           stripe_connect_payouts_enabled?: boolean;
@@ -368,6 +372,8 @@ export type Database = {
           id?: string;
           onboarding_completed_at?: string | null;
           personal_phone_e164?: string | null;
+          service_radius_zones?: Json;
+          service_zip_codes?: string[];
           stripe_connect_account_id?: string | null;
           stripe_connect_charges_enabled?: boolean;
           stripe_connect_payouts_enabled?: boolean;

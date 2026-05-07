@@ -14,6 +14,8 @@ interface Operator {
   stripe_connect_payouts_enabled: boolean;
   booking_fee_enabled: boolean;
   booking_fee_cents: number | null;
+  service_zip_codes: string[];
+  service_radius_zones: Array<{ center_zip: string; radius_miles: number }>;
   subscription_status: string | null;
   onboarding_completed_at: string | null;
 }

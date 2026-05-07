@@ -191,13 +191,50 @@ export async function requestPaymentLink(
   }
 }
 
-export function markOutOfScope(args: MarkOutOfScopeArgs): ToolResult {
+/**
+ * Plain-English example services per trade — mentioned in the out-of-scope
+ * handoff so the caller knows what the business *does* do (not just what it
+ * doesn't). Keep each list short and concrete; full SMS must stay under
+ * one segment (~300 chars after the operator name + framing).
+ */
+const SERVICES_BY_CATEGORY: Record<string, string> = {
+  plumbing: 'leaks, water heaters, drain clogs, fixtures, and pipe repairs',
+  hvac: 'AC repair, heating, system installs, and maintenance',
+  electrical: 'wiring, panels, outlets, lighting, and troubleshooting',
+  roofing: 'leaks, repairs, full replacements, gutters, and inspections',
+  garage_door: 'broken springs, openers, door repairs, and new installs',
+};
+
+export function markOutOfScope(args: MarkOutOfScopeArgs, ctx: ToolContext): ToolResult {
+  const services = ctx.operator.category
+    ? SERVICES_BY_CATEGORY[ctx.operator.category]
+    : undefined;
+  const zips = ctx.operator.service_zip_codes ?? [];
+  const reasonLower = args.reason.toLowerCase();
+  const isAreaReason =
+    reasonLower.includes('service_area') ||
+    reasonLower.includes('service area') ||
+    (reasonLower.includes('outside') && reasonLower.includes('area'));
+
+  let closing: string;
+  if (zips.length > 0 && isAreaReason) {
+    // Out-of-area handoff — name (a sample of) the ZIPs we cover.
+    const zipList =
+      zips.length <= 6
+        ? zips.join(', ')
+        : `${zips.slice(0, 6).join(', ')} and ${zips.length - 6} more`;
+    closing = `Thanks for reaching out! ${ctx.operator.business_name} only services ZIP codes ${zipList}. Your address is outside our area — best of luck finding a local pro.`;
+  } else if (services) {
+    closing = `Thanks for reaching out! ${ctx.operator.business_name} handles ${services}. What you described is outside that — we're not the right fit, but best of luck finding the right pro.`;
+  } else {
+    closing = `Thanks for reaching out — what you described is outside what ${ctx.operator.business_name} handles. Best of luck finding the right pro.`;
+  }
+
   return {
     content: { acknowledged: true, reason: args.reason },
     state: 'completed',
     outcome: 'out_of_scope',
-    outboundMessage:
-      "Sorry — that request is outside what we handle. Wishing you the best finding the right help.",
+    outboundMessage: closing,
   };
 }
 

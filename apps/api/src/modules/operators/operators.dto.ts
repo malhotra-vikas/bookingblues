@@ -33,6 +33,21 @@ export const UpdateOperatorSchema = z
     business_hours: BusinessHoursSchema.optional(),
     booking_fee_enabled: z.boolean().optional(),
     booking_fee_cents: z.number().int().min(0).optional().nullable(),
+    service_zip_codes: z
+      .array(z.string().regex(/^\d{5}$/, 'must be a 5-digit US ZIP code'))
+      .max(500, 'too many ZIPs — set a smaller list (or contact support if you really cover that many)')
+      .optional(),
+    service_radius_zones: z
+      .array(
+        z
+          .object({
+            center_zip: z.string().regex(/^\d{5}$/, 'center_zip must be a 5-digit US ZIP'),
+            radius_miles: z.number().int().min(1).max(500),
+          })
+          .strict(),
+      )
+      .max(20, 'too many radius zones — combine or simplify')
+      .optional(),
   })
   .strict()
   .refine(

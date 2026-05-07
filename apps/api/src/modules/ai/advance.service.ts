@@ -242,7 +242,7 @@ export class AdvanceService {
       case 'request_payment_link':
         return requestPaymentLink(RequestPaymentLinkArgs.parse(parsed), ctx);
       case 'mark_out_of_scope':
-        return markOutOfScope(MarkOutOfScopeArgs.parse(parsed));
+        return markOutOfScope(MarkOutOfScopeArgs.parse(parsed), ctx);
       case 'mark_spam':
         return markSpam(MarkSpamArgs.parse(parsed));
       case 'escalate_to_human':
