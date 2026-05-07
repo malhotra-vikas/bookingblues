@@ -1,28 +1,60 @@
 import { Module } from '@nestjs/common';
-import { APP_FILTER } from '@nestjs/core';
+import { APP_FILTER, APP_GUARD } from '@nestjs/core';
+import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { PinoLogger } from 'nestjs-pino';
 
 import { AuthModule } from './common/auth/auth.module';
 import { EncryptionModule } from './common/crypto/encryption.module';
 import { ProblemDetailsFilter } from './common/filters/problem-details.filter';
 import { LoggerModule } from './common/logger/logger.module';
+import { OpenAIModule } from './common/openai/openai.module';
+import { StripeModule } from './common/stripe/stripe.module';
 import { SupabaseModule } from './common/supabase/supabase.module';
-import { WebhooksModule } from './common/webhooks/webhooks.module';
+import { TwilioModule } from './common/twilio/twilio.module';
+import { WebhooksModule as IdempotencyWebhooksModule } from './common/webhooks/webhooks.module';
 import { ConfigModule } from './config/config.module';
+import { AiModule } from './modules/ai/ai.module';
+import { BillingModule } from './modules/billing/billing.module';
+import { CalendarModule } from './modules/calendar/calendar.module';
+import { ConversationsModule } from './modules/conversations/conversations.module';
+import { DashboardModule } from './modules/dashboard/dashboard.module';
 import { HealthController } from './modules/health/health.controller';
 import { MeModule } from './modules/me/me.module';
 import { OperatorsModule } from './modules/operators/operators.module';
+import { PaymentsModule } from './modules/payments/payments.module';
+import { TelephonyModule } from './modules/telephony/telephony.module';
+import { WebhooksModule } from './modules/webhooks/webhooks.module';
 
 @Module({
   imports: [
     ConfigModule,
     LoggerModule,
+    // Per CLAUDE.md §11.7: 60 req/min default per IP, stricter on auth.
+    // Webhook controllers opt out via @SkipThrottle() — Stripe/Twilio retry
+    // loops would otherwise trip the limiter and break delivery.
+    // 60 req/min/IP globally (CLAUDE.md §11.7). Auth-mutating routes override
+    // with a stricter limit via `@Throttle({ default: { ttl, limit } })` —
+    // single named throttler keeps the math simple (one bucket per IP).
+    ThrottlerModule.forRoot({
+      throttlers: [{ name: 'default', ttl: 60_000, limit: 60 }],
+    }),
     EncryptionModule,
     SupabaseModule,
+    StripeModule,
+    TwilioModule,
+    OpenAIModule,
     AuthModule,
-    WebhooksModule,
+    IdempotencyWebhooksModule,
     MeModule,
     OperatorsModule,
+    BillingModule,
+    ConversationsModule,
+    TelephonyModule,
+    CalendarModule,
+    PaymentsModule,
+    DashboardModule,
+    AiModule,
+    WebhooksModule,
   ],
   controllers: [HealthController],
   providers: [
@@ -32,6 +64,7 @@ import { OperatorsModule } from './modules/operators/operators.module';
         new ProblemDetailsFilter(logger),
       inject: [PinoLogger],
     },
+    { provide: APP_GUARD, useClass: ThrottlerGuard },
   ],
 })
 export class AppModule {}

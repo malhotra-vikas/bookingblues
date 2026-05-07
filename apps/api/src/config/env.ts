@@ -78,6 +78,11 @@ const baseSchema = z.object({
 
   // Observability
   SENTRY_DSN_API: z.string().optional(),
+
+  // Telephony — staging outbound-SMS allowlist (CLAUDE.md §11.12)
+  // Comma-separated E.164 numbers. Applied only when NODE_ENV !== 'production'.
+  // Unset in non-prod = block-all (fail-safe).
+  OUTBOUND_SMS_ALLOWLIST: z.string().optional(),
 });
 
 export type Env = Readonly<

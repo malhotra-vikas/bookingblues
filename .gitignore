@@ -10,8 +10,14 @@ coverage
 .env.*.local
 .DS_Store
 *.log
+*.tsbuildinfo
 .vscode
 .idea
 .supabase
-node_modules
 apps/web/.next/
+
+# Stray TypeScript output in test/ if anyone accidentally runs `tsc` w/o --noEmit
+apps/api/test/**/*.js
+apps/api/test/**/*.d.ts
+apps/api/test/**/*.js.map
+apps/api/test/**/*.d.ts.map

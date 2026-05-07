@@ -60,45 +60,131 @@ When a section is wrong or stale, fix it in the same commit as the change.
 - **AppModule wiring** — registers `AuthModule`, `MeModule`, `OperatorsModule`. Both feature modules import `SupabaseModule` per existing convention.
 - **Status** — typecheck clean · 26/26 tests pass (was 11+3) · dev server smoke: `/v1/me` 401, `/v1/operators/me` 401, `/v1/health` 200.
 
----
+### Slice 4 — Billing (BookingBlues SaaS subscription) (2026-05-06)
+- **Stripe SDK + raw-body wiring** — `apps/api/src/common/stripe/{stripe.module,stripe.service}.ts`. `StripeService` is constructor-tolerant (deferred error like Supabase/Encryption). Exposes `client()`, `connect(stripeAccountId)` (Slice 8), `verifyPlatformWebhook`, `verifyConnectWebhook`. `NestFactory.create({ rawBody: true })` so `/webhooks/*` handlers can read `req.rawBody` for signature verification. `setGlobalPrefix('v1', { exclude: [{ path: 'webhooks/(.*)', method: ALL }] })` keeps webhooks unprefixed per CLAUDE.md §10.
+- **Billing module** (`modules/billing/`) — `BillingService` lazily creates the operator row on first checkout (defaults `business_name` to provided name, then email local-part, then "New Business") and lazily creates the Stripe customer (stamps `stripe_customer_id` back on the operator). `createCheckoutSession` builds a subscription-mode session per CLAUDE.md §9.1: `client_reference_id = operator.id`, `payment_method_collection = 'always'`, `subscription_data.trial_period_days = TRIAL_DAYS`, `subscription_data.trial_settings.end_behavior.missing_payment_method = 'cancel'`. `createPortalSession` requires an existing `stripe_customer_id` (409 otherwise).
+- **Endpoints** — `POST /v1/billing/checkout-session` (`{plan: 'starter'|'pro', business_name?}`) → `{url}`. `GET /v1/billing/portal-session` → `{url}`. Both Bearer-guarded.
+- **Platform Stripe webhook** — `POST /webhooks/stripe` (`StripePlatformController`). Verifies `stripe-signature` with `STRIPE_WEBHOOK_SECRET`, records via `WebhookIdempotencyService` (`unique (source, event_id)` dedupes retries), dispatches via pure `dispatchPlatformEvent`. Handlers: `checkout.session.completed` (links `stripe_subscription_id` to operator by `client_reference_id`); `customer.subscription.{created,updated}` (looks up operator by `stripe_customer_id` and writes `subscription_status` + `trial_ends_at`); `customer.subscription.deleted` (status → `canceled`); `customer.subscription.trial_will_end` (TODO email — wired in Slice 10 Resend); `invoice.payment_{succeeded,failed}` (no-op; status arrives via subscription.updated).
+- **Stripe → DB enum mapping** — `mapSubscriptionStatus` covers all 8 Stripe states; `unpaid → past_due` and `paused → canceled` (we don't model paused yet).
+- **Tests** — 8 parameterised unit cases for `mapSubscriptionStatus` + 5 integration cases against real Supabase: unsigned → 400, bad signature → 400, valid `subscription.created` → operator status `trialing` and `trial_end` populated, idempotent re-delivery preserves first-write values (different sub id in second payload is ignored), unrelated tenants untouched. Total **39/39 pass** (was 26).
+- **Smoke** — `POST /v1/billing/checkout-session` 401, `GET /v1/billing/portal-session` 401, `POST /webhooks/stripe` 400 (no sig), `/v1/health` 200.
 
-## 🔄 In progress
+### Slice 5 — Telephony (2026-05-06)
+- **Twilio SDK wrapper** (`apps/api/src/common/twilio/{twilio.module,twilio.service}.ts`) — constructor-tolerant in dev. `client()`, `validateSignature({signatureHeader, fullUrl, formParams})` (delegates to Twilio's HMAC-SHA1), `sendSms({from, to, body})` with §11.12 outbound allowlist: in non-prod, `to` MUST be in `OUTBOUND_SMS_ALLOWLIST` (comma-separated E.164) — unset = block-all (fail-safe). Production ignores the allowlist.
+- **Env additions** — `OUTBOUND_SMS_ALLOWLIST` zod-optional. Mirrored in `.env.example`.
+- **Number provisioning** (`modules/telephony/`) — `POST /v1/operators/me/twilio-number {area_code?}` searches local US numbers (optionally area-code-filtered), purchases via `incomingPhoneNumbers.create` with voice/sms webhook URLs pointing at `${API_URL}/webhooks/twilio/{voice,sms}/${operatorId}`, inserts into `twilio_numbers` (status='assigned'), links onto `operators.twilio_number_{e164,sid}`. 409 if operator already has a number; logs loudly + 500 if Twilio purchase succeeded but DB writes failed (manual reconciliation expected).
+- **Conversations module** (`modules/conversations/`) — `getOrCreate(operatorId, callerPhone)` returns the most recent non-terminal conversation or creates a new `awaiting_bot` row. `appendMessage({conversationId, role, body, twilioMessageSid?})` inserts and bumps `last_message_at`. Slice 7 owns the full state machine (CLAUDE.md §12).
+- **Voice webhook** (`POST /webhooks/twilio/voice/:operatorId`) — verifies `x-twilio-signature` against `${API_URL}${req.originalUrl}`, resolves operator + verifies `To == operator.twilio_number_e164` (§11.10), records via `WebhookIdempotencyService` keyed on `CallSid` (source='twilio'), inline side-effect: `conversations.getOrCreate` + outbound opening SMS via `twilio.sendSms` + `appendMessage(role='bot', sid)`. Always returns the §9.2 TwiML greeting (escapes XML special chars in business name); side-effect failure is logged but the caller still gets the greeting (Slice 7 worker can retry).
+- **SMS webhook** (`POST /webhooks/twilio/sms/:operatorId`) — same signature/operator/To checks. Records keyed on `MessageSid`, persists inbound `role='caller'` message via `appendMessage`. Returns empty `<Response/>`. Slice 7 will enqueue the AI advance job here.
+- **Tests** — 3 unit cases for `escapeXml` + 5 integration cases for the SMS webhook (no signature → 400, tampered signature → 400, To mismatch → 403, valid signed request persists message + creates conversation, replay of same MessageSid is a no-op). Helper `signTwilioRequest` computes the canonical Twilio HMAC-SHA1 over `url + sortedKey+value...`. Total **47/47 pass** (was 39).
+- **Smoke** — `POST /v1/operators/me/twilio-number` 401 (no auth), webhook 500 with no Twilio creds in dev `.env.local` (by design — config error is loud rather than silent), `/v1/health` 200.
 
-_(none)_
+### Slice 6 — Calendar (2026-05-06)
+- **`google-auth-library`** added (lighter than full `googleapis`; we hit `freeBusy` and `events.insert` directly via `fetch`).
+- **State CSRF token** (`modules/calendar/calendar-state.ts`) — `<userId>.<expiry>.<nonce>.<hmac_sha256>` signed with `SUPABASE_JWT_SECRET`. 10-min TTL, timing-safe equality, rejects tamper/expiry/wrong-secret/malformed. 5 unit tests cover all branches.
+- **`GoogleOAuthService`** — `authUrl(state)` (scopes `calendar.events`, `calendar.readonly`, `userinfo.email`; `access_type=offline`, `prompt=consent` to guarantee a refresh token on every connect). `exchangeCode(code)` returns `{refreshToken, accessToken, expiresAt, scopes, email}`; throws `google.no_refresh_token` if Google omits it. `refreshAccessToken(refreshToken)` for token refresh. Tolerant constructor (deferred error like Stripe/Twilio).
+- **`CalendarService`** — `getConnection`, `upsertConnection` (encrypts refresh_token via `EncryptionService`, stamps `operators.google_calendar_id='primary'` + `connected_at`), `disconnect` (overwrites refresh_token with sentinel + status='revoked' + clears operator pointer), `markRevoked`, `getFreshAccessToken` (returns cached if >60s remaining; otherwise refreshes and updates cache; on `invalid_grant` calls `markRevoked` per CLAUDE.md §9.4), `freeBusy({operatorId, windowStart, windowEnd, timeZone})` (proxy to Google's REST API; 401 → markRevoked + ExternalServiceError), `insertEvent({summary, start, end, timeZone, attendeeEmails})` (with `sendUpdates=all` per §9.4).
+- **Endpoints** — `POST /v1/operators/me/google/connect` → `{url}` (Bearer-guarded). `POST /v1/operators/me/google/disconnect` → `{ok:true}`. `GET /webhooks/google/oauth/callback?code&state[&error]` — verifies state, exchanges code, upserts connection, redirects to `${APP_URL}/onboarding/calendar?(connected=google|error=…)`. Webhook path is unprefixed per CLAUDE.md §10.
+- **Smoke** — connect/disconnect 401 unauth, callback with no params returns 302 → `…/onboarding/calendar?error=missing_code_or_state`.
+- **Status** — typecheck clean · **52/52 tests pass** (was 47).
 
----
+### Slice 7 — AI + conversations (2026-05-06)
+- **OpenAI SDK** (`apps/api/src/common/openai/`) — deferred-error pattern; model `gpt-4.1` per CLAUDE.md §9.3. `OpenAIService.client_()` exposes the underlying client.
+- **Prompt assembly** (`modules/ai/prompts.ts`) — static frame (rules, persona, refusal policy, prompt-injection defense per §11.16) + per-operator block (business name, category, timezone, now, fee policy) + per-category template from `categories.system_prompt_template`. `wrapCallerMessage(body)` wraps caller text in `<<CALLER_MESSAGE>>...<<END>>` so the model knows it is untrusted data.
+- **Tool definitions** (`modules/ai/tool-definitions.ts`) — JSON-schema definitions for the 7 tools per §9.3 (`check_availability`, `propose_slots`, `book_appointment`, `request_payment_link`, `mark_out_of_scope`, `mark_spam`, `escalate_to_human`) plus zod schemas for runtime arg validation. ISO 8601 with offset enforced for all datetime args.
+- **Tool handlers** (`modules/ai/tool-handlers.ts`) — implementation for each tool. `book_appointment` inserts into appointments, then calls `calendar.insertEvent({...sendUpdates:'all'...})`; on calendar failure the appointment row is rolled back to `cancelled`. `request_payment_link` is a stub returning `fee_collection_unavailable` (Slice 8 wires real Stripe Connect Direct Charges Checkout). `mark_out_of_scope`/`escalate_to_human` send a polite handoff SMS; `mark_spam` is silent (`silentTerminate: true`).
+- **Slot dedup** (`supabase/migrations/20260506000001_slot_dedup_unique.sql`) — partial unique index `(operator_id, scheduled_for_start) where status in ('proposed','confirmed')`. CLAUDE.md §17 specifies a Postgres advisory lock; the partial unique index gives the same race-protection with simpler semantics — concurrent winners insert, losers see 23505 which the bot translates into "that slot was just taken — pick another."
+- **AdvanceService** (`modules/ai/advance.service.ts`) — orchestrates the OpenAI loop. Loads operator, category, conversation history (caller↔assistant text turns only — tool calls don't persist across advances). Caller-turn cap (`MAX_CALLER_TURNS = 20`, §9.3) forces `escalate_to_human` when reached. Inner loop iterates up to `MAX_TOOL_ITERATIONS = 5` per advance. Terminal tool result transitions conversation to `completed`/`escalated` with outcome; non-terminal sets `awaiting_caller`. Outbound SMS sent via `TwilioService.sendSms` (which itself enforces §11.12 allowlist in non-prod).
+- **SMS webhook integration** — `TwilioSmsController` now: 1) records inbound + acks idempotency (this part fails the webhook → Twilio retry), 2) best-effort calls `advance.advance` in a try/catch (this part swallows errors with a log so a missing `OPENAI_API_KEY` in dev or transient OpenAI 5xx don't trigger Twilio retry-loops). Eventually-consistent: failed advances need manual replay until pg-boss queue lands.
+- **Tests** — 5 prompt-assembly cases + 5 tool-arg validation cases. **62/62 pass** (was 52).
+- **Status** — typecheck clean. Dev server at `:3001` healthy.
 
-## ⏭ Next up — recommended order
+### Slice 8 — Payments (Stripe Connect Direct Charges) (2026-05-06)
+- **Pricing** (`modules/payments/pricing.ts`) — `computeApplicationFee({amountCents, takeRateBps, minPlatformFeeCents})` returns `{applicationFeeCents, clampedToCap, capCents}`. Caps at `amount - (amount * 0.029 + 30)` (Stripe US standard processing) — Stripe rejects DC charges where `application_fee_amount > amount - processing_fee` (CLAUDE.md §9.5). 5 unit tests cover floor/percent dominance, tiny-amount clamp, zero/negative, custom take rate.
+- **Connect onboarding** — `POST /v1/operators/me/connect/onboarding-link` (Bearer-guarded). Creates a Stripe Express account on first call (`type='express'`, `country='US'`, requested capabilities `card_payments` + `transfers`, metadata links operator + user), stamps `operators.stripe_connect_account_id`, then issues an `accountLinks.create` for `account_onboarding`. Returns `{url}` for the web app to redirect into.
+- **`PaymentsService.ensureFeeEligible(operatorId)`** enforces all four CLAUDE.md §9.5 gates (fee enabled + cents set, subscription `trialing`/`active`, `stripe_connect_account_id` present, both `charges_enabled` and `payouts_enabled` true). Throws `ValidationError` with the specific failed gate.
+- **`PaymentsService.createBookingFeeCheckout({operatorId, appointmentId})`** — creates a Direct Charges Checkout Session **on the connected account** (`{stripeAccount}` second arg) with `payment_intent_data.application_fee_amount` from the pricing service. Inserts a `payments` row in `pending` keyed on the PI id, stamps `appointments.fee_payment_intent_id`/`fee_checkout_session_id`/`fee_status='pending'`. 23505 on the unique PI id surfaces as 409.
+- **`PaymentsService.refundBookingFee(paymentId, reason?)`** — `refunds.create({payment_intent, refund_application_fee:true, reverse_transfer:false}, {stripeAccount})` per §9.5. Updates payment + appointment to `refunded`. Validates payment is currently `succeeded`.
+- **Connect webhook** (`/webhooks/stripe/connect`) — verifies via separate `STRIPE_CONNECT_WEBHOOK_SECRET`, requires `event.account` (envelope's connected account id), idempotent via `webhook_events` with `source='stripe_connect'`. Handlers cross-reference `event.account` against `payments.stripe_connected_account_id` / `operators.stripe_connect_account_id` per §11.13 — mismatch is rejected. Dispatches: `account.updated` (mirrors `charges_enabled`/`payouts_enabled` to the operator row), `payment_intent.succeeded` (flips payment + appointment to `succeeded`/`paid`), `charge.refunded` (handles full + partial refunds).
+- **AI tool wiring** — `request_payment_link` is no longer a stub; calls `PaymentsService.createBookingFeeCheckout` and returns `{url, payment_id}` to the model PLUS attaches `outboundMessage` so the SMS goes out even if the model paraphrases. On eligibility failure (any gate), returns `{error:'fee_unavailable', message}` so the model continues without a fee.
+- **Smoke** — `POST /v1/operators/me/connect/onboarding-link` 401 unauth, `POST /webhooks/stripe/connect` 400 (no sig).
+- **Status** — typecheck clean · **67/67 tests pass** (was 62).
 
-### Slice 4: Billing (BookingBlues SaaS subscription)
-- [ ] Stripe SDK wrapper + platform webhook signature verification
-- [ ] `POST /v1/billing/checkout-session` (subscription mode, 7-day trial, card required)
-- [ ] `GET /v1/billing/portal-session`
-- [ ] Platform webhook handler `/webhooks/stripe`: `checkout.session.completed`, `customer.subscription.{created,updated,deleted}`, `customer.subscription.trial_will_end`, `invoice.payment_{succeeded,failed}`
-- [ ] Trial state machine: trialing → active / past_due / canceled
+### Slice 9 — Web app (2026-05-06)
+- **Foundation** — Tailwind 3.4 set up (`tailwind.config.ts`, `postcss.config.js`, `app/globals.css`, custom palette `ink/paper/muted/accent`). `lib/env.ts` zod-validates `NEXT_PUBLIC_*` at module load. `@supabase/ssr` browser + server helpers. `lib/api.ts` exposes `api()` (raw) and `apiAsUser()` (resolves session via server client and attaches Bearer). `apps/web/.env.local` lives separately from the monorepo root because Next.js only auto-discovers env in the app dir.
+- **Auth** — `middleware.ts` runs `supabase.auth.getUser()` (which refreshes expired access tokens, writing fresh cookies on the response), redirects unauth → `/login?next=…`, and bounces signed-in users away from `/login`/`/signup`. `AuthForm` (client component) does email+password sign-in/sign-up via `@supabase/ssr` browser client. `SignOutButton` clears the session and refreshes the route tree.
+- **Dashboard layout + page** — `(dashboard)/` group with `Nav` (current email + sign-out + section links). `/dashboard` server-renders 4 KPI cards (conversations, booked, appointments, fee revenue this month), recent conversations table, and upcoming appointments table — phone numbers masked to last 4 (CLAUDE.md §11.5). If the operator row doesn't exist yet, redirects the user to onboarding instead.
+- **Onboarding wizard** — `/onboarding` 6-step page (`Wizard` client component): subscribe (`/v1/billing/checkout-session`), category (`PATCH /v1/operators/me`), Twilio number (`POST /v1/operators/me/twilio-number`), Google Calendar (`POST /v1/operators/me/google/connect` → redirect), Stripe Connect (`POST /v1/operators/me/connect/onboarding-link` → redirect), booking fee (`PATCH /v1/operators/me`). Step status derived live from operator row.
+- **Settings** — `/settings` covers business name, timezone, fee on/off + amount, Google disconnect, billing portal launch (`GET /v1/billing/portal-session`). Subscription status surfaced.
+- **Marketing** — `(marketing)/` group with shared header (Sign in / Get started CTAs). `/` hero + 3-feature pitch, `/pricing` Starter $49 / Pro $149, `/faq` 5 entries.
+- **API additions** — `DashboardModule` adds `GET /v1/dashboard/metrics` (this-month counts derived per-tenant), `GET /v1/conversations` (last 50, last_message_at desc), `GET /v1/appointments` (last 50 by scheduled_for_start). All Bearer-guarded; 404 when no operator yet.
+- **Smoke** — `/`, `/pricing`, `/faq`, `/login`, `/signup` 200. `/dashboard`, `/settings`, `/onboarding` 307 → `/login?next=…`. `/v1/dashboard/metrics`, `/v1/conversations`, `/v1/appointments` 401 unauth. Tests still **67/67**.
 
-### Slice 5: Telephony
-- [ ] Twilio SDK wrapper + signature verification
-- [ ] `POST /v1/operators/me/twilio-number` (provisioning)
-- [ ] `POST /webhooks/twilio/voice/:operatorId` (TwiML response)
-- [ ] `POST /webhooks/twilio/sms/:operatorId` (signature verify, dedupe, enqueue advance job)
-- [ ] Inbound `To` cross-check against operator's number (§11.10)
-- [ ] Staging outbound-SMS allowlist (§11.12)
+### Slice 9-followup
+- [ ] Dashboard `/conversations/:id` view (full transcript)
+- [ ] Appointments `PATCH /v1/appointments/:id` + cancel UI
+- [ ] Business hours editor (per-day intervals; current settings page only shows timezone)
+- [ ] Carrier-specific conditional-forwarding instructions in onboarding step 3 (CLAUDE.md §17 carriers vary)
+- [ ] Marketing pages design polish, real copy, OG images
 
-### Slice 6: Calendar
-- [ ] Google OAuth flow (`POST /v1/operators/me/google/connect` → URL; `GET /v1/oauth/google/callback`)
-- [ ] Refresh-token encryption at rest via EncryptionService
-- [ ] `freebusy.query` helper, business-hours intersection, timezone handling
-- [ ] `events.insert` with `sendUpdates=all`
-- [ ] Token-revoked path (mark connection revoked, page operator)
+### Hardening — comprehensive pre-launch pass (multi-day, run before Slice 13/14 cutover)
+Goal: everything non-product-feature — security, observability, CI/CD discipline, auto-scanning, secret hygiene, ops runbooks. Each phase has a checkpoint; surface findings as we go, don't batch a single report.
 
-### Slice 7: AI + conversations
-- [ ] OpenAI client + structured tool dispatch
-- [ ] System prompt assembly (static frame + operator block + category template)
-- [ ] Tools: `check_availability`, `propose_slots`, `book_appointment`, `request_payment_link`, `mark_out_of_scope`, `mark_spam`, `escalate_to_human`
-- [ ] `book_appointment` advisory lock on `(operator_id, slot_start)` (§17 race)
-- [ ] Conversation state machine + pg-boss workers (24h abandon, 1h reminder, fee timeout)
-- [ ] Caller-message delimiter wrapping; max-turn cap; output-token tracking
+**Phase 0 — Discovery (✅ 2026-05-06)** — see `docs/HARDENING_PHASE_0_FINDINGS.md`
+- [x] Surfaces, CI, secrets inventoried (35 env vars, 2 deployables)
+- [x] `pnpm audit` baseline: **35 vulns · 2 critical · 10 high** — both criticals are `next@15.0.0` (middleware-bypass + RCE), patched in 15.2.3
+- [x] Git-history secret sweep clean (3 commits, no remote, only false-positive on empty `.env.example` placeholder)
+- [ ] Production header `curl -sI` deferred until Railway staging is up (Slice 13)
+- **Open questions for human** at end of findings doc — answer before Phase 1
+
+**Phase 1 — Code-level security review (~½ day)** → `docs/SECURITY_REVIEW.md`
+- [ ] Severity-ranked findings table (file:line, status)
+- [ ] Auth review: password hashing/JWT signing/refresh-token rotation/session revocation/login timing/audit-log coverage
+- [ ] Crypto review: AES-256-GCM IV+tag handling (we already have `EncryptionService`), key derivation, decrypt failure shape
+- [ ] Authorization route-coverage matrix (every protected route → guard; every mutation → rate-limit)
+- [ ] OWASP Top 10 walkthrough with file:line evidence
+- [ ] Rate-limit coverage audit (auth strict 5/15min, write 60/min) — currently NOT implemented; CLAUDE.md §11.7 calls it out
+- [ ] CORS + helmet config review (current: not yet wired — needed in API)
+- [ ] Prioritized fix list with diffs
+
+**Phase 2 — CI/CD plumbing (~½ day)** → `docs/CI_AND_BRANCH_PROTECTION.md`
+- [ ] `.github/workflows/ci.yml` (lint + typecheck + test + build + `pnpm audit --audit-level=high`)
+- [ ] `codeql.yml` (security-extended)
+- [ ] `trivy.yml` (Docker image CVE — strict on push, soft on PRs)
+- [ ] `secret-scan.yml` using bare gitleaks binary (NOT gitleaks-action — fails on Dependabot read-only token)
+- [ ] `snyk.yml` (Service Account token, not UAT)
+- [ ] `.github/dependabot.yml` (npm + actions; group minor/patch)
+- [ ] Branch protection rules doc (manual UI step)
+- [ ] Required GitHub secrets list
+- [ ] **Gotchas to pre-empt:** pnpm/action-setup version-collision (use `packageManager` only), Dependabot read-only token (gate SARIF uploads to push-to-main), TS strict + monorepo `@types/node` per-package
+
+**Phase 3 — Observability (~½ day)** — Sentry across all surfaces
+- [ ] Init early (Node ESM: `--import ./instrument.js`); init both `apps/api` and `apps/web`
+- [ ] PII filter in `beforeSend`/`beforeSendTransaction` — recursive walk of `request`/`extra`/`contexts`, redact keys matching CLAUDE.md §11.5 paths + Twilio body fields, OpenAI prompts/completions, Stripe metadata
+- [ ] `request_id` tag from existing pino correlation id
+- [ ] No-op when `SENTRY_DSN_*` empty
+- [ ] Test with deliberate throws, then DELETE the test code
+- [ ] Dotenv load-order: ensure config loads before any module reads `process.env.SENTRY_DSN`
+
+**Phase 4 — Operational hygiene (~few hours)**
+- [ ] Branded transactional email templates (Gmail-safe inline styles, table layout, light-mode-locked) — for Resend in Slice 10
+- [ ] `docs/RUNBOOK_ENCRYPTION_KEY_ROTATION.md` (we already have versioned ciphertext format `v<N>:iv:tag:ct` — runbook covers add-old-key, dry-run, swap, verify, remove)
+- [ ] CORS lockdown — production origin allowlist with no localhost; document each allowed origin
+- [ ] Production header posture (HSTS preload, strict CSP, X-Frame-Options, Referrer-Policy, Permissions-Policy) on both API and Web
+- [ ] Token discipline — CI tokens never in `.env`; rotation calendar reminders
+
+**Phase 5 — Auto-generated security report (~few hours)**
+- [ ] `.github/workflows/security-report.yml` runs on push-to-main + weekly cron
+- [ ] Aggregate `pnpm audit` + gitleaks + Trivy + CodeQL (`gh api`) + Dependabot alerts + production header snapshot into single Markdown
+- [ ] Output to `$GITHUB_STEP_SUMMARY` + 90-day artifact
+- [ ] v2: commit each report to `security-reports` branch (avoid main push-loop)
+
+### Slice 7-followup: pg-boss queue + delayed jobs (deferred from Slice 7)
+- [ ] pg-boss setup, worker registration via `OnModuleInit`
+- [ ] Replace synchronous `advance` call from SMS webhook with `queue.publish('conversation.advance', ...)`
+- [ ] Workers: `conversation.advance`, `conversation.abandoned` (24h cron-style scheduling), `appointment.reminder` (1h before)
+- [ ] Fee timeout (cancel `appointments` whose `fee_status='pending'` after a configurable window)
+- [ ] Token-usage logging per advance (cost guardrail per CLAUDE.md §17 "OpenAI cost")
 
 ### Slice 7.5: Human-in-the-loop (HITL) via Slack
 The bot escalates to a human operator/agent in Slack when (a) it cannot help the caller, or (b) the caller explicitly asks for a human. This is a higher-fidelity replacement for the `escalate_to_human` email path in §9.3 — emails turn into Slack threads with two-way bridging.
@@ -113,21 +199,6 @@ The bot escalates to a human operator/agent in Slack when (a) it cannot help the
 - [ ] Slack webhook signature verification (per CLAUDE.md §11.1 pattern); idempotency via `webhook_events` with `source='slack'` (requires migration adding `'slack'` to `webhook_source` enum)
 - [ ] Cap: only one open escalation per conversation; second trigger reuses existing thread
 - [ ] Update CLAUDE.md §3 (architecture diagram), §4 (tech stack adds Slack), §9.3 (tool list), §10 (webhooks endpoint), §11 (signature validation, allowlist channels) when this slice lands
-
-### Slice 8: Payments (Stripe Connect)
-- [ ] `POST /v1/operators/me/connect/onboarding-link`
-- [ ] Stripe SDK helper requiring `stripeAccount` (typed wall against missing header)
-- [ ] Direct-charges Checkout Session creation on connected account with `application_fee_amount`
-- [ ] Connect webhook handler `/webhooks/stripe/connect` (separate signing secret)
-- [ ] Refund flow with `refund_application_fee: true`
-- [ ] Eligibility gate (subscription_status, charges_enabled, payouts_enabled, fee_enabled)
-
-### Slice 9: Web app
-- [ ] Supabase auth pages (login, signup)
-- [ ] Onboarding wizard (category, phone verify, Twilio number, Google connect, fee config, carrier instructions)
-- [ ] Dashboard (conversations list, appointments list, monthly metrics)
-- [ ] Settings page (hours, fee on/off, calendar disconnect, cancel subscription)
-- [ ] Marketing pages (`/`, `/pricing`, `/faq`)
 
 ### Slice 10: Notifications + polish
 - [ ] Resend wrapper, transactional email templates
