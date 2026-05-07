@@ -179,6 +179,13 @@ Goal: everything non-product-feature — security, observability, CI/CD discipli
 - [ ] Output to `$GITHUB_STEP_SUMMARY` + 90-day artifact
 - [ ] v2: commit each report to `security-reports` branch (avoid main push-loop)
 
+### Slice 4-followup: billing flow gaps (surfaced during E2E 2026-05-07)
+- [ ] **Trial → paid conversion test** — manually advance the trial via Stripe dashboard "Cancel trial / charge now", verify `customer.subscription.updated` flips status to `active`, dashboard reflects, no double-billing
+- [ ] **Cancellation flow test** — operator clicks "Cancel" via Customer Portal (Settings → Billing → Open billing portal), verify `customer.subscription.deleted` → `subscription_status='canceled'`, dashboard banner, AI conversations gracefully degrade per §9.1 (greeting still plays, no booking, no fee). 7-day Twilio number grace then release.
+- [ ] **Duplicate-checkout dedup** — `BillingService.createCheckoutSession` should refuse if `subscription_status IN ('trialing','active')` and there's an open subscription. Today, clicking "Start Trial" twice creates two Stripe subscriptions for the same customer (will double-bill on day 7).
+- [ ] **Past-due degraded mode** — when `invoice.payment_failed` flips status to `past_due`, the AI advance loop should still run the call greeting + polite handoff SMS but skip booking + fee collection (CLAUDE.md §9.5 Flow A behavior). Today nothing in the AI loop checks subscription state.
+- [ ] **Trial reminder emails** — day 3 (us, via pg-boss) + day 6 (us OR `customer.subscription.trial_will_end` via Stripe). Currently the webhook just logs; Slice 10 wires Resend.
+
 ### Slice 7-followup: pg-boss queue + delayed jobs (deferred from Slice 7)
 - [ ] pg-boss setup, worker registration via `OnModuleInit`
 - [ ] Replace synchronous `advance` call from SMS webhook with `queue.publish('conversation.advance', ...)`
