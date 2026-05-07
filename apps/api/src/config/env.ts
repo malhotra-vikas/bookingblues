@@ -91,11 +91,25 @@ export type Env = Readonly<
   }
 >;
 
+/**
+ * The bare-minimum set required for the API to boot in production.
+ * Every other provider (Twilio, Stripe, OpenAI, Google, Resend) is gated by a
+ * deferred-error pattern in its service constructor — calls throw with a clear
+ * `<provider>.no_credentials` error, so missing creds surface at first-use,
+ * not at boot. Lets staging deploy with minimal creds and layer in providers
+ * incrementally. Pre-launch, set STRICT_ENV_REQUIRED=true to lock down.
+ */
 const requiredInProd = [
   'SUPABASE_URL',
   'SUPABASE_ANON_KEY',
   'SUPABASE_SERVICE_ROLE_KEY',
   'SUPABASE_JWT_SECRET',
+  'ENCRYPTION_KEY',
+] as const satisfies ReadonlyArray<keyof z.infer<typeof baseSchema>>;
+
+/** Strict mode adds every provider; gate behind STRICT_ENV_REQUIRED=true for launch. */
+const strictRequiredInProd = [
+  ...requiredInProd,
   'TWILIO_ACCOUNT_SID',
   'TWILIO_AUTH_TOKEN',
   'TWILIO_API_KEY_SID',
@@ -109,7 +123,6 @@ const requiredInProd = [
   'GOOGLE_OAUTH_CLIENT_SECRET',
   'GOOGLE_OAUTH_REDIRECT_URI',
   'RESEND_API_KEY',
-  'ENCRYPTION_KEY',
 ] as const satisfies ReadonlyArray<keyof z.infer<typeof baseSchema>>;
 
 export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
@@ -120,13 +133,15 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
   const env = parsed.data;
 
   if (env.NODE_ENV === 'production') {
-    const missing = requiredInProd.filter((k) => {
+    const strict = source.STRICT_ENV_REQUIRED === 'true';
+    const required = strict ? strictRequiredInProd : requiredInProd;
+    const missing = required.filter((k) => {
       const v = env[k];
       return v === undefined || v === '';
     });
     if (missing.length > 0) {
       throw new Error(
-        `Missing required env in production: ${missing.join(', ')}. See CLAUDE.md §7.`,
+        `Missing required env in production${strict ? ' (strict mode)' : ''}: ${missing.join(', ')}. See CLAUDE.md §7.`,
       );
     }
   }
