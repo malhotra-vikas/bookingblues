@@ -243,6 +243,50 @@ Triggered on every PR and push to `main`. Blocks merge on failures.
 - [ ] Domain + HSTS preload (§11.20)
 - [ ] End-to-end smoke run on staging before any production traffic
 
+### Slice 15: Internal admin dashboard (REQUIRED pre-revenue)
+Operating a customer-facing SaaS without an internal control plane is untenable
+— support tickets, dunning, fraud, refunds, abuse all need a "see + act" surface.
+This is BookingBlues *staff* only, not Operator-facing. Distinct from CLAUDE.md §16
+"Multi-user/teams per Operator" (which is post-MVP and rules out *Operator* teams).
+
+**Schema additions**
+- [ ] `admin_users` table OR `auth.users.app_metadata.role = 'admin'` flag — pick one. The latter is simpler (no separate auth) but conflates concerns; the former is cleaner but adds a join. Decide and ADR.
+- [ ] `audit_log` already exists (CLAUDE.md §8) — every admin write goes through it (`actor_user_id`, `action`, `resource_type`, `resource_id`, `metadata`)
+
+**Auth + authorization**
+- [ ] `AdminGuard` (NestJS) — Bearer + `role = 'admin'` check. Fail closed.
+- [ ] Admin web routes (`/admin/*`) gated by middleware reading the same role claim
+- [ ] All admin write endpoints rate-limited stricter than operator endpoints; every action audit-logged
+
+**Read-only surfaces**
+- [ ] `GET /admin/operators?cursor&q&status` — list with filters (subscription_status, business_name search, has_twilio_number, has_calendar)
+- [ ] `GET /admin/operators/:id` — full operator dossier: profile, subscription state + Stripe links, Twilio number + Twilio Console deep-link, Google calendar email, Connect onboarding status, fee config, totals
+- [ ] `GET /admin/operators/:id/conversations` — list with status filters; click into transcript view
+- [ ] `GET /admin/operators/:id/appointments` — list with status filters
+- [ ] `GET /admin/operators/:id/payments` — Stripe SaaS invoices + Connect booking-fee charges, with refund buttons
+- [ ] `GET /admin/operators/:id/audit-log` — every action against this operator
+- [ ] `GET /admin/metrics` — global: total operators, MRR, ARR, trial→paid conversion %, active conversations today, calls/SMS volume, OpenAI cost MTD
+
+**Write actions (each writes `audit_log`)**
+- [ ] `POST /admin/operators/:id/deactivate` — flip status, cancel Stripe subscription (with grace), schedule Twilio number release (7-day grace per §9.1), revoke calendar grant, mark conversations + appointments read-only
+- [ ] `POST /admin/operators/:id/release-twilio-number` — release immediately, free pool row, clear `operators.twilio_number_*`
+- [ ] `POST /admin/operators/:id/refund-payment/:paymentId` — issue Stripe refund with reason
+- [ ] `POST /admin/operators/:id/cancel-subscription` — Stripe SDK cancel, optional immediate vs end-of-period
+- [ ] `POST /admin/conversations/:id/force-end` — set status `completed`, outcome `rejected`
+- [ ] `POST /admin/operators/:id/impersonate` — issue a short-lived JWT scoped to that operator's user_id for support debugging (audit-logged + alert in Slack/email when used)
+
+**Web UI** (`apps/web/app/(admin)/...`)
+- [ ] `/admin` dashboard with global metrics
+- [ ] `/admin/operators` searchable table
+- [ ] `/admin/operators/:id` dossier with tabs: profile, conversations, appointments, payments, audit log
+- [ ] Visual cues for risky actions (deactivate / refund) — confirm-modal with "type the business name to confirm"
+- [ ] Distinct admin theme (red accent / banner) so staff never confuse it with the operator dashboard
+
+**Operational**
+- [ ] Provisioning the first admin: SQL migration that flips a designated user_id to admin role, plus a CLI/admin-only "make admin" endpoint that requires existing admin
+- [ ] Audit log retention policy (90 days hot in DB, longer in cold storage post-Slice 14)
+- [ ] Pre-launch hardening: confirm `AdminGuard` is the FIRST guard on every admin route; tests proving 401/403 paths
+
 ### Slice 14: EC2 production deployment (go-live)
 Migration target when we're ready to leave Railway and serve real traffic.
 - [ ] Architecture decision (record in `docs/adr/`): instance sizing, AZ/region, AMI strategy
