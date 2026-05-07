@@ -5,6 +5,7 @@ import { useState } from 'react';
 
 import { getSupabaseBrowserClient } from '../../lib/supabase/browser';
 import { publicEnv } from '../../lib/env';
+import { CarrierForwarding } from './CarrierForwarding';
 import { StepCard } from './StepCard';
 
 interface Operator {
@@ -340,6 +341,22 @@ export function Wizard({ initial }: { initial: Operator | null }): JSX.Element {
           </button>
         ) : (
           <p className="text-sm text-muted">Charges + payouts enabled.</p>
+        )}
+      </StepCard>
+
+      <StepCard
+        number={7}
+        title="Forward your business calls"
+        description="Set up conditional forwarding on your real mobile so missed calls reach BookingBlues."
+        done={false}
+      >
+        {twilioDone ? (
+          <CarrierForwarding twilioNumber={op!.twilio_number_e164!} />
+        ) : (
+          <p className="text-sm text-muted">
+            Provision a Twilio number first (step 3) — we&apos;ll show the carrier-specific
+            forwarding code once your number is assigned.
+          </p>
         )}
       </StepCard>
 

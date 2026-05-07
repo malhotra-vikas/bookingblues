@@ -29,4 +29,10 @@ export class BillingController {
   async portal(@CurrentUser() user: AuthenticatedUser): Promise<PortalSessionResponse> {
     return this.service.createPortalSession(user.userId);
   }
+
+  @Post('end-trial')
+  async endTrial(@CurrentUser() user: AuthenticatedUser): Promise<{ ok: true }> {
+    await this.service.endTrialNow(user.userId);
+    return { ok: true };
+  }
 }

@@ -20,6 +20,7 @@ export interface DashboardMetrics {
   };
   readonly fee_revenue_cents: number;
   readonly subscription_status: string | null;
+  readonly trial_ends_at: string | null;
 }
 
 @Injectable()
@@ -30,7 +31,7 @@ export class DashboardService {
     const { data: operator, error } = await this.supabase
       .db()
       .from('operators')
-      .select('id, subscription_status')
+      .select('id, subscription_status, trial_ends_at')
       .eq('user_id', userId)
       .maybeSingle();
     if (error) throw error;
@@ -87,6 +88,7 @@ export class DashboardService {
       },
       fee_revenue_cents: feeRevenue,
       subscription_status: operator.subscription_status,
+      trial_ends_at: operator.trial_ends_at,
     };
   }
 

@@ -76,6 +76,28 @@ export class BillingService {
     return { url: session.url };
   }
 
+  /**
+   * End the trial immediately. Stripe attempts to charge the saved card via
+   * `customer.subscription.updated` → `invoice.payment_succeeded` (status flips
+   * to `active`) or `invoice.payment_failed` (status flips to `past_due`).
+   * Webhook handlers already cover both transitions; this just kicks them off.
+   */
+  async endTrialNow(userId: string): Promise<void> {
+    const operator = await this.getOperatorByUserId(userId);
+    if (!operator) throw new NotFoundError('Operator not found');
+    if (!operator.stripe_subscription_id) {
+      throw new ConflictError('Operator has no active subscription');
+    }
+    if (operator.subscription_status !== 'trialing') {
+      throw new ValidationError(
+        `Subscription is ${operator.subscription_status ?? 'not set'} — only trialing subscriptions can be ended early`,
+      );
+    }
+    await this.stripe.client().subscriptions.update(operator.stripe_subscription_id, {
+      trial_end: 'now',
+    });
+  }
+
   // ── helpers ──────────────────────────────────────────────────────────────
 
   private priceForPlan(plan: Plan): string {

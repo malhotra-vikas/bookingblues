@@ -1,5 +1,6 @@
 import Link from 'next/link';
 
+import { TrialBanner } from '../../../components/TrialBanner';
 import { ApiError, apiAsUser } from '../../../lib/api';
 
 interface Metrics {
@@ -7,6 +8,7 @@ interface Metrics {
   appointments: { total: number; confirmed: number; completed: number; cancelled: number };
   fee_revenue_cents: number;
   subscription_status: string | null;
+  trial_ends_at: string | null;
   month_start_iso: string;
 }
 interface Conversation {
@@ -81,11 +83,11 @@ export default async function DashboardPage(): Promise<JSX.Element> {
     <div className="space-y-8">
       <header className="flex items-end justify-between">
         <h1 className="text-2xl font-semibold">Dashboard</h1>
-        {'subscription_status' in metricsR && metricsR.subscription_status ? (
-          <span className="text-sm text-muted">
-            Plan status:{' '}
-            <span className="font-medium text-ink">{metricsR.subscription_status}</span>
-          </span>
+        {'subscription_status' in metricsR ? (
+          <TrialBanner
+            status={metricsR.subscription_status}
+            trialEndsAt={metricsR.trial_ends_at}
+          />
         ) : null}
       </header>
 
