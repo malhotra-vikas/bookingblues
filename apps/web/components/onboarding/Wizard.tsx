@@ -75,18 +75,37 @@ export function Wizard({ initial }: { initial: Operator | null }): JSX.Element {
   const [releaseModalOpen, setReleaseModalOpen] = useState(false);
   const [disconnectGoogleOpen, setDisconnectGoogleOpen] = useState(false);
 
-  async function handle<T>(fn: () => Promise<T>): Promise<T | null> {
+  // Per-action busy tracker. Keeps individual buttons disabled while their
+  // request is in flight, so a fast double-click can't fire two checkouts /
+  // two number provisions / two PATCHes (the bug that produced an orphan
+  // Twilio number earlier in QA).
+  const [busyKeys, setBusyKeys] = useState<ReadonlySet<string>>(new Set());
+  const isBusy = (key: string): boolean => busyKeys.has(key);
+
+  async function handle<T>(key: string, fn: () => Promise<T>): Promise<T | null> {
+    if (busyKeys.has(key)) return null;
     setError(null);
+    setBusyKeys((s) => {
+      const next = new Set(s);
+      next.add(key);
+      return next;
+    });
     try {
       return await fn();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong');
       return null;
+    } finally {
+      setBusyKeys((s) => {
+        const next = new Set(s);
+        next.delete(key);
+        return next;
+      });
     }
   }
 
   async function saveCategory(): Promise<void> {
-    await handle(async () => {
+    await handle('saveCategory', async () => {
       const res = await authedFetch('/v1/operators/me', {
         method: 'PATCH',
         body: JSON.stringify({ category: pendingCategory }),
@@ -97,7 +116,7 @@ export function Wizard({ initial }: { initial: Operator | null }): JSX.Element {
   }
 
   async function provisionTwilio(): Promise<void> {
-    await handle(async () => {
+    await handle('provisionTwilio', async () => {
       const body: Record<string, string> = {};
       if (pendingAreaCode) body.area_code = pendingAreaCode;
       const res = await authedFetch('/v1/operators/me/twilio-number', {
@@ -133,7 +152,7 @@ export function Wizard({ initial }: { initial: Operator | null }): JSX.Element {
   }
 
   async function startGoogleConnect(): Promise<void> {
-    await handle(async () => {
+    await handle('startGoogleConnect', async () => {
       const res = await authedFetch('/v1/operators/me/google/connect', { method: 'POST' });
       if (!res.ok) throw new Error('Could not start Google sign-in');
       const { url } = (await res.json()) as { url: string };
@@ -142,7 +161,7 @@ export function Wizard({ initial }: { initial: Operator | null }): JSX.Element {
   }
 
   async function startStripeConnect(): Promise<void> {
-    await handle(async () => {
+    await handle('startStripeConnect', async () => {
       const res = await authedFetch('/v1/operators/me/connect/onboarding-link', { method: 'POST' });
       if (!res.ok) throw new Error('Could not start Stripe payout setup');
       const { url } = (await res.json()) as { url: string };
@@ -151,7 +170,7 @@ export function Wizard({ initial }: { initial: Operator | null }): JSX.Element {
   }
 
   async function startBilling(plan: 'starter' | 'pro'): Promise<void> {
-    await handle(async () => {
+    await handle(`startBilling:${plan}`, async () => {
       const res = await authedFetch('/v1/billing/checkout-session', {
         method: 'POST',
         body: JSON.stringify({ plan }),
@@ -163,7 +182,7 @@ export function Wizard({ initial }: { initial: Operator | null }): JSX.Element {
   }
 
   async function saveServiceArea(): Promise<void> {
-    await handle(async () => {
+    await handle('saveServiceArea', async () => {
       const zips = pendingZipsText
         .split(/[\s,]+/)
         .map((z) => z.trim())
@@ -215,7 +234,7 @@ export function Wizard({ initial }: { initial: Operator | null }): JSX.Element {
   }
 
   async function saveFee(): Promise<void> {
-    await handle(async () => {
+    await handle('saveFee', async () => {
       const cents = pendingFeeEnabled
         ? Math.max(0, Math.round(Number(pendingFeeDollars) * 100))
         : null;
@@ -264,16 +283,18 @@ export function Wizard({ initial }: { initial: Operator | null }): JSX.Element {
             <button
               type="button"
               onClick={() => startBilling('starter')}
-              className="rounded-md bg-accent px-4 py-2 text-sm text-white"
+              disabled={isBusy('startBilling:starter') || isBusy('startBilling:pro')}
+              className="rounded-md bg-accent px-4 py-2 text-sm text-white disabled:opacity-50"
             >
-              Start trial — Starter
+              {isBusy('startBilling:starter') ? 'Opening checkout…' : 'Start trial — Starter'}
             </button>
             <button
               type="button"
               onClick={() => startBilling('pro')}
-              className="rounded-md border border-slate-300 px-4 py-2 text-sm"
+              disabled={isBusy('startBilling:starter') || isBusy('startBilling:pro')}
+              className="rounded-md border border-slate-300 px-4 py-2 text-sm disabled:opacity-50"
             >
-              Start trial — Pro
+              {isBusy('startBilling:pro') ? 'Opening checkout…' : 'Start trial — Pro'}
             </button>
           </div>
         ) : null}
@@ -300,11 +321,11 @@ export function Wizard({ initial }: { initial: Operator | null }): JSX.Element {
           </select>
           <button
             type="button"
-            disabled={!pendingCategory}
+            disabled={!pendingCategory || isBusy('saveCategory')}
             onClick={saveCategory}
             className="rounded-md bg-accent px-3 py-2 text-sm text-white disabled:opacity-50"
           >
-            Save
+            {isBusy('saveCategory') ? 'Saving…' : 'Save'}
           </button>
         </div>
       </StepCard>
@@ -388,9 +409,10 @@ export function Wizard({ initial }: { initial: Operator | null }): JSX.Element {
             <button
               type="button"
               onClick={saveServiceArea}
-              className="rounded-md bg-accent px-4 py-2 text-sm text-white"
+              disabled={isBusy('saveServiceArea')}
+              className="rounded-md bg-accent px-4 py-2 text-sm text-white disabled:opacity-50"
             >
-              Save service area
+              {isBusy('saveServiceArea') ? 'Saving…' : 'Save service area'}
             </button>
             <span className="text-xs text-muted">
               {(op?.service_zip_codes?.length ?? 0) + (op?.service_radius_zones?.length ?? 0) === 0
@@ -422,9 +444,10 @@ export function Wizard({ initial }: { initial: Operator | null }): JSX.Element {
             <button
               type="button"
               onClick={provisionTwilio}
-              className="rounded-md bg-accent px-3 py-2 text-sm text-white"
+              disabled={isBusy('provisionTwilio')}
+              className="rounded-md bg-accent px-3 py-2 text-sm text-white disabled:opacity-50"
             >
-              Get my number
+              {isBusy('provisionTwilio') ? 'Getting number…' : 'Get my number'}
             </button>
           </div>
         ) : (
@@ -452,9 +475,10 @@ export function Wizard({ initial }: { initial: Operator | null }): JSX.Element {
           <button
             type="button"
             onClick={startGoogleConnect}
-            className="rounded-md bg-accent px-4 py-2 text-sm text-white"
+            disabled={isBusy('startGoogleConnect')}
+            className="rounded-md bg-accent px-4 py-2 text-sm text-white disabled:opacity-50"
           >
-            Connect Google
+            {isBusy('startGoogleConnect') ? 'Opening Google…' : 'Connect Google'}
           </button>
         ) : (
           <button
@@ -477,9 +501,10 @@ export function Wizard({ initial }: { initial: Operator | null }): JSX.Element {
           <button
             type="button"
             onClick={startStripeConnect}
-            className="rounded-md border border-slate-300 px-4 py-2 text-sm"
+            disabled={isBusy('startStripeConnect')}
+            className="rounded-md border border-slate-300 px-4 py-2 text-sm disabled:opacity-50"
           >
-            Set up payouts with Stripe
+            {isBusy('startStripeConnect') ? 'Opening Stripe…' : 'Set up payouts with Stripe'}
           </button>
         ) : (
           <p className="text-sm text-emerald-700">
@@ -521,9 +546,10 @@ export function Wizard({ initial }: { initial: Operator | null }): JSX.Element {
             <button
               type="button"
               onClick={saveFee}
-              className="rounded-md bg-accent px-3 py-2 text-sm text-white"
+              disabled={isBusy('saveFee')}
+              className="rounded-md bg-accent px-3 py-2 text-sm text-white disabled:opacity-50"
             >
-              Save
+              {isBusy('saveFee') ? 'Saving…' : 'Save'}
             </button>
           </div>
           {pendingFeeEnabled && Number(pendingFeeDollars) > 0 ? (

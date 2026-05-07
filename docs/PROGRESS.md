@@ -120,6 +120,24 @@ When a section is wrong or stale, fix it in the same commit as the change.
 - **API additions** — `DashboardModule` adds `GET /v1/dashboard/metrics` (this-month counts derived per-tenant), `GET /v1/conversations` (last 50, last_message_at desc), `GET /v1/appointments` (last 50 by scheduled_for_start). All Bearer-guarded; 404 when no operator yet.
 - **Smoke** — `/`, `/pricing`, `/faq`, `/login`, `/signup` 200. `/dashboard`, `/settings`, `/onboarding` 307 → `/login?next=…`. `/v1/dashboard/metrics`, `/v1/conversations`, `/v1/appointments` 401 unauth. Tests still **67/67**.
 
+### UX-followup: loading states across the rest of the app
+Onboarding wizard now disables every async button + shows a "Saving…" /
+"Opening checkout…" label while the request is in flight (real bug:
+double-click on Twilio provisioning created an orphan number in QA).
+The same treatment is needed everywhere else a button fires a network
+call:
+
+- [ ] `SettingsPanel` — Save profile, Disconnect Google, Open billing portal
+  (currently has a single `busy` string state — works but not per-action)
+- [ ] `TrialBanner` — Fix payment method (portal launch) + End-trial-now (modal
+  has its own busy already; double-check)
+- [ ] `AuthForm` — already has `busy` ✓
+- [ ] `SignOutButton` — already has `busy` ✓
+- [ ] `ConfirmModal` — already has `busy` ✓
+- [ ] All future client buttons should follow the same pattern: per-key busy
+  set + disabled prop + "Working…" label, OR adopt a shared `useAsyncAction(key, fn)`
+  hook to avoid repetition
+
 ### Slice 9-followup
 - [ ] Dashboard `/conversations/:id` view (full transcript)
 - [ ] Appointments `PATCH /v1/appointments/:id` + cancel UI
