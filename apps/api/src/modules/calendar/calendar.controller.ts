@@ -110,6 +110,6 @@ export class CalendarController {
 
   private redirect(res: Response, params: Record<string, string>): void {
     const qs = new URLSearchParams(params).toString();
-    res.redirect(`${this.env.APP_URL}/onboarding/calendar?${qs}`);
+    res.redirect(`${this.env.APP_URL}/onboarding?${qs}`);
   }
 }
