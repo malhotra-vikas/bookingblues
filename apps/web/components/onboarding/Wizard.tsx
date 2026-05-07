@@ -3,6 +3,7 @@
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 
+import { ConfirmModal } from '../ConfirmModal';
 import { getSupabaseBrowserClient } from '../../lib/supabase/browser';
 import { publicEnv } from '../../lib/env';
 import { CarrierForwarding } from './CarrierForwarding';
@@ -61,6 +62,9 @@ export function Wizard({ initial }: { initial: Operator | null }): JSX.Element {
       : (publicEnv.NEXT_PUBLIC_DEFAULT_BOOKING_FEE_CENTS / 100).toFixed(2),
   );
 
+  const [releaseModalOpen, setReleaseModalOpen] = useState(false);
+  const [disconnectGoogleOpen, setDisconnectGoogleOpen] = useState(false);
+
   async function handle<T>(fn: () => Promise<T>): Promise<T | null> {
     setError(null);
     try {
@@ -77,7 +81,7 @@ export function Wizard({ initial }: { initial: Operator | null }): JSX.Element {
         method: 'PATCH',
         body: JSON.stringify({ category: pendingCategory }),
       });
-      if (!res.ok) throw new Error(`PATCH /v1/operators/me failed: ${res.status}`);
+      if (!res.ok) throw new Error(`Could not save category (${res.status})`);
       router.refresh();
     });
   }
@@ -92,59 +96,36 @@ export function Wizard({ initial }: { initial: Operator | null }): JSX.Element {
       });
       if (!res.ok) {
         const detail = await res.json().catch(() => ({}));
-        throw new Error(detail.detail ?? `provision failed: ${res.status}`);
+        throw new Error(detail.detail ?? `Could not get a number (${res.status})`);
       }
       router.refresh();
     });
   }
 
-  async function releaseTwilio(currentNumber: string): Promise<void> {
-    const confirmed = window.confirm(
-      `WARNING: Releasing ${currentNumber} is permanent.\n\n` +
-        `Twilio puts the number back in the public pool. We can NOT guarantee ` +
-        `you'll get the same number back if you change your mind. ` +
-        `Customers who saved this number to their phone will lose touch.\n\n` +
-        `Provision a fresh number? You'll lose all forwarding rules pointed at this one.`,
-    );
-    if (!confirmed) return;
-    const typed = window.prompt(
-      `To confirm, type the number exactly:\n${currentNumber}`,
-    );
-    if (typed !== currentNumber) {
-      setError('Number did not match — release cancelled.');
-      return;
+  async function releaseTwilioConfirmed(): Promise<void> {
+    const res = await authedFetch('/v1/operators/me/twilio-number', { method: 'DELETE' });
+    if (!res.ok) {
+      const detail = await res.json().catch(() => ({}));
+      throw new Error(detail.detail ?? `Could not release the number (${res.status})`);
     }
-    await handle(async () => {
-      const res = await authedFetch('/v1/operators/me/twilio-number', { method: 'DELETE' });
-      if (!res.ok) {
-        const detail = await res.json().catch(() => ({}));
-        throw new Error(detail.detail ?? `release failed: ${res.status}`);
-      }
-      router.refresh();
-    });
+    setReleaseModalOpen(false);
+    router.refresh();
   }
 
-  async function disconnectGoogle(): Promise<void> {
-    const confirmed = window.confirm(
-      `Disconnect Google Calendar?\n\n` +
-        `The bot will not be able to check your availability or create events ` +
-        `until you reconnect. Existing booked appointments stay in your calendar.`,
-    );
-    if (!confirmed) return;
-    await handle(async () => {
-      const res = await authedFetch('/v1/operators/me/google/disconnect', { method: 'POST' });
-      if (!res.ok) {
-        const detail = await res.json().catch(() => ({}));
-        throw new Error(detail.detail ?? `disconnect failed: ${res.status}`);
-      }
-      router.refresh();
-    });
+  async function disconnectGoogleConfirmed(): Promise<void> {
+    const res = await authedFetch('/v1/operators/me/google/disconnect', { method: 'POST' });
+    if (!res.ok) {
+      const detail = await res.json().catch(() => ({}));
+      throw new Error(detail.detail ?? `Could not disconnect Google (${res.status})`);
+    }
+    setDisconnectGoogleOpen(false);
+    router.refresh();
   }
 
   async function startGoogleConnect(): Promise<void> {
     await handle(async () => {
       const res = await authedFetch('/v1/operators/me/google/connect', { method: 'POST' });
-      if (!res.ok) throw new Error(`google connect failed: ${res.status}`);
+      if (!res.ok) throw new Error('Could not start Google sign-in');
       const { url } = (await res.json()) as { url: string };
       window.location.href = url;
     });
@@ -153,7 +134,7 @@ export function Wizard({ initial }: { initial: Operator | null }): JSX.Element {
   async function startStripeConnect(): Promise<void> {
     await handle(async () => {
       const res = await authedFetch('/v1/operators/me/connect/onboarding-link', { method: 'POST' });
-      if (!res.ok) throw new Error(`stripe connect failed: ${res.status}`);
+      if (!res.ok) throw new Error('Could not start Stripe payout setup');
       const { url } = (await res.json()) as { url: string };
       window.location.href = url;
     });
@@ -165,7 +146,7 @@ export function Wizard({ initial }: { initial: Operator | null }): JSX.Element {
         method: 'POST',
         body: JSON.stringify({ plan }),
       });
-      if (!res.ok) throw new Error(`checkout failed: ${res.status}`);
+      if (!res.ok) throw new Error('Could not start checkout');
       const { url } = (await res.json()) as { url: string };
       window.location.href = url;
     });
@@ -185,7 +166,7 @@ export function Wizard({ initial }: { initial: Operator | null }): JSX.Element {
       });
       if (!res.ok) {
         const detail = await res.json().catch(() => ({}));
-        throw new Error(detail.detail ?? `save fee failed: ${res.status}`);
+        throw new Error(detail.detail ?? 'Could not save the booking fee');
       }
       router.refresh();
     });
@@ -212,7 +193,7 @@ export function Wizard({ initial }: { initial: Operator | null }): JSX.Element {
       <StepCard
         number={1}
         title="Subscribe"
-        description="7-day free trial. Card required up front."
+        description="7-day free trial. We need a card up front, but you won't be charged until day 7."
         done={!!subscribed}
       >
         {!subscribed ? (
@@ -237,8 +218,8 @@ export function Wizard({ initial }: { initial: Operator | null }): JSX.Element {
 
       <StepCard
         number={2}
-        title="Pick your trade category"
-        description="The bot will only handle calls inside this category."
+        title="Pick your trade"
+        description="The AI only handles calls about this trade. Calls outside it get a polite handoff."
         done={categoryDone}
       >
         <div className="flex gap-2">
@@ -267,8 +248,8 @@ export function Wizard({ initial }: { initial: Operator | null }): JSX.Element {
 
       <StepCard
         number={3}
-        title="Get your Twilio number"
-        description="A local US number we'll forward your missed calls to."
+        title="Get your BookingBlues phone number"
+        description="A new local US number we'll use to text customers when you miss their call. You'll forward your real business line to it in step 7."
         done={twilioDone}
       >
         {!twilioDone ? (
@@ -284,7 +265,7 @@ export function Wizard({ initial }: { initial: Operator | null }): JSX.Element {
               onClick={provisionTwilio}
               className="rounded-md bg-accent px-3 py-2 text-sm text-white"
             >
-              Provision number
+              Get my number
             </button>
           </div>
         ) : (
@@ -292,11 +273,11 @@ export function Wizard({ initial }: { initial: Operator | null }): JSX.Element {
             <p className="text-sm font-mono">{op?.twilio_number_e164}</p>
             <button
               type="button"
-              onClick={() => releaseTwilio(op!.twilio_number_e164!)}
+              onClick={() => setReleaseModalOpen(true)}
               className="text-xs text-red-700 hover:underline"
               title="Permanently release the number"
             >
-              Release
+              Release this number
             </button>
           </div>
         )}
@@ -304,8 +285,8 @@ export function Wizard({ initial }: { initial: Operator | null }): JSX.Element {
 
       <StepCard
         number={4}
-        title="Connect Google Calendar"
-        description="So the bot knows when you're free."
+        title="Connect your Google Calendar"
+        description="So the AI knows when you're free and can put new appointments on your calendar automatically."
         done={googleDone}
       >
         {!googleDone ? (
@@ -319,7 +300,7 @@ export function Wizard({ initial }: { initial: Operator | null }): JSX.Element {
         ) : (
           <button
             type="button"
-            onClick={disconnectGoogle}
+            onClick={() => setDisconnectGoogleOpen(true)}
             className="text-xs text-red-700 hover:underline"
           >
             Disconnect
@@ -329,8 +310,8 @@ export function Wizard({ initial }: { initial: Operator | null }): JSX.Element {
 
       <StepCard
         number={5}
-        title="Connect your Stripe Connect account (optional)"
-        description="Required only if you collect a booking fee. We onboard via Stripe Express."
+        title="Set up payouts (only if you charge a booking fee)"
+        description="Lets us send the booking-fee money straight to your bank. Skip this step if you don't take deposits."
         done={stripeConnectDone}
       >
         {!stripeConnectDone ? (
@@ -339,25 +320,11 @@ export function Wizard({ initial }: { initial: Operator | null }): JSX.Element {
             onClick={startStripeConnect}
             className="rounded-md border border-slate-300 px-4 py-2 text-sm"
           >
-            Start Stripe Connect onboarding
+            Set up payouts with Stripe
           </button>
         ) : (
-          <p className="text-sm text-muted">Charges + payouts enabled.</p>
-        )}
-      </StepCard>
-
-      <StepCard
-        number={7}
-        title="Forward your business calls"
-        description="Set up conditional forwarding on your real mobile so missed calls reach BookingBlues."
-        done={false}
-      >
-        {twilioDone ? (
-          <CarrierForwarding twilioNumber={op!.twilio_number_e164!} />
-        ) : (
-          <p className="text-sm text-muted">
-            Provision a Twilio number first (step 3) — we&apos;ll show the carrier-specific
-            forwarding code once your number is assigned.
+          <p className="text-sm text-emerald-700">
+            ✓ Payouts ready — money goes straight to your bank.
           </p>
         )}
       </StepCard>
@@ -365,7 +332,7 @@ export function Wizard({ initial }: { initial: Operator | null }): JSX.Element {
       <StepCard
         number={6}
         title="Booking fee"
-        description="Charge a non-refundable deposit before confirming the slot."
+        description="Charge a non-refundable deposit before confirming the slot. Cuts down on no-shows."
         done={feeDecided}
       >
         <div className="space-y-3">
@@ -405,6 +372,76 @@ export function Wizard({ initial }: { initial: Operator | null }): JSX.Element {
           ) : null}
         </div>
       </StepCard>
+
+      <StepCard
+        number={7}
+        title="Forward your real business line"
+        description="When customers call your real number and you don't pick up, your phone carrier sends the call to BookingBlues. Your phone still rings normally — only missed calls get caught by the AI."
+        done={false}
+      >
+        {twilioDone ? (
+          <CarrierForwarding twilioNumber={op!.twilio_number_e164!} />
+        ) : (
+          <p className="text-sm text-muted">
+            Get your BookingBlues number first (step 3) — once you have it we&apos;ll show you the
+            short code to dial on your phone for your carrier.
+          </p>
+        )}
+      </StepCard>
+
+      {/* ── Modals ────────────────────────────────────────────────────── */}
+      <ConfirmModal
+        open={releaseModalOpen}
+        onClose={() => setReleaseModalOpen(false)}
+        title="Release this phone number?"
+        confirmLabel="Yes, release it permanently"
+        cancelLabel="Keep it"
+        severity="danger"
+        {...(op?.twilio_number_e164 ? { typeToConfirm: op.twilio_number_e164 } : {})}
+        body={
+          <div className="space-y-3">
+            <p>
+              You&apos;re about to give up <span className="font-mono">{op?.twilio_number_e164}</span>.
+              This is permanent and almost always a bad idea unless you&apos;re shutting down or
+              switching to a new business phone.
+            </p>
+            <ul className="list-disc space-y-1 pl-5 text-xs">
+              <li>The number goes back into the public pool — anyone can buy it next.</li>
+              <li>We <strong>cannot</strong> get this exact number back for you later.</li>
+              <li>Customers who saved this number lose touch with you.</li>
+              <li>Your call-forwarding setup (from step 7) becomes useless until you set it up
+                again with a new number.</li>
+            </ul>
+            <p className="text-xs">
+              If you just want to pause for a while, contact support instead — we can put your
+              account on hold without losing the number.
+            </p>
+          </div>
+        }
+        onConfirm={releaseTwilioConfirmed}
+      />
+
+      <ConfirmModal
+        open={disconnectGoogleOpen}
+        onClose={() => setDisconnectGoogleOpen(false)}
+        title="Disconnect your Google Calendar?"
+        confirmLabel="Yes, disconnect"
+        cancelLabel="Keep it connected"
+        severity="warning"
+        body={
+          <div className="space-y-2">
+            <p>
+              The AI won&apos;t be able to check your availability or add new appointments to your
+              calendar until you reconnect.
+            </p>
+            <p className="text-xs text-muted">
+              Appointments already on your calendar stay where they are — nothing gets deleted.
+              You can reconnect anytime.
+            </p>
+          </div>
+        }
+        onConfirm={disconnectGoogleConfirmed}
+      />
     </div>
   );
 }
@@ -435,9 +472,9 @@ function FeeBreakdown({ depositDollars }: { depositDollars: number }): JSX.Eleme
     <div className="rounded-md border bg-slate-50 p-3 text-xs">
       <div className="font-medium mb-2">For a {fmt(depositCents)} deposit:</div>
       <ul className="space-y-1 text-muted">
-        <li className="flex justify-between"><span>Stripe processing fee (2.9% + 30¢)</span><span className="font-mono">−{fmt(stripeFeeCents)}</span></li>
-        <li className="flex justify-between"><span>BookingBlues platform fee ({ratePct}%)</span><span className="font-mono">−{fmt(platformFeeCents)}</span></li>
-        <li className="flex justify-between font-medium text-ink border-t pt-1"><span>You keep</span><span className="font-mono">{fmt(operatorKeepsCents)}</span></li>
+        <li className="flex justify-between"><span>Card processing fee (2.9% + 30¢)</span><span className="font-mono">−{fmt(stripeFeeCents)}</span></li>
+        <li className="flex justify-between"><span>BookingBlues fee ({ratePct}%)</span><span className="font-mono">−{fmt(platformFeeCents)}</span></li>
+        <li className="flex justify-between font-medium text-ink border-t pt-1"><span>You get</span><span className="font-mono">{fmt(operatorKeepsCents)}</span></li>
       </ul>
     </div>
   );
