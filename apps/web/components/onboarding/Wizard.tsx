@@ -95,6 +95,49 @@ export function Wizard({ initial }: { initial: Operator | null }): JSX.Element {
     });
   }
 
+  async function releaseTwilio(currentNumber: string): Promise<void> {
+    const confirmed = window.confirm(
+      `WARNING: Releasing ${currentNumber} is permanent.\n\n` +
+        `Twilio puts the number back in the public pool. We can NOT guarantee ` +
+        `you'll get the same number back if you change your mind. ` +
+        `Customers who saved this number to their phone will lose touch.\n\n` +
+        `Provision a fresh number? You'll lose all forwarding rules pointed at this one.`,
+    );
+    if (!confirmed) return;
+    const typed = window.prompt(
+      `To confirm, type the number exactly:\n${currentNumber}`,
+    );
+    if (typed !== currentNumber) {
+      setError('Number did not match — release cancelled.');
+      return;
+    }
+    await handle(async () => {
+      const res = await authedFetch('/v1/operators/me/twilio-number', { method: 'DELETE' });
+      if (!res.ok) {
+        const detail = await res.json().catch(() => ({}));
+        throw new Error(detail.detail ?? `release failed: ${res.status}`);
+      }
+      router.refresh();
+    });
+  }
+
+  async function disconnectGoogle(): Promise<void> {
+    const confirmed = window.confirm(
+      `Disconnect Google Calendar?\n\n` +
+        `The bot will not be able to check your availability or create events ` +
+        `until you reconnect. Existing booked appointments stay in your calendar.`,
+    );
+    if (!confirmed) return;
+    await handle(async () => {
+      const res = await authedFetch('/v1/operators/me/google/disconnect', { method: 'POST' });
+      if (!res.ok) {
+        const detail = await res.json().catch(() => ({}));
+        throw new Error(detail.detail ?? `disconnect failed: ${res.status}`);
+      }
+      router.refresh();
+    });
+  }
+
   async function startGoogleConnect(): Promise<void> {
     await handle(async () => {
       const res = await authedFetch('/v1/operators/me/google/connect', { method: 'POST' });
@@ -242,7 +285,17 @@ export function Wizard({ initial }: { initial: Operator | null }): JSX.Element {
             </button>
           </div>
         ) : (
-          <p className="text-sm font-mono">{op?.twilio_number_e164}</p>
+          <div className="flex items-center gap-3">
+            <p className="text-sm font-mono">{op?.twilio_number_e164}</p>
+            <button
+              type="button"
+              onClick={() => releaseTwilio(op!.twilio_number_e164!)}
+              className="text-xs text-red-700 hover:underline"
+              title="Permanently release the number"
+            >
+              Release
+            </button>
+          </div>
         )}
       </StepCard>
 
@@ -260,7 +313,15 @@ export function Wizard({ initial }: { initial: Operator | null }): JSX.Element {
           >
             Connect Google
           </button>
-        ) : null}
+        ) : (
+          <button
+            type="button"
+            onClick={disconnectGoogle}
+            className="text-xs text-red-700 hover:underline"
+          >
+            Disconnect
+          </button>
+        )}
       </StepCard>
 
       <StepCard

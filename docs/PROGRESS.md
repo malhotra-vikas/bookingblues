@@ -194,18 +194,52 @@ Goal: everything non-product-feature — security, observability, CI/CD discipli
 - [ ] Token-usage logging per advance (cost guardrail per CLAUDE.md §17 "OpenAI cost")
 
 ### Slice 7.5: Human-in-the-loop (HITL) via Slack
-The bot escalates to a human operator/agent in Slack when (a) it cannot help the caller, or (b) the caller explicitly asks for a human. This is a higher-fidelity replacement for the `escalate_to_human` email path in §9.3 — emails turn into Slack threads with two-way bridging.
-- [ ] Slack app: bot user, OAuth scopes (`chat:write`, `channels:history`, `app_mentions:read`, `commands`), event subscription URL
-- [ ] Per-operator Slack workspace install flow (OAuth) + `slack_connections` table (encrypted bot token, team_id, default channel id)
-- [ ] New `escalations` table: `id`, `operator_id`, `conversation_id`, `caller_phone_e164`, `slack_channel_id`, `slack_thread_ts`, `reason ('bot_stuck'|'caller_requested')`, `status ('open'|'resolved'|'abandoned')`, `resolved_by_user_id`, `created_at`, `resolved_at`
-- [ ] Bot tool `escalate_to_slack({ reason })` — replaces or augments `escalate_to_human`
-- [ ] On escalation: post a parent message in the operator's configured Slack channel with caller phone (last 4), conversation summary, recent transcript; capture `thread_ts`
-- [ ] Agent replies in the Slack thread → bridge service forwards as SMS to caller (rate-limited per §9.3)
-- [ ] Caller SMS replies → mirrored as new messages in the same Slack thread (with PII redaction in non-prod)
-- [ ] Slack slash commands: `/bb resolve`, `/bb book <ISO datetime>`, `/bb close-spam` to take terminal actions on the conversation from Slack
-- [ ] Slack webhook signature verification (per CLAUDE.md §11.1 pattern); idempotency via `webhook_events` with `source='slack'` (requires migration adding `'slack'` to `webhook_source` enum)
-- [ ] Cap: only one open escalation per conversation; second trigger reuses existing thread
-- [ ] Update CLAUDE.md §3 (architecture diagram), §4 (tech stack adds Slack), §9.3 (tool list), §10 (webhooks endpoint), §11 (signature validation, allowlist channels) when this slice lands
+The bot escalates to a human in Slack and stays bridged. The SMS channel never closes — Slack just becomes the operator's UI on the same conversation. The human can hand control BACK to the AI mid-thread when they're done, and the AI picks up the next caller message normally.
+
+**Triggers (both must be supported)**
+- [ ] AI-initiated: bot calls `escalate_to_human` (already exists in Slice 7) — auto-fires when bot is stuck (max-turn cap, calendar revoked, off-topic gray area, repeated tool failures)
+- [ ] Caller-initiated: caller texts something like "talk to a human", "let me speak to someone", "manager please". Detect via the model itself (system prompt instruction: "if the caller asks for a human, immediately call `escalate_to_human` with reason='caller_requested'") — no separate intent classifier needed
+- [ ] Operator-initiated from admin dashboard (Slice 15): "force escalate" button on a live conversation
+
+**State machine extension** (CLAUDE.md §12 already has `escalated`)
+- [ ] When status='escalated', the AI advance loop **does not** pick up new caller messages — they're routed straight to the Slack thread instead
+- [ ] Operator can set status back to 'awaiting_caller' via slash command (`/bb back-to-bot`) — the next caller message resumes the AI loop with full history
+
+**Schema**
+- [ ] Migration: add `'slack'` to `webhook_source` enum
+- [ ] `slack_connections` table: `operator_id` (unique), `team_id`, `team_name`, `default_channel_id`, `encrypted_bot_token` (AES-256-GCM via EncryptionService), `installed_at`, `installed_by_user_id`
+- [ ] `escalations` table: `id`, `operator_id`, `conversation_id`, `caller_phone_e164`, `slack_channel_id`, `slack_thread_ts`, `reason ('bot_stuck'|'caller_requested'|'operator_forced')`, `status ('open'|'resolved'|'abandoned')`, `opened_by ('bot'|'caller'|'operator')`, `resolved_by_user_id`, `created_at`, `resolved_at`
+
+**Slack app**
+- [ ] Bot user with OAuth scopes: `chat:write`, `channels:history`, `groups:history`, `im:history`, `app_mentions:read`, `commands`, `users:read`, `team:read`
+- [ ] Per-operator workspace install flow (`/v1/operators/me/slack/install` → Slack OAuth → callback writes `slack_connections`)
+- [ ] Channel picker on install: operator chooses which channel BookingBlues posts into (default: a new private `#bookingblues-{operator-id}`)
+
+**Bot ↔ Slack bridge**
+- [ ] `escalate_to_slack` (or augmented `escalate_to_human`): post a parent message in the configured channel with caller phone (last-4 only by default; full number gated behind a "Show number" button), conversation summary, last 10 transcript turns, `[Resume AI] [Mark spam] [Close conversation]` action buttons. Capture `thread_ts` into `escalations`.
+- [ ] Outbound: agent replies in the Slack thread → bridge service forwards as SMS to caller (`twilio.sendSms`, rate-limited per §9.3 8s/message)
+- [ ] Inbound: caller SMS arrives during escalation → instead of running AdvanceService, the SMS webhook posts to the Slack thread as a new threaded message
+- [ ] Both directions: persist the message into `messages` table with `role='caller'` or `role='system'` (for agent), `slack_message_ts` column added
+- [ ] PII handling: in non-prod, mask the caller's number to last-4 in Slack posts (per §11.5); in prod, full number for operator usefulness (still redacted in pino logs)
+
+**Slack interactions**
+- [ ] Slash commands: `/bb resolve` (close escalation, status=resolved, conversation status=completed outcome=rejected), `/bb book <ISO datetime>` (manual book bypassing AI), `/bb close-spam`, `/bb back-to-bot` (resume AI advance), `/bb show-number` (reveal full caller number to this user only, audit-logged)
+- [ ] Action buttons on the parent message wire to the same actions
+- [ ] Slack webhook signature verification (per §11.1 pattern); idempotency via `webhook_events` with `source='slack'`
+
+**Caps + safety**
+- [ ] One open escalation per conversation; if a second trigger fires, post into the existing thread instead of creating a new one
+- [ ] If Slack is configured but the bot can't post (channel deleted, token revoked, rate-limited), fall back to the original email path (Slice 10 wires Resend)
+- [ ] Audit log every transition: bot→escalated, escalated→back-to-bot, escalated→resolved
+- [ ] Slack rate-limit awareness: Slack's chat.postMessage is 1 msg/sec/channel; respect 429s with backoff
+
+**Doc updates when this slice lands**
+- [ ] CLAUDE.md §3 (architecture diagram adds Slack)
+- [ ] §4 (tech stack adds Slack)
+- [ ] §9.3 (tool list updated; `escalate_to_human` now a Slack handoff)
+- [ ] §10 (`/webhooks/slack/*` endpoints + slash command URL)
+- [ ] §11 (signature validation, allowlist channels in non-prod)
+- [ ] §12 (state machine — `escalated` is now non-terminal; transition back to `awaiting_caller` allowed)
 
 ### Slice 10: Notifications + polish
 - [ ] Resend wrapper, transactional email templates

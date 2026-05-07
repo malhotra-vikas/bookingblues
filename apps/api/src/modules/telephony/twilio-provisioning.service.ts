@@ -109,4 +109,60 @@ export class TwilioProvisioningService {
 
     return { phone_number_e164: purchased.phoneNumber, twilio_sid: purchased.sid };
   }
+
+  /**
+   * Release the operator's Twilio number permanently. Twilio does NOT
+   * guarantee the same number can be re-acquired — it goes back into the
+   * provider pool and may be assigned to anyone within minutes. The web UI
+   * presents an explicit "type the number to confirm" warning before this
+   * endpoint is hit.
+   */
+  async release(userId: string): Promise<{ released_number: string }> {
+    const { data: operator, error: lookupErr } = await this.supabase
+      .db()
+      .from('operators')
+      .select('id, twilio_number_sid, twilio_number_e164')
+      .eq('user_id', userId)
+      .maybeSingle();
+    if (lookupErr) throw lookupErr;
+    if (!operator) throw new NotFoundError('Operator not found for this user');
+    if (!operator.twilio_number_sid || !operator.twilio_number_e164) {
+      throw new NotFoundError('Operator does not have a Twilio number to release');
+    }
+
+    // Tell Twilio to release the number (best-effort). Even if Twilio errors
+    // (e.g. number already gone), we still mark it released DB-side so the
+    // operator can re-provision; ops can reconcile any orphans on Twilio.
+    try {
+      await this.twilio.client().incomingPhoneNumbers(operator.twilio_number_sid).remove();
+    } catch (err) {
+      this.logger.error(
+        { sid: operator.twilio_number_sid, err: (err as Error).message },
+        'Twilio release call failed — proceeding with DB cleanup',
+      );
+    }
+
+    // Mark the pool row released; clear the operator's pointer.
+    const { error: poolErr } = await this.supabase
+      .db()
+      .from('twilio_numbers')
+      .update({ status: 'released', released_at: new Date().toISOString(), operator_id: null })
+      .eq('twilio_sid', operator.twilio_number_sid);
+    if (poolErr) {
+      this.logger.error(
+        { sid: operator.twilio_number_sid, err: poolErr.message },
+        'twilio_numbers update failed during release',
+      );
+      throw poolErr;
+    }
+
+    const { error: opErr } = await this.supabase
+      .db()
+      .from('operators')
+      .update({ twilio_number_e164: null, twilio_number_sid: null })
+      .eq('id', operator.id);
+    if (opErr) throw opErr;
+
+    return { released_number: operator.twilio_number_e164 };
+  }
 }

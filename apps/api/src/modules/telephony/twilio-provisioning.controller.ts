@@ -1,4 +1,4 @@
-import { Body, Controller, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Post, UseGuards } from '@nestjs/common';
 
 import { AuthGuard } from '../../common/auth/auth.guard';
 import { CurrentUser } from '../../common/auth/current-user.decorator';
@@ -19,5 +19,12 @@ export class TwilioProvisioningController {
     @Body(new ZodBodyPipe(ProvisionNumberSchema)) body: ProvisionNumber,
   ): Promise<ProvisionNumberResponse> {
     return this.service.provision(user.userId, body.area_code);
+  }
+
+  @Delete()
+  async release(
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<{ released_number: string }> {
+    return this.service.release(user.userId);
   }
 }
