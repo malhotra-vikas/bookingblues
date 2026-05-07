@@ -33,8 +33,7 @@ RUN corepack enable
 WORKDIR /repo
 COPY --from=build /repo /repo
 
-RUN pnpm --filter @bookingblues/web... prune --prod
-
+# `pnpm prune --filter` unsupported in pnpm 9 — kept full workspace for now.
 WORKDIR /repo/apps/web
 ENV NODE_ENV=production
 EXPOSE 3000

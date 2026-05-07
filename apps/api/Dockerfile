@@ -21,15 +21,15 @@ COPY . .
 
 RUN pnpm --filter @bookingblues/api... build
 
-# Run stage — production dependencies only.
+# Run stage. We keep the full workspace (including devDeps) for now —
+# `pnpm prune --filter` is unsupported in pnpm 9, and a per-app reinstall
+# with --prod doesn't reliably resolve workspace `*` symlinks. Image is
+# slightly larger; tracked for Slice 13 cleanup.
 FROM node:22-alpine
 
 RUN corepack enable
 WORKDIR /repo
 COPY --from=build /repo /repo
-
-# Prune dev deps after the build to slim the runtime image.
-RUN pnpm --filter @bookingblues/api... prune --prod
 
 WORKDIR /repo/apps/api
 ENV NODE_ENV=production
