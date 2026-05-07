@@ -63,6 +63,7 @@ const baseSchema = z.object({
   // Stripe (booking-fee economics)
   PLATFORM_TAKE_RATE_BPS: z.coerce.number().int().min(0).max(10_000).default(1000),
   MIN_PLATFORM_FEE_CENTS: z.coerce.number().int().min(0).default(100),
+  DEFAULT_BOOKING_FEE_CENTS: z.coerce.number().int().min(0).default(2500),
   TRIAL_DAYS: z.coerce.number().int().min(0).default(7),
 
   // Google OAuth

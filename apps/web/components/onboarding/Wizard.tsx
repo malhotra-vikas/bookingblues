@@ -56,7 +56,9 @@ export function Wizard({ initial }: { initial: Operator | null }): JSX.Element {
   const [pendingAreaCode, setPendingAreaCode] = useState('');
   const [pendingFeeEnabled, setPendingFeeEnabled] = useState(op?.booking_fee_enabled ?? false);
   const [pendingFeeDollars, setPendingFeeDollars] = useState(
-    op?.booking_fee_cents != null ? (op.booking_fee_cents / 100).toFixed(2) : '',
+    op?.booking_fee_cents != null
+      ? (op.booking_fee_cents / 100).toFixed(2)
+      : (publicEnv.NEXT_PUBLIC_DEFAULT_BOOKING_FEE_CENTS / 100).toFixed(2),
   );
 
   async function handle<T>(fn: () => Promise<T>): Promise<T | null> {
@@ -366,38 +368,77 @@ export function Wizard({ initial }: { initial: Operator | null }): JSX.Element {
         description="Charge a non-refundable deposit before confirming the slot."
         done={feeDecided}
       >
-        <div className="flex items-end gap-3">
-          <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={pendingFeeEnabled}
-              onChange={(e) => setPendingFeeEnabled(e.target.checked)}
-            />
-            Collect a booking fee
-          </label>
-          {pendingFeeEnabled ? (
-            <div>
-              <label className="block text-xs text-muted">Amount (USD)</label>
+        <div className="space-y-3">
+          <div className="flex items-end gap-3">
+            <label className="flex items-center gap-2 text-sm">
               <input
-                type="number"
-                inputMode="decimal"
-                step="0.01"
-                min="0"
-                value={pendingFeeDollars}
-                onChange={(e) => setPendingFeeDollars(e.target.value)}
-                className="rounded-md border border-slate-300 px-3 py-2 text-sm w-32"
+                type="checkbox"
+                checked={pendingFeeEnabled}
+                onChange={(e) => setPendingFeeEnabled(e.target.checked)}
               />
-            </div>
+              Collect a booking fee
+            </label>
+            {pendingFeeEnabled ? (
+              <div>
+                <label className="block text-xs text-muted">Amount (USD)</label>
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  step="0.01"
+                  min="0"
+                  value={pendingFeeDollars}
+                  onChange={(e) => setPendingFeeDollars(e.target.value)}
+                  className="rounded-md border border-slate-300 px-3 py-2 text-sm w-32"
+                />
+              </div>
+            ) : null}
+            <button
+              type="button"
+              onClick={saveFee}
+              className="rounded-md bg-accent px-3 py-2 text-sm text-white"
+            >
+              Save
+            </button>
+          </div>
+          {pendingFeeEnabled && Number(pendingFeeDollars) > 0 ? (
+            <FeeBreakdown depositDollars={Number(pendingFeeDollars)} />
           ) : null}
-          <button
-            type="button"
-            onClick={saveFee}
-            className="rounded-md bg-accent px-3 py-2 text-sm text-white"
-          >
-            Save
-          </button>
         </div>
       </StepCard>
+    </div>
+  );
+}
+
+/**
+ * Mirrors apps/api/src/modules/payments/pricing.ts at the same default config.
+ * The server is authoritative — this is just for the wizard's "what do I keep"
+ * preview. Values clamp the same way the server clamps.
+ */
+function FeeBreakdown({ depositDollars }: { depositDollars: number }): JSX.Element {
+  const depositCents = Math.round(depositDollars * 100);
+  const takeRateBps = publicEnv.NEXT_PUBLIC_PLATFORM_TAKE_RATE_BPS;
+
+  // Stripe US standard: 2.9% + 30¢ per charge.
+  const stripeFeeCents = Math.ceil(depositCents * 0.029) + 30;
+  const requestedAppFee = Math.max(
+    Math.floor((depositCents * takeRateBps) / 10_000),
+    100, // mirrors MIN_PLATFORM_FEE_CENTS default
+  );
+  const cap = Math.max(0, depositCents - stripeFeeCents);
+  const platformFeeCents = Math.min(requestedAppFee, cap);
+  const operatorKeepsCents = depositCents - stripeFeeCents - platformFeeCents;
+
+  const fmt = (c: number): string => `$${(c / 100).toFixed(2)}`;
+  const ratePct = (takeRateBps / 100).toFixed(0);
+
+  return (
+    <div className="rounded-md border bg-slate-50 p-3 text-xs">
+      <div className="font-medium mb-2">For a {fmt(depositCents)} deposit:</div>
+      <ul className="space-y-1 text-muted">
+        <li className="flex justify-between"><span>Stripe processing fee (2.9% + 30¢)</span><span className="font-mono">−{fmt(stripeFeeCents)}</span></li>
+        <li className="flex justify-between"><span>BookingBlues platform fee ({ratePct}%)</span><span className="font-mono">−{fmt(platformFeeCents)}</span></li>
+        <li className="flex justify-between font-medium text-ink border-t pt-1"><span>You keep</span><span className="font-mono">{fmt(operatorKeepsCents)}</span></li>
+      </ul>
     </div>
   );
 }
