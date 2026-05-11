@@ -10,6 +10,7 @@ import { TwilioService } from '../../common/twilio/twilio.service';
 import { CalendarService } from '../calendar/calendar.service';
 import { ConversationsService } from '../conversations/conversations.service';
 import { PaymentsService } from '../payments/payments.service';
+import { EscalationsService } from '../slack/escalations.service';
 import { assembleSystemPrompt, wrapCallerMessage } from './prompts';
 import {
   bookAppointment,
@@ -47,6 +48,7 @@ export class AdvanceService {
     private readonly twilio: TwilioService,
     private readonly conversations: ConversationsService,
     private readonly payments: PaymentsService,
+    private readonly escalations: EscalationsService,
     private readonly logger: PinoLogger,
   ) {
     this.logger.setContext(AdvanceService.name);
@@ -67,6 +69,18 @@ export class AdvanceService {
       return;
     }
 
+    // §12 + Slice 7.5: when a conversation is in `escalated`, the AI must not
+    // reply. Caller messages are routed to the Slack thread by the SMS webhook,
+    // not by this loop. The bridge here is just a safety net in case the
+    // webhook gates ever drift.
+    if (conversation.status === 'escalated') {
+      this.logger.info(
+        { conversationId: conversation.id, operatorId: operator.id },
+        'advance skipped: conversation is escalated',
+      );
+      return;
+    }
+
     // Caller-turn cap (CLAUDE.md §9.3) — count caller messages on this convo.
     const { count: callerTurns } = await this.supabase
       .db()
@@ -75,8 +89,8 @@ export class AdvanceService {
       .eq('conversation_id', conversation.id)
       .eq('role', 'caller');
     if ((callerTurns ?? 0) >= MAX_CALLER_TURNS) {
-      const result = escalateToHuman(
-        { reason: `caller turn cap (${MAX_CALLER_TURNS}) reached` },
+      const result = await escalateToHuman(
+        { reason: `turn_cap: caller turn cap (${MAX_CALLER_TURNS}) reached` },
         this.toolCtx(operator, conversation, callerPhoneE164),
       );
       await this.applyTerminal(conversation.id, result);
@@ -187,6 +201,7 @@ export class AdvanceService {
       twilio: this.twilio,
       conversations: this.conversations,
       payments: this.payments,
+      escalations: this.escalations,
       logger: this.logger,
     };
   }
@@ -246,7 +261,7 @@ export class AdvanceService {
       case 'mark_spam':
         return markSpam(MarkSpamArgs.parse(parsed));
       case 'escalate_to_human':
-        return escalateToHuman(EscalateToHumanArgs.parse(parsed), ctx);
+        return await escalateToHuman(EscalateToHumanArgs.parse(parsed), ctx);
       default:
         throw new ValidationError(`Unknown tool: ${name}`);
     }

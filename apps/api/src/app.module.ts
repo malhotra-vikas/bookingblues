@@ -3,6 +3,7 @@ import { APP_FILTER, APP_GUARD } from '@nestjs/core';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { PinoLogger } from 'nestjs-pino';
 
+import { AuditModule } from './common/audit/audit.module';
 import { AuthModule } from './common/auth/auth.module';
 import { EncryptionModule } from './common/crypto/encryption.module';
 import { ProblemDetailsFilter } from './common/filters/problem-details.filter';
@@ -13,6 +14,7 @@ import { SupabaseModule } from './common/supabase/supabase.module';
 import { TwilioModule } from './common/twilio/twilio.module';
 import { WebhooksModule as IdempotencyWebhooksModule } from './common/webhooks/webhooks.module';
 import { ConfigModule } from './config/config.module';
+import { AdminModule } from './modules/admin/admin.module';
 import { AiModule } from './modules/ai/ai.module';
 import { BillingModule } from './modules/billing/billing.module';
 import { CalendarModule } from './modules/calendar/calendar.module';
@@ -22,6 +24,7 @@ import { HealthController } from './modules/health/health.controller';
 import { MeModule } from './modules/me/me.module';
 import { OperatorsModule } from './modules/operators/operators.module';
 import { PaymentsModule } from './modules/payments/payments.module';
+import { SlackModule } from './modules/slack/slack.module';
 import { TelephonyModule } from './modules/telephony/telephony.module';
 import { WebhooksModule } from './modules/webhooks/webhooks.module';
 
@@ -40,6 +43,7 @@ import { WebhooksModule } from './modules/webhooks/webhooks.module';
     }),
     EncryptionModule,
     SupabaseModule,
+    AuditModule,
     StripeModule,
     TwilioModule,
     OpenAIModule,
@@ -54,6 +58,8 @@ import { WebhooksModule } from './modules/webhooks/webhooks.module';
     PaymentsModule,
     DashboardModule,
     AiModule,
+    AdminModule,
+    SlackModule,
     WebhooksModule,
   ],
   controllers: [HealthController],

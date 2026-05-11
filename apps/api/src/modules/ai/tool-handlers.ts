@@ -5,6 +5,7 @@ import { ConflictError, ValidationError } from '../../common/errors/app-error';
 import type { CalendarService } from '../calendar/calendar.service';
 import type { ConversationsService } from '../conversations/conversations.service';
 import type { PaymentsService } from '../payments/payments.service';
+import type { EscalationsService } from '../slack/escalations.service';
 import type { SupabaseService } from '../../common/supabase/supabase.service';
 import type { TwilioService } from '../../common/twilio/twilio.service';
 import type {
@@ -29,6 +30,7 @@ export interface ToolContext {
   readonly twilio: TwilioService;
   readonly conversations: ConversationsService;
   readonly payments: PaymentsService;
+  readonly escalations: EscalationsService;
   readonly logger: PinoLogger;
 }
 
@@ -247,18 +249,56 @@ export function markSpam(args: MarkSpamArgs): ToolResult {
   };
 }
 
-export function escalateToHuman(args: EscalateToHumanArgs, ctx: ToolContext): ToolResult {
-  // Slice 10 (Resend) wires the email; Slice 7.5 wires the Slack thread. For
-  // now we transition the conversation to `escalated` and the operator can
-  // see the transcript in their dashboard (Slice 9).
-  ctx.logger.info(
-    { conversationId: ctx.conversation.id, reason: args.reason },
-    'escalate_to_human — Slice 7.5 (Slack) and Slice 10 (email) will deliver this',
-  );
+export async function escalateToHuman(
+  args: EscalateToHumanArgs,
+  ctx: ToolContext,
+): Promise<ToolResult> {
+  // Slice 7.5: bot-initiated escalation opens a Slack thread (or falls back
+  // to email when Slack isn't configured). Either way the conversation flips
+  // to `escalated` so the AI advance loop won't reply on new caller messages —
+  // those are bridged to the human's Slack thread instead.
+  const reasonNorm = normaliseReason(args.reason);
+  try {
+    const { deliveredVia } = await ctx.escalations.openEscalation({
+      operator: ctx.operator,
+      conversation: ctx.conversation,
+      callerPhoneE164: ctx.callerPhoneE164,
+      reason: reasonNorm,
+      openedBy: reasonNorm === 'caller_requested' ? 'caller' : 'bot',
+    });
+    ctx.logger.info(
+      { conversationId: ctx.conversation.id, reason: args.reason, deliveredVia },
+      'escalate_to_human opened escalation',
+    );
+  } catch (err) {
+    // EscalationsService already flips the conversation status before posting,
+    // so even if Slack fails we're in a consistent state. Surface to logs.
+    ctx.logger.error(
+      { err: (err as Error).message, conversationId: ctx.conversation.id },
+      'escalate_to_human failed to open Slack escalation; conversation still flipped',
+    );
+  }
   return {
     content: { acknowledged: true, reason: args.reason },
     state: 'escalated',
     outboundMessage:
       "I've passed your message to the team — someone will reach out shortly.",
   };
+}
+
+/** Map free-form reason text from the model to the closed enum the DB expects. */
+function normaliseReason(
+  reason: string,
+):
+  | 'bot_stuck'
+  | 'caller_requested'
+  | 'operator_forced'
+  | 'calendar_revoked'
+  | 'turn_cap' {
+  const r = reason.toLowerCase();
+  if (r.includes('caller') && r.includes('request')) return 'caller_requested';
+  if (r.includes('human')) return 'caller_requested';
+  if (r.includes('turn cap') || r.includes('turn_cap')) return 'turn_cap';
+  if (r.includes('calendar') && r.includes('revok')) return 'calendar_revoked';
+  return 'bot_stuck';
 }

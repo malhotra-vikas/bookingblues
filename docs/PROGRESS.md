@@ -10,10 +10,10 @@ When a section is wrong or stale, fix it in the same commit as the change.
 ## Status
 
 - **Phase**: Foundations (scaffolding before features)
-- **Last updated**: 2026-05-05
-- **Active slice**: none — ready to start the next one
+- **Last updated**: 2026-05-11
+- **Active slice**: none — Slice 15 + 7.5 just landed; pending E2E smoke + Slack-app creation
 - **Production target**: EC2 (Slice 14). Railway is staging only (Slice 13).
-- **HITL**: Slack-based (Slice 7.5).
+- **HITL**: Slack-based (Slice 7.5) — **shipped** (code, manifest, docs; needs the Slack app created in api.slack.com to function end-to-end).
 
 ---
 
@@ -230,53 +230,52 @@ OSM. Less accurate but acceptable for occasional operator setup.
 - [ ] Fee timeout (cancel `appointments` whose `fee_status='pending'` after a configurable window)
 - [ ] Token-usage logging per advance (cost guardrail per CLAUDE.md §17 "OpenAI cost")
 
-### Slice 7.5: Human-in-the-loop (HITL) via Slack
+### Slice 7.5: Human-in-the-loop (HITL) via Slack — ✅ **shipped 2026-05-11**
 The bot escalates to a human in Slack and stays bridged. The SMS channel never closes — Slack just becomes the operator's UI on the same conversation. The human can hand control BACK to the AI mid-thread when they're done, and the AI picks up the next caller message normally.
 
+**Code complete; end-to-end test needs the Slack app to be created** via `docs/slack-app-manifest.yaml` + `docs/SLACK_SETUP.md`. Until then, the API serves the OAuth routes but no operator can actually install. The `escalate_to_human` tool still flips conversation status to `escalated` even when Slack isn't configured (no-op delivery + email fallback awaiting Slice 10).
+
 **Triggers (both must be supported)**
-- [ ] AI-initiated: bot calls `escalate_to_human` (already exists in Slice 7) — auto-fires when bot is stuck (max-turn cap, calendar revoked, off-topic gray area, repeated tool failures)
-- [ ] Caller-initiated: caller texts something like "talk to a human", "let me speak to someone", "manager please". Detect via the model itself (system prompt instruction: "if the caller asks for a human, immediately call `escalate_to_human` with reason='caller_requested'") — no separate intent classifier needed
-- [ ] Operator-initiated from admin dashboard (Slice 15): "force escalate" button on a live conversation
+- [x] AI-initiated: bot calls `escalate_to_human` (already exists in Slice 7) — auto-fires when bot is stuck (max-turn cap, calendar revoked, off-topic gray area, repeated tool failures)
+- [x] Caller-initiated: caller texts something like "talk to a human" — system prompt already instructs the model to call `escalate_to_human` (system prompt §"Hard rules")
+- [x] Operator-initiated from admin dashboard (Slice 15): admin can force-end via `/v1/admin/conversations/:id/force-end` — a dedicated "force-escalate" admin endpoint is a small follow-up (out of MVP scope)
 
-**State machine extension** (CLAUDE.md §12 already has `escalated`)
-- [ ] When status='escalated', the AI advance loop **does not** pick up new caller messages — they're routed straight to the Slack thread instead
-- [ ] Operator can set status back to 'awaiting_caller' via slash command (`/bb back-to-bot`) — the next caller message resumes the AI loop with full history
+**State machine extension** (CLAUDE.md §12 — `escalated` is now non-terminal)
+- [x] When status='escalated', the AI advance loop **does not** pick up new caller messages — they're routed to the Slack thread via `EscalationsService.forwardCallerSmsToSlack` from `twilio-sms.controller.ts`
+- [x] Operator hands back via `/bb back-to-bot` slash command OR the "Resume AI" button → `escalations` flips to `resolved`, conversation flips to `awaiting_caller`, the next caller SMS resumes advance with full history
 
-**Schema**
-- [ ] Migration: add `'slack'` to `webhook_source` enum
-- [ ] `slack_connections` table: `operator_id` (unique), `team_id`, `team_name`, `default_channel_id`, `encrypted_bot_token` (AES-256-GCM via EncryptionService), `installed_at`, `installed_by_user_id`
-- [ ] `escalations` table: `id`, `operator_id`, `conversation_id`, `caller_phone_e164`, `slack_channel_id`, `slack_thread_ts`, `reason ('bot_stuck'|'caller_requested'|'operator_forced')`, `status ('open'|'resolved'|'abandoned')`, `opened_by ('bot'|'caller'|'operator')`, `resolved_by_user_id`, `created_at`, `resolved_at`
+**Schema** (migration `20260511000002_hitl_slack.sql`)
+- [x] Migration: add `'slack'` to `webhook_source` enum
+- [x] `slack_connections` table: `operator_id` (unique), `team_id`, `team_name`, `default_channel_id`, `encrypted_bot_token`, `scopes`, `installed_at`, `installed_by_user_id`, `status`
+- [x] `escalations` table: full schema + `escalation_reason` / `escalation_status` / `escalation_opener` enums + `escalations_one_open_per_conversation` partial unique index + RLS (select-own for operator, service-role for writes)
+- [x] `messages.slack_message_ts` column + sparse index
 
 **Slack app**
-- [ ] Bot user with OAuth scopes: `chat:write`, `channels:history`, `groups:history`, `im:history`, `app_mentions:read`, `commands`, `users:read`, `team:read`
-- [ ] Per-operator workspace install flow (`/v1/operators/me/slack/install` → Slack OAuth → callback writes `slack_connections`)
-- [ ] Channel picker on install: operator chooses which channel BookingBlues posts into (default: a new private `#bookingblues-{operator-id}`)
+- [x] Manifest YAML (`docs/slack-app-manifest.yaml`) with bot scopes, slash command, event subscriptions, interactivity URL, OAuth redirect URL
+- [x] Per-operator workspace install flow (`/v1/operators/me/slack/install` → Slack OAuth → `/webhooks/slack/oauth/callback` → encrypted token written to `slack_connections`); state HMAC binds operator id so a third party can't redirect-attack the callback
+- [ ] Channel picker UI on install — MVP uses the `incoming_webhook.channel` from the OAuth grant; explicit picker deferred to follow-up
 
 **Bot ↔ Slack bridge**
-- [ ] `escalate_to_slack` (or augmented `escalate_to_human`): post a parent message in the configured channel with caller phone (last-4 only by default; full number gated behind a "Show number" button), conversation summary, last 10 transcript turns, `[Resume AI] [Mark spam] [Close conversation]` action buttons. Capture `thread_ts` into `escalations`.
-- [ ] Outbound: agent replies in the Slack thread → bridge service forwards as SMS to caller (`twilio.sendSms`, rate-limited per §9.3 8s/message)
-- [ ] Inbound: caller SMS arrives during escalation → instead of running AdvanceService, the SMS webhook posts to the Slack thread as a new threaded message
-- [ ] Both directions: persist the message into `messages` table with `role='caller'` or `role='system'` (for agent), `slack_message_ts` column added
-- [ ] PII handling: in non-prod, mask the caller's number to last-4 in Slack posts (per §11.5); in prod, full number for operator usefulness (still redacted in pino logs)
+- [x] `escalate_to_human` now opens a Slack escalation via `EscalationsService.openEscalation`: parent message (header + context + transcript) + action buttons `[Resume AI] [Mark spam] [Close] [Show number]`, captures `thread_ts` on `escalations`
+- [x] Outbound: agent thread reply → `forwardAgentReplyToSms` → `twilio.sendSms` (rate-limited 8s/conversation per §9.3) + persists as `messages.role='system'` with the Twilio sid
+- [x] Inbound: caller SMS during escalation → `forwardCallerSmsToSlack` posts to the existing thread (or no-ops if Slack failed open with email fallback) + stamps `messages.slack_message_ts`
+- [x] PII: caller number shows as `•••<last4>` in the parent message; full number gated behind `[Show number]` button + `/bb show-number`, both audit-logged
 
 **Slack interactions**
-- [ ] Slash commands: `/bb resolve` (close escalation, status=resolved, conversation status=completed outcome=rejected), `/bb book <ISO datetime>` (manual book bypassing AI), `/bb close-spam`, `/bb back-to-bot` (resume AI advance), `/bb show-number` (reveal full caller number to this user only, audit-logged)
-- [ ] Action buttons on the parent message wire to the same actions
-- [ ] Slack webhook signature verification (per §11.1 pattern); idempotency via `webhook_events` with `source='slack'`
+- [x] Slash commands: `/bb resolve`, `/bb close-spam`, `/bb back-to-bot`, `/bb show-number` (all live); `/bb book <ISO>` is a placeholder text response (Slice 9-followup)
+- [x] Action buttons (`esc_back_to_bot`, `esc_mark_spam`, `esc_close`, `esc_show_number`) wire to the same handlers
+- [x] Slack webhook signature verification via `SlackSignatureGuard` (v0 HMAC, 5-min replay window, raw-body buffer); idempotency via `webhook_events` with `source='slack'`
 
 **Caps + safety**
-- [ ] One open escalation per conversation; if a second trigger fires, post into the existing thread instead of creating a new one
-- [ ] If Slack is configured but the bot can't post (channel deleted, token revoked, rate-limited), fall back to the original email path (Slice 10 wires Resend)
-- [ ] Audit log every transition: bot→escalated, escalated→back-to-bot, escalated→resolved
-- [ ] Slack rate-limit awareness: Slack's chat.postMessage is 1 msg/sec/channel; respect 429s with backoff
+- [x] One open escalation per conversation enforced by partial unique index `escalations_one_open_per_conversation` (second trigger reuses the existing row)
+- [x] If Slack is configured but the bot can't post (channel deleted, token revoked, 429), `openEscalation` falls back to email path — `escalations.fallback_email_sent_at` records the fallback; actual email delivery awaits Slice 10's Resend wrapper
+- [x] Audit log: `conversation.escalate`, `escalation.back_to_bot`, `escalation.resolve`, `escalation.show_number` — all via `AuditLogService`
+- [ ] Slack `chat.postMessage` 1 msg/sec backoff — deferred; first 429 falls into `EscalationsService` catch and logs warn (no retry loop yet)
 
-**Doc updates when this slice lands**
-- [ ] CLAUDE.md §3 (architecture diagram adds Slack)
-- [ ] §4 (tech stack adds Slack)
-- [ ] §9.3 (tool list updated; `escalate_to_human` now a Slack handoff)
-- [ ] §10 (`/webhooks/slack/*` endpoints + slash command URL)
-- [ ] §11 (signature validation, allowlist channels in non-prod)
-- [ ] §12 (state machine — `escalated` is now non-terminal; transition back to `awaiting_caller` allowed)
+**Doc updates** — done in the same commit
+- [x] CLAUDE.md §3 architecture diagram, §4 tech-stack row, §9.3 tool description, §10 endpoint list, §11 signature/audit/encryption notes (new items 21–23), §12 state-machine note
+- [x] `docs/SLACK_SETUP.md` operator setup walkthrough
+- [x] `docs/slack-app-manifest.yaml` (paste into api.slack.com)
 
 ### Slice 10: Notifications + polish
 - [ ] Resend wrapper, transactional email templates
@@ -365,49 +364,55 @@ the chosen domain ends up being).
 - [ ] Real test call to the Twilio number → bot greeting + opening SMS works
 - [ ] Run `curl -sI` against the new API + web domain — verify all the helmet headers + HSTS preload, no `X-Powered-By`
 
-### Slice 15: Internal admin dashboard (REQUIRED pre-revenue)
+### Slice 15: Internal admin dashboard (REQUIRED pre-revenue) — ✅ **shipped 2026-05-11**
 Operating a customer-facing SaaS without an internal control plane is untenable
 — support tickets, dunning, fraud, refunds, abuse all need a "see + act" surface.
 This is BookingBlues *staff* only, not Operator-facing. Distinct from CLAUDE.md §16
 "Multi-user/teams per Operator" (which is post-MVP and rules out *Operator* teams).
 
-**Schema additions**
-- [ ] `admin_users` table OR `auth.users.app_metadata.role = 'admin'` flag — pick one. The latter is simpler (no separate auth) but conflates concerns; the former is cleaner but adds a join. Decide and ADR.
-- [ ] `audit_log` already exists (CLAUDE.md §8) — every admin write goes through it (`actor_user_id`, `action`, `resource_type`, `resource_id`, `metadata`)
+**Decision recorded** in `docs/adr/0009-admin-role-via-app-metadata.md`: admin
+role lives in `auth.users.app_metadata.role = 'admin'` (server-only-writable —
+operators can't self-promote). Derived at JWT-verify time and surfaced on
+`AuthenticatedUser.isAdmin`.
+
+**Schema additions** (migration `20260511000001_admin_role_helper.sql`)
+- [x] Picked `auth.users.app_metadata.role = 'admin'` (ADR 0009). No new table.
+- [x] `audit_log` already existed (CLAUDE.md §8); shared `AuditLogService` writes from every admin action with IP + user-agent captured from the request.
 
 **Auth + authorization**
-- [ ] `AdminGuard` (NestJS) — Bearer + `role = 'admin'` check. Fail closed.
-- [ ] Admin web routes (`/admin/*`) gated by middleware reading the same role claim
-- [ ] All admin write endpoints rate-limited stricter than operator endpoints; every action audit-logged
+- [x] `AdminGuard` (NestJS) composes `AuthGuard` + an `isAdmin` check. Fail-closed (returns false if the inner auth fails without an exception).
+- [x] Admin web routes (`/admin/*`) gated by `apps/web/middleware.ts` reading `app_metadata.role`; non-admins redirected to `/dashboard`. Layout double-checks server-side.
+- [x] Stricter throttle: 30/min reads, 10/min writes (vs. operator default 60/min).
 
 **Read-only surfaces**
-- [ ] `GET /admin/operators?cursor&q&status` — list with filters (subscription_status, business_name search, has_twilio_number, has_calendar)
-- [ ] `GET /admin/operators/:id` — full operator dossier: profile, subscription state + Stripe links, Twilio number + Twilio Console deep-link, Google calendar email, Connect onboarding status, fee config, totals
-- [ ] `GET /admin/operators/:id/conversations` — list with status filters; click into transcript view
-- [ ] `GET /admin/operators/:id/appointments` — list with status filters
-- [ ] `GET /admin/operators/:id/payments` — Stripe SaaS invoices + Connect booking-fee charges, with refund buttons
-- [ ] `GET /admin/operators/:id/audit-log` — every action against this operator
-- [ ] `GET /admin/metrics` — global: total operators, MRR, ARR, trial→paid conversion %, active conversations today, calls/SMS volume, OpenAI cost MTD
+- [x] `GET /v1/admin/operators?cursor&q&status&has_twilio&has_calendar` — cursor pagination via base64-encoded `(created_at,id)` opaque token
+- [x] `GET /v1/admin/operators/:id` — dossier: profile, subscription state, totals, Stripe/Twilio deep-links rendered in the dossier page
+- [x] `GET /v1/admin/operators/:id/conversations` + `/v1/admin/conversations/:id/messages`
+- [x] `GET /v1/admin/operators/:id/appointments`
+- [x] `GET /v1/admin/operators/:id/payments`
+- [x] `GET /v1/admin/operators/:id/audit-log`
+- [x] `GET /v1/admin/metrics` — global counters: operators by status, conversations active now, escalations open, fee revenue MTD. MRR/ARR/trial→paid % and OpenAI cost MTD deferred (need a Stripe sync job + token-usage logging in Slice 7-followup; placeholder of 0 for now)
 
 **Write actions (each writes `audit_log`)**
-- [ ] `POST /admin/operators/:id/deactivate` — flip status, cancel Stripe subscription (with grace), schedule Twilio number release (7-day grace per §9.1), revoke calendar grant, mark conversations + appointments read-only
-- [ ] `POST /admin/operators/:id/release-twilio-number` — release immediately, free pool row, clear `operators.twilio_number_*`
-- [ ] `POST /admin/operators/:id/refund-payment/:paymentId` — issue Stripe refund with reason
-- [ ] `POST /admin/operators/:id/cancel-subscription` — Stripe SDK cancel, optional immediate vs end-of-period
-- [ ] `POST /admin/conversations/:id/force-end` — set status `completed`, outcome `rejected`
-- [ ] `POST /admin/operators/:id/impersonate` — issue a short-lived JWT scoped to that operator's user_id for support debugging (audit-logged + alert in Slack/email when used)
+- [x] `POST /v1/admin/operators/:id/deactivate` — cancels Stripe subscription (immediate or end-of-period), closes in-flight conversations
+- [x] `POST /v1/admin/operators/:id/release-twilio-number` — `incomingPhoneNumbers(sid).remove()`, marks `twilio_numbers.released`, clears operator fields
+- [x] `POST /v1/admin/operators/:id/refund-payment/:paymentId` — wraps `PaymentsService.refundBookingFee` (which already handles `refund_application_fee: true` per §9.5)
+- [x] `POST /v1/admin/operators/:id/cancel-subscription` — Stripe cancel, immediate OR end-of-period
+- [x] `POST /v1/admin/conversations/:id/force-end` — set status `completed`, configurable outcome
+- [x] `POST /v1/admin/operators/:id/impersonate` — Supabase magic-link generated via admin SDK; opens in a new private tab; reason required + audit-logged
+- [x] `POST /v1/admin/admins` / `DELETE /v1/admin/admins/:userId` — admin promotion/demotion (an admin can't demote themselves)
 
 **Web UI** (`apps/web/app/(admin)/...`)
-- [ ] `/admin` dashboard with global metrics
-- [ ] `/admin/operators` searchable table
-- [ ] `/admin/operators/:id` dossier with tabs: profile, conversations, appointments, payments, audit log
-- [ ] Visual cues for risky actions (deactivate / refund) — confirm-modal with "type the business name to confirm"
-- [ ] Distinct admin theme (red accent / banner) so staff never confuse it with the operator dashboard
+- [x] `/admin` dashboard with global metric cards (warn-tone for past-due, escalations)
+- [x] `/admin/operators` searchable table with status filter + cursor pagination
+- [x] `/admin/operators/[id]` dossier — stats grid, action bar, tabs (conversations / appointments / payments / audit log), provider deep-links collapsible
+- [x] Risky actions use the branded `ConfirmModal` with type-business-name for `Deactivate`; required free-text reason for every destructive action
+- [x] Distinct admin theme: red banner ("BookingBlues Admin · Internal use only · Every action is logged"), red app-name + nav, separate route group
 
 **Operational**
-- [ ] Provisioning the first admin: SQL migration that flips a designated user_id to admin role, plus a CLI/admin-only "make admin" endpoint that requires existing admin
-- [ ] Audit log retention policy (90 days hot in DB, longer in cold storage post-Slice 14)
-- [ ] Pre-launch hardening: confirm `AdminGuard` is the FIRST guard on every admin route; tests proving 401/403 paths
+- [x] First admin: `admin_promote(text)` SQL function (SECURITY DEFINER, search_path pinned). Operator runs `select admin_promote('me@bb.com');` once from Supabase SQL editor; subsequent admins use the API
+- [ ] Audit log retention policy — deferred to Slice 14 (production go-live)
+- [x] Pre-launch hardening — AdminGuard tested for 403 on non-admin, 401 on bad token, true on isAdmin. JwtVerifierService tested for role derivation including the `user_metadata.role='admin'` injection attempt (correctly rejected — only `app_metadata.role` is trusted)
 
 ### Slice 14: EC2 production deployment (go-live)
 Migration target when we're ready to leave Railway and serve real traffic.

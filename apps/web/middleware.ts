@@ -2,7 +2,8 @@ import { createServerClient } from '@supabase/ssr';
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
-const PROTECTED_PREFIXES = ['/dashboard', '/onboarding', '/settings'];
+const PROTECTED_PREFIXES = ['/dashboard', '/onboarding', '/settings', '/admin'];
+const ADMIN_PREFIXES = ['/admin'];
 const AUTH_PAGES = ['/login', '/signup'];
 
 export async function middleware(req: NextRequest) {
@@ -36,6 +37,20 @@ export async function middleware(req: NextRequest) {
     url.pathname = '/login';
     url.searchParams.set('next', path);
     return NextResponse.redirect(url);
+  }
+
+  // Admin pages require role=admin in app_metadata. Non-admins land on the
+  // operator dashboard rather than seeing a 403 page (less confusing UX —
+  // staff who lose access shouldn't be left staring at a broken admin shell).
+  // app_metadata is server-only-writable in Supabase, so we trust this claim
+  // (see ADR 0009).
+  if (isAuthed && ADMIN_PREFIXES.some((p) => path === p || path.startsWith(`${p}/`))) {
+    const role = (data.user?.app_metadata as { role?: unknown } | undefined)?.role;
+    if (role !== 'admin') {
+      const url = req.nextUrl.clone();
+      url.pathname = '/dashboard';
+      return NextResponse.redirect(url);
+    }
   }
   if (wantsAuthPage && isAuthed) {
     const url = req.nextUrl.clone();

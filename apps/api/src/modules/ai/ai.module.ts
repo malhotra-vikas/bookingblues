@@ -6,6 +6,7 @@ import { TwilioModule } from '../../common/twilio/twilio.module';
 import { CalendarModule } from '../calendar/calendar.module';
 import { ConversationsModule } from '../conversations/conversations.module';
 import { PaymentsModule } from '../payments/payments.module';
+import { SlackModule } from '../slack/slack.module';
 
 import { AdvanceService } from './advance.service';
 
@@ -17,6 +18,7 @@ import { AdvanceService } from './advance.service';
     CalendarModule,
     ConversationsModule,
     PaymentsModule,
+    SlackModule,
   ],
   providers: [AdvanceService],
   exports: [AdvanceService],

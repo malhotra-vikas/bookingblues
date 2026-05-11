@@ -6,6 +6,7 @@ import { TwilioModule } from '../../common/twilio/twilio.module';
 import { WebhooksModule as IdempotencyWebhooksModule } from '../../common/webhooks/webhooks.module';
 import { AiModule } from '../ai/ai.module';
 import { ConversationsModule } from '../conversations/conversations.module';
+import { SlackModule } from '../slack/slack.module';
 
 import { StripeConnectController } from './stripe-connect.controller';
 import { StripePlatformController } from './stripe-platform.controller';
@@ -20,6 +21,7 @@ import { TwilioVoiceController } from './twilio-voice.controller';
     IdempotencyWebhooksModule,
     ConversationsModule,
     AiModule,
+    SlackModule,
   ],
   controllers: [
     StripePlatformController,

@@ -6,71 +6,53 @@ Quick-start brief for the next session. Read this first, then `docs/PROGRESS.md`
 
 ---
 
-## Last session (2026-05-07)
+## Last session (2026-05-11)
 
-Massive day — went from local-only to **fully deployed staging on Railway with real provider integrations and live E2E flow**.
+Two big slices landed in one session — **Slice 15 (Internal admin dashboard)** and **Slice 7.5 (HITL via Slack)**.
 
-### Infrastructure stood up
+### Slice 15 — Internal admin dashboard
 
-- **GitHub**: pushed to `https://github.com/malhotra-vikas/bookingblues` (was 3 local commits, now 16+)
-- **Hosted Supabase** (project `ozsckjjlydtujbhajjla`) — migrations applied via `supabase db push --linked`
-- **Railway** — two services live:
-  - api: `https://bookingbluesapi-production.up.railway.app`
-  - web: `https://bookingbluesweb-production.up.railway.app`
-- **Provider creds wired**: Supabase, Stripe (test mode + Connect enabled), OpenAI, Google OAuth (Calendar), Twilio (upgraded out of trial)
-- **Deferred**: Sentry, Resend, Stripe Connect webhooks, Google Maps Geocoding (waiting on billing approval)
+Full scope from PROGRESS.md, including admin role storage decision.
 
-### Hardening Phase 0 → P0/P1 quick wins shipped
+- **ADR 0009** — `auth.users.app_metadata.role = 'admin'` (server-only-writable, no separate table, derived on JWT verify and surfaced as `AuthenticatedUser.isAdmin`).
+- **Migration** `20260511000001_admin_role_helper.sql` — `admin_promote(text)` + `admin_demote(text)` SECURITY DEFINER functions for bootstrap.
+- **Shared `AuditLogService`** in `apps/api/src/common/audit/` — every admin write logs IP + UA + reason.
+- **Admin module** at `apps/api/src/modules/admin/` — read controller (cursor pagination on operators / conversations / appointments / payments / audit) + write controller (deactivate, cancel-subscription, release-twilio, refund-payment, force-end, impersonate via Supabase magic-link, promote/demote admins). Throttled at 30/min reads, 10/min writes.
+- **Admin web UI** at `apps/web/app/(admin)/` — `/admin` overview, `/admin/operators` searchable table, `/admin/operators/[id]` tabbed dossier with action bar. Red banner ("Every action is logged"). Type-business-name confirms on deactivate. Reuses branded `ConfirmModal`.
+- **Middleware** in `apps/web/middleware.ts` now gates `/admin/*` on `app_metadata.role`. Non-admins redirected to `/dashboard`. Layout double-checks server-side (defense in depth).
 
-- ✅ Next.js 15.0.0 → **16.2.5** (kills GHSA-f82v-jwr5-mffw middleware-bypass + GHSA-9qr9-h5gf-34mp RCE)
-- ✅ `@supabase/supabase-js` bumped (auth-js path-routing fix)
-- ✅ `helmet` headers — HSTS preload, X-Frame-Options DENY, Referrer-Policy strict-origin-when-cross-origin, etc.
-- ✅ `CORS` allowlist (only `APP_URL` origin)
-- ✅ `@nestjs/throttler` 60/min default, 5/15min on PATCH `/v1/me`, all webhooks `@SkipThrottle()`'d
-- ✅ `app.disable('x-powered-by')`
+### Slice 7.5 — HITL via Slack
 
-### E2E milestones
+- **Migration** `20260511000002_hitl_slack.sql` — extends `webhook_source` with `'slack'`, adds `slack_connections` (encrypted bot token, AES-256-GCM with versioned key) + `escalations` (one-open-per-conversation partial unique index) + `messages.slack_message_ts`.
+- **`apps/api/src/modules/slack/`** — `SlackApiClient` (chat.postMessage, oauth.v2.access, conversations.list), `SlackSignatureGuard` (v0 HMAC, 5-min replay window, raw-body buffer), `SlackConnectionsService` (encrypt/decrypt bot tokens, find by team/channel), `EscalationsService` (open / back-to-bot / resolve, bidirectional bridge with §9.3 8s rate limit per conversation), `SlackInstallController` (state HMAC binds operator_id), `SlackWebhooksController` (events / commands / interactivity).
+- **`escalate_to_human` tool** now opens a Slack escalation (or falls back to email path with `fallback_email_sent_at` timestamp when Slack isn't configured or the post fails). Maps free-form `reason` text to the closed `escalation_reason` enum.
+- **AdvanceService** short-circuits when conversation status is `escalated`. **TwilioSmsController** branches: status=`escalated` → `forwardCallerSmsToSlack`; otherwise → `advance.advance`.
+- **`/bb` slash commands**: `resolve`, `close-spam`, `back-to-bot`, `show-number` (audit-logged), `book <ISO>` (placeholder until Slice 9-followup), `help`.
+- **Action buttons** on the parent message: Resume AI, Mark spam, Close, Show number — all routed through interactivity webhook.
+- **Slack app manifest** at `docs/slack-app-manifest.yaml`; full operator setup walkthrough at `docs/SLACK_SETUP.md`.
+- **Log redactions** added: `*.bot_token`, `*.encrypted_bot_token`, `x-slack-signature` header.
 
-| Path | Status |
-|---|---|
-| Sign up + email confirm via Supabase | ✅ |
-| Stripe trial checkout (test card 4242…) → `subscription_status = 'trialing'` via webhook | ✅ |
-| Twilio number provisioned, voice + SMS webhooks live | ✅ |
-| Inbound call → bot greeting + opening SMS | ✅ |
-| Caller reply → OpenAI advance loop runs | ✅ |
-| Google Calendar OAuth connected | ✅ |
-| Booking actually completes (caller picks slot → calendar event created) | 🔜 untested |
-| Trial → paid conversion path | 🔜 deferred (Slice 4-followup) |
-| `escalate_to_human` to Slack | ⏳ Slice 7.5 (deferred) |
-| Booking-fee charge via Stripe Connect | ⏳ Slice 8 + Connect webhook setup |
+### Tests + typecheck
 
-### Product features shipped today
+- **63/63 unit tests pass** (up from 51 — added 12 across AdminGuard, JWT verifier isAdmin derivation, SlackSignatureGuard, and `escalate_to_human` reason normalization)
+- API + web typecheck clean
+- Integration tests under `apps/api/test/` still require local Supabase (`supabase start`) — not run in this session
 
-- **Trial banner** (dashboard) — "In N-day Trial" pill + "End trial now" with branded confirm modal that explains both success AND failure paths (past_due → "Fix payment method" CTA opens Stripe portal)
-- **Branded `<ConfirmModal>`** — replaces every browser `confirm()`/`prompt()`. Severity color stripe (default/warning/danger), type-to-confirm for destructive actions, async confirm with built-in busy state
-- **Carrier forwarding picker** (onboarding step 7) — AT&T / Verizon / T-Mobile / Other, GSM dial codes templated with the operator's number, copy buttons, "How to test" disclosure
-- **Plain-English wizard copy** — "Get your BookingBlues phone number" not "Provision Twilio number", "Set up payouts" not "Stripe Connect Express onboarding", error messages stripped of HTTP verbiage
-- **Per-trade qualification prompts** — replaced Slice 2 placeholders. Each category prompt lists 3-5 questions to ask before booking, with safety carve-outs that route to `escalate_to_human` (gas smell, sparks, structural collapse, etc.)
-- **Better out-of-scope handoff** — names the operator's services in plain English ("Acme Plumbing handles leaks, water heaters, drain clogs, fixtures, and pipe repairs")
-- **Service area** (onboarding step 8) — explicit ZIP list + radius zones around center ZIPs (`{center_zip:'90210', radius_miles:30}`). `zipcodes` npm for haversine math; expansion happens at prompt-assembly time. Out-of-scope handoff names the covered ZIPs when reason is `outside_service_area`.
-- **Booking-fee math display** — operator sees in real time "For a $25 deposit: −$1.03 Stripe + −$2.50 BookingBlues = $21.47 you keep"
-- **Default booking fee + take-rate from env** — `DEFAULT_BOOKING_FEE_CENTS`, `PLATFORM_TAKE_RATE_BPS`, mirrored as `NEXT_PUBLIC_*` for the UI math
-- **Per-button busy state** in the wizard — disables on click, shows "Saving…", "Getting number…" labels, defends against the double-click race that produced an orphan Twilio number earlier in QA
+### Docs updated this session
 
-### New migrations applied to hosted
+- `CLAUDE.md` §2, §3 (Slack added to diagram), §4 (HITL row), §9.3 (escalate_to_human is now Slack-bridged), §10 (admin + Slack endpoint blocks), §11 (new items 21–23 admin/audit/Slack), §12 (escalated is non-terminal)
+- `docs/PROGRESS.md` — Slice 15 + 7.5 marked shipped with detailed completion notes
+- `docs/adr/0009-admin-role-via-app-metadata.md` (new)
+- `docs/SLACK_SETUP.md` + `docs/slack-app-manifest.yaml` (new)
 
-```
-20260507000001_categories_qualification.sql   (real per-trade prompts)
-20260507000002_operator_service_area.sql      (operators.service_zip_codes text[])
-20260507000003_operator_radius_zones.sql      (operators.service_radius_zones jsonb)
-```
+### What's still missing / explicitly parked
 
-### Known issues / parked
-
-- **Twilio orphan**: there's likely an extra `+1...` number on the Twilio account from an earlier double-click. Release in Twilio Console → Active Numbers when convenient ($1.15/mo bleed otherwise).
-- **Duplicate Stripe subscriptions**: same root cause earlier (Slice 4-followup tracks the dedup; today's busy-state fix closes the *future* race). Cancel the dupes in Stripe Dashboard → Customers → your customer → Subscriptions tab.
-
-**Repo state**: typecheck clean across 4 packages · **67/67 tests pass** · clean working tree, all changes pushed to main.
+- **Slack app itself**: the user is going to create the BookingBlues app in api.slack.com using `docs/slack-app-manifest.yaml`. Until that happens + `SLACK_CLIENT_ID` / `SLACK_CLIENT_SECRET` / `SLACK_SIGNING_SECRET` are set in Railway, the install / webhook routes will 500 with `slack.no_credentials`. Code is wired and ready.
+- **First admin**: until someone runs `select admin_promote('your-email@bb.com');` in Supabase SQL editor, `/admin` redirects everyone to `/dashboard`.
+- **Channel picker UI on Slack install**: MVP uses the channel from the OAuth grant. Explicit picker deferred.
+- **MRR / OpenAI cost MTD** in `/admin/metrics`: returns 0 placeholders until Stripe sync + token usage logging land (Slice 7-followup, Slice 11).
+- **Slack 1-msg/sec backoff**: 429 falls into catch + log; no retry loop yet.
+- **`/bb book <ISO>` real implementation**: placeholder response only.
 
 ---
 
@@ -78,46 +60,45 @@ Massive day — went from local-only to **fully deployed staging on Railway with
 
 ### Top of mind
 
-1. **Test what hasn't been touched yet** — the goal is to walk a real call all the way to a calendar event:
-   - Service-area gating: configure 30 mi around 90210, then via SMS supply an in-area ZIP (90211, 90405) → bot should propose slots; new conversation, supply an out-of-area ZIP (92660) → bot should `mark_out_of_scope` with the named-ZIPs handoff
-   - Booking actually completes: caller picks a slot → bot calls `book_appointment` → Google Calendar event appears
-   - Trial → paid: trigger "End trial now", watch Stripe charge the test card, verify status flips to `active` (or simulate failure with card `4000 0000 0000 9995` to see `past_due` and the red "Fix payment method" CTA)
+1. **Create the Slack app** via `docs/slack-app-manifest.yaml` → paste 3 env vars into Railway → smoke the install flow on a test operator.
+2. **Promote first admin** in Supabase SQL editor: `select admin_promote('malhotra.vikas@gmail.com');`
+3. **Apply the two new migrations to hosted** Supabase: `supabase db push --linked` (project `ozsckjjlydtujbhajjla`).
+4. **Run `pnpm gen:db`** so `escalations` + `slack_connections` types land in `packages/db-types/` (removes the `as any` casts in `admin-read.service.ts` and `slack-*.ts`).
+5. **Resume the E2E walks** that were parked yesterday:
+   - Service-area gating: in-area ZIP vs out-of-area (both real, both expected behaviors).
+   - Booking completion (caller picks slot → Google Calendar event created).
+   - Trial → paid (test card 4242 vs failure card 4000…9995).
+   - **New for today**: trigger an escalation, reply in Slack thread, see the SMS land, then `/bb back-to-bot` and see the next caller message go back to the AI loop.
 
-2. **Pick a feature from the queue** — user has been adding TODOs all day. Top candidates:
-   - **Slice 7.5 — HITL via Slack** (escalation visibility)
-   - **Slice 15 — Internal admin dashboard** (operator support / dunning / refunds)
-   - **Slice 4-followup — billing flow gaps** (trial→paid test, cancellation flow, dedup, past_due degraded mode, trial reminder emails)
-   - **Slice 9-followup — `/conversations/:id` transcript view** + appointments cancel UI + business hours editor
-   - **UX-followup — loading states elsewhere** (SettingsPanel, TrialBanner, maybe a `useAsyncAction(key, fn)` hook)
+### Feature queue (pick one)
 
-3. **Hardening Phase 1** — `docs/SECURITY_REVIEW.md` (auth/crypto/authz/OWASP/route-coverage). Was the original tomorrow plan before infra detoured us; still queued.
+- **Slice 7-followup** — pg-boss queue, async advance, token-usage logging, fee timeout (groundwork for MRR + OpenAI-cost-MTD metrics on the admin dashboard).
+- **Slice 4-followup** — billing flow gaps: trial → paid test, cancellation flow, dedup, past-due degraded mode, trial reminder emails.
+- **Slice 10** — Resend wrapper. Lets the email fallback path in `EscalationsService` actually deliver something (currently we just stamp `fallback_email_sent_at`).
+- **Slice 11** — Sentry observability.
+- **Hardening Phase 1** — original tomorrow plan from 2026-05-07; `docs/SECURITY_REVIEW.md` (auth/crypto/authz/OWASP/route-coverage).
 
 ### Blocked / waiting
 
-- **Google Maps Geocoding API** (service-area Phase C — city/town centers). Waiting on Google to allow more projects on the user's billing account. Once approved: enable Geocoding API in `bookingblues-staging`, create restricted API key, paste as `GOOGLE_MAPS_API_KEY`, implement `kind:'city'` extension in `service_radius_zones`. Free Nominatim fallback documented.
+- **Google Maps Geocoding API** (Phase C city/town centers) — still waiting on Google billing approval.
 
 ### Don't forget
 
-- **Custom domain cutover** (Slice 13.5) is fully scoped in PROGRESS.md — every provider URL the operator will eventually need to swap when the real domain is registered. No code changes needed today.
-- **CLAUDE.md §8** migration filename example is still wrong (says `20260105_0001_create_operators.sql`; should be 14-digit timestamps). Fix next time §8 is touched.
-- **`auth.getUser` 5-50ms** still on every authenticated request. Slice 11 observability is the time to swap to local JWKS via `jose` if latency matters.
+- **Custom domain cutover** (Slice 13.5) — every Slack manifest URL in `docs/slack-app-manifest.yaml` is hard-coded to the Railway URL today. When the real domain lands, swap the manifest in the Slack dashboard too.
+- **CLAUDE.md §8** still has the wrong migration filename example (`20260105_0001_create_operators.sql`); should be 14-digit timestamps. Fix when §8 is next touched.
 
 ---
 
 ## Repo state for the resumer
 
-- Branch: `main`, in sync with `origin/main`
-- Working tree: clean
-- Active services left running:
-  - Local Supabase containers (`supabase stop` to tear down)
-  - User's `pnpm dev` in their second terminal (api on :3001, web on :3000)
-  - Railway services on auto-deploy from `main`
+- Branch: `main`. **Not yet committed** — 2 slices' worth of changes are in the working tree. Commit before context drift.
+- Working tree includes: 2 new SQL migrations, ADR 0009, `apps/api/src/modules/admin/` (5 files), `apps/api/src/modules/slack/` (6 files), `apps/api/src/common/audit/` (2 files), `apps/web/app/(admin)/` (4 files), `apps/web/components/admin/` (2 files), middleware.ts gate, AuthModule + AppModule + AiModule + WebhooksModule wiring, tool-handlers + advance + sms-webhook integration, prompt + log-redact updates, CLAUDE.md + PROGRESS.md + Slack docs.
+- Active services: Local Supabase containers (`supabase stop` to tear down). Railway on auto-deploy from `main` — first push will fail to boot until the two new env-var triples (Slack) are set, but since they're optional in dev/staging, the API still boots. Migrations will run on next deploy.
 
 ---
 
 ## Notes for the next session
 
-- **Don't re-do Phase 0 discovery.** It's in `docs/HARDENING_PHASE_0_FINDINGS.md`. Two of its critical findings (Next.js CVEs) are already resolved.
-- **The dev server in the user's terminal might be stale** if they've been testing on Railway exclusively. Either restart locally OR keep using Railway URLs.
-- **Twilio + Stripe both have residual test data** from earlier QA — orphan number on Twilio, possibly dupe subscriptions on Stripe. Both are tracked; clean up when convenient.
-- **`pnpm gen:db` after any new migration** — local Supabase has all today's migrations applied, so the types in `packages/db-types/` are current as of end of day.
+- **The hosted Supabase doesn't yet have today's migrations.** Run `supabase db push --linked` first thing. If `pnpm gen:db` doesn't pick them up locally, restart local Supabase (`supabase stop && supabase start`) to apply.
+- **The `as any` casts in `admin-read.service.ts` (countEscalationsOpen) and throughout `slack-*.ts`** are there because `escalations` and `slack_connections` aren't in db-types yet. After `pnpm gen:db`, replace those with proper typing in a small follow-up commit.
+- **Twilio orphan number + duplicate Stripe subscriptions** from earlier QA are still on the accounts. Slice 4-followup tracks the dedup; today's UI fixes closed the *future* race.

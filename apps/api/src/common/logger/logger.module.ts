@@ -27,6 +27,11 @@ const REDACT_PATHS = [
   'req.headers.cookie',
   'req.headers["x-twilio-signature"]',
   'req.headers["stripe-signature"]',
+  'req.headers["x-slack-signature"]',
+  // Slack tokens (Slice 7.5)
+  '*.bot_token',
+  '*.encrypted_bot_token',
+  '*.slack_token',
 ];
 
 @Module({

@@ -1,0 +1,77 @@
+# BookingBlues — Slack app manifest
+#
+# What this is: the YAML you paste into api.slack.com/apps → "Create New App"
+# → "From an app manifest" → pick a development workspace. Slack creates the
+# app with the scopes, slash command, event subscriptions, interactivity URL,
+# and OAuth redirect URLs pre-filled.
+#
+# After Slack creates the app:
+#   1. Basic Information → "App-Level Tokens" (skip — we don't use Socket Mode)
+#   2. Basic Information → "Signing Secret" → copy to SLACK_SIGNING_SECRET
+#   3. Basic Information → "Client ID" → copy to SLACK_CLIENT_ID
+#   4. Basic Information → "Client Secret" → copy to SLACK_CLIENT_SECRET
+#   5. "Install to Workspace" (only available after the manifest is saved + verified)
+#   6. Slash commands and events use the URLs below — confirm they match your
+#      API's public URL. For local dev, swap to your ngrok tunnel.
+#
+# IMPORTANT — replace `https://bookingbluesapi-production.up.railway.app` with
+# your actual API URL before pasting. The manifest is just YAML; you can also
+# edit each URL in the Slack dashboard after creation.
+
+display_information:
+  name: BookingBlues
+  description: Human-in-the-loop for missed-call bookings — pages your team when the bot needs help.
+  background_color: "#1e40af"
+  long_description: >-
+    BookingBlues converts missed calls into booked appointments. When the AI
+    bot can't make progress, a caller asks for a human, or you flag a thread
+    from the admin dashboard, BookingBlues posts an escalation in this Slack
+    channel and bridges the SMS conversation: reply in-thread to send an SMS
+    to the caller; use /bb back-to-bot to hand control back to the AI.
+
+features:
+  bot_user:
+    display_name: BookingBlues
+    always_online: true
+
+  slash_commands:
+    - command: /bb
+      url: https://bookingbluesapi-production.up.railway.app/webhooks/slack/commands
+      description: BookingBlues commands — try `/bb help`
+      usage_hint: "[resolve | back-to-bot | close-spam | show-number | book <ISO>]"
+      should_escape: false
+
+oauth_config:
+  redirect_urls:
+    - https://bookingbluesapi-production.up.railway.app/webhooks/slack/oauth/callback
+  scopes:
+    bot:
+      - chat:write
+      - channels:history
+      - channels:read
+      - groups:history
+      - groups:read
+      - im:history
+      - app_mentions:read
+      - commands
+      - users:read
+      - team:read
+
+settings:
+  event_subscriptions:
+    request_url: https://bookingbluesapi-production.up.railway.app/webhooks/slack/events
+    bot_events:
+      # Catch agent replies inside escalation threads so we can bridge them
+      # back to the caller as SMS. The bridge service ignores anything outside
+      # an open escalation.
+      - message.channels
+      - message.groups
+      - app_mention
+
+  interactivity:
+    is_enabled: true
+    request_url: https://bookingbluesapi-production.up.railway.app/webhooks/slack/interactivity
+
+  org_deploy_enabled: false
+  socket_mode_enabled: false
+  token_rotation_enabled: false

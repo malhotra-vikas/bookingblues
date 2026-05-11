@@ -20,6 +20,7 @@ import { ENV_TOKEN } from '../../config/config.module';
 import type { Env } from '../../config/env';
 import { AdvanceService } from '../ai/advance.service';
 import { ConversationsService } from '../conversations/conversations.service';
+import { EscalationsService } from '../slack/escalations.service';
 import { resolveOperatorForWebhook, verifyTwilioSignature } from './twilio-helpers';
 
 interface TwilioSmsForm {
@@ -38,6 +39,7 @@ export class TwilioSmsController {
     private readonly twilio: TwilioService,
     private readonly conversations: ConversationsService,
     private readonly advance: AdvanceService,
+    private readonly escalations: EscalationsService,
     private readonly idempotency: WebhookIdempotencyService,
     private readonly logger: PinoLogger,
     @Inject(ENV_TOKEN) private readonly env: Env,
@@ -96,10 +98,10 @@ export class TwilioSmsController {
       throw err;
     }
 
-    // Best-effort advance. Failures here (missing OPENAI_API_KEY in dev,
-    // OpenAI 5xx, calendar issues) are logged but do not fail the Twilio
-    // webhook — Twilio would retry-loop and we'd duplicate the inbound. A
-    // future pg-boss queue (CLAUDE.md §6) will own retry semantics.
+    // Best-effort advance OR Slack bridge. Failures here (missing OPENAI_API_KEY
+    // in dev, OpenAI 5xx, calendar issues, Slack rate limits) are logged but do
+    // not fail the Twilio webhook — Twilio would retry-loop and we'd duplicate
+    // the inbound. A future pg-boss queue (CLAUDE.md §6) will own retry semantics.
     try {
       const operatorRow = (
         await this.supabase
@@ -119,16 +121,27 @@ export class TwilioSmsController {
             .single()
         ).data;
         if (convoFull) {
-          await this.advance.advance({
-            operator: operatorRow,
-            conversation: convoFull,
-            callerPhoneE164: form.From,
-          });
+          if (convoFull.status === 'escalated') {
+            // Slice 7.5: HITL bridge — forward the caller message to the Slack
+            // thread instead of running the AI advance loop.
+            await this.escalations.forwardCallerSmsToSlack({
+              operator: operatorRow,
+              conversation: convoFull,
+              callerPhoneE164: form.From,
+              body: form.Body,
+            });
+          } else {
+            await this.advance.advance({
+              operator: operatorRow,
+              conversation: convoFull,
+              callerPhoneE164: form.From,
+            });
+          }
         }
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      this.logger.error({ err: msg, operatorId: operator.id }, 'advance failed; manual replay will be needed');
+      this.logger.error({ err: msg, operatorId: operator.id }, 'advance/bridge failed; manual replay will be needed');
     }
 
     return this.emptyResponse();

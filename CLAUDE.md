@@ -27,7 +27,7 @@ Everything else is secondary. If a feature does not directly serve this loop, it
 
 ## 2. How Claude Code Should Work in This Repo
 
-- **Read before writing.** Before touching a domain, read its module's README and any related migrations. Domains: `auth`, `billing`, `telephony`, `calendar`, `conversations`, `appointments`, `payments`.
+- **Read before writing.** Before touching a domain, read its module's README and any related migrations. Domains: `auth`, `admin`, `billing`, `telephony`, `calendar`, `conversations`, `appointments`, `payments`, `slack`.
 - **Stay in scope.** If a task drifts beyond what was asked, surface it as a follow-up rather than expanding the diff.
 - **Schema changes are migrations.** Never edit a committed migration. Add a new one.
 - **No silent fallbacks for external services.** If Twilio, Stripe, OpenAI, or Google fail, fail loudly with a structured error, retry per the documented policy, and alert. Never swallow.
@@ -80,7 +80,20 @@ Everything else is secondary. If a feature does not directly serve this loop, it
                                    | HTTPS, Supabase auth cookie
                             Operator dashboard,
                             signup, settings,
-                            onboarding wizard
+                            onboarding wizard,
+                            /admin (staff-only)
+
+                         +-------------------+
+                         |  Slack            |
+                         |  (per-operator    |
+                         |   workspace)      |
+                         +---------+---------+
+                                   ^
+                                   | (HITL — Slice 7.5)
+                                   | escalations, slash cmds,
+                                   | interactive blocks, OAuth
+                                   v
+                                  API
 ```
 
 The API is the only service that talks to Twilio, OpenAI, Stripe, and Google. The Web app talks only to the API and Supabase Auth.
@@ -104,6 +117,7 @@ The API is the only service that talks to Twilio, OpenAI, Stripe, and Google. Th
 | Calendar | Google Calendar API v3 | Required by Operator audience |
 | Payments | Stripe (Subscriptions for BookingBlues SaaS, Connect Express for Operator booking fees) | Industry standard, marketplace pattern |
 | Email | Resend | Simple API, good DX, transactional only |
+| HITL | Slack (per-Operator workspace install) | Operators live in messaging more than email; in-thread reply bridges to SMS |
 | Queue | Postgres-backed via `pg-boss` | One less infra dependency for MVP |
 | Deployment | Railway (API + Web as separate services) | Operator preference, simple env management |
 | Logging | Pino with redaction config | Structured JSON, PII redaction built-in |
@@ -412,7 +426,7 @@ The Web app uses the anon key and reads via RLS. The API uses the service role a
 - `request_payment_link(appointment_id)` — generates a Stripe Connect Checkout link tied to the Operator's connected account, sends URL via SMS.
 - `mark_out_of_scope(reason)` — ends conversation, sends polite handoff message.
 - `mark_spam(reason)` — silent end, no further messages.
-- `escalate_to_human(reason)` — emails Operator with conversation transcript and asks them to follow up directly.
+- `escalate_to_human(reason)` — opens a Slack thread in the Operator's connected workspace (Slice 7.5) with the conversation summary, last 10 turns, and action buttons (Resume AI / Mark spam / Close / Show number). The agent can reply in-thread to send an SMS to the caller, run `/bb back-to-bot` to hand control back to the AI, or close with `/bb resolve`. If Slack isn't installed or fails, falls back to email (Slice 10). Either way, conversation status flips to `escalated` and the AI stops replying until resolved.
 
 **Tool execution rules**:
 - All tools execute server-side in the API. The model never sees raw secrets.
@@ -551,6 +565,35 @@ POST   /webhooks/twilio/sms/:operatorId
 POST   /webhooks/stripe                  # platform
 POST   /webhooks/stripe/connect          # connected accounts
 GET    /webhooks/google/oauth/callback   # OAuth redirect target
+GET    /webhooks/slack/oauth/callback    # Slack install redirect (Slice 7.5)
+POST   /webhooks/slack/events            # Events API (HMAC X-Slack-Signature)
+POST   /webhooks/slack/commands          # /bb slash commands
+POST   /webhooks/slack/interactivity     # block actions (buttons)
+```
+
+### Admin (Slice 15 — staff only, `app_metadata.role='admin'`)
+```
+GET    /v1/admin/metrics                              # global counters
+GET    /v1/admin/operators?cursor=&q=&status=
+GET    /v1/admin/operators/:id                        # dossier
+GET    /v1/admin/operators/:id/conversations
+GET    /v1/admin/operators/:id/appointments
+GET    /v1/admin/operators/:id/payments
+GET    /v1/admin/operators/:id/audit-log
+GET    /v1/admin/conversations/:id/messages
+POST   /v1/admin/admins                               # promote (existing admin required)
+DELETE /v1/admin/admins/:userId                       # demote (can't demote self)
+POST   /v1/admin/operators/:id/deactivate
+POST   /v1/admin/operators/:id/cancel-subscription
+POST   /v1/admin/operators/:id/release-twilio-number
+POST   /v1/admin/operators/:id/refund-payment/:paymentId
+POST   /v1/admin/operators/:id/impersonate            # short-lived magic link
+POST   /v1/admin/conversations/:id/force-end
+```
+
+### Slack install (Operator-authed)
+```
+GET    /v1/operators/me/slack/install   # returns OAuth URL
 ```
 
 ### OAuth callback (Operator-initiated)
@@ -569,7 +612,7 @@ GET    /v1/oauth/google/callback         # Auth-protected, completes calendar co
 
 ## 11. Security Requirements (non-negotiable)
 
-1. **Webhook signature validation on every webhook**, before any side effect. Twilio (`X-Twilio-Signature`), Stripe (`Stripe-Signature`), Google (verify `state` and OAuth code exchange). Validators live in `common/webhook-signatures/`.
+1. **Webhook signature validation on every webhook**, before any side effect. Twilio (`X-Twilio-Signature`), Stripe (`Stripe-Signature`), Google (verify `state` and OAuth code exchange), Slack (`X-Slack-Signature` v0 HMAC over `v0:<timestamp>:<rawBody>` with a 5-minute replay window). Validators live in `common/webhook-signatures/` and `modules/slack/slack-signature.guard.ts`.
 2. **Idempotency** for all webhooks via the `webhook_events` table.
 3. **RLS enabled on every operator-scoped table.** Default deny. Service role used only by API, never exposed.
 4. **Encryption at rest for Google refresh tokens** with versioned AES-256-GCM key (`ENCRYPTION_KEY`). No tokens in plaintext, ever, including in logs.
@@ -589,6 +632,9 @@ GET    /v1/oauth/google/callback         # Auth-protected, completes calendar co
 18. **Supabase RLS regression test** runs in CI on every PR using a separate test project.
 19. **Dependency scanning**: `pnpm audit` and Dependabot on. Block merges on high+ severity.
 20. **HTTPS only**. HSTS preload. Cookies are `Secure`, `HttpOnly`, `SameSite=Lax`.
+21. **Admin authorization** (Slice 15). `AdminGuard` requires `auth.users.app_metadata.role = 'admin'`. `app_metadata` is server-only-writable in Supabase, so operators cannot self-promote. The admin role is also derived locally at JWT-verify time and surfaced on `AuthenticatedUser.isAdmin`. See ADR 0009.
+22. **Audit log on every admin write** (Slice 15) — operator deactivation, refunds, subscription cancels, impersonation, force-end, admin promote/demote. Audit failures must NOT block the user action (denial-of-service vector); log loudly instead. `AuditLogService.fromRequest()` captures IP + user-agent for the entry.
+23. **Slack bot tokens encrypted at rest** (Slice 7.5) with the same versioned AES-256-GCM key as Google refresh tokens. Per-Operator workspace install. Slack signing secret is the single HMAC secret for inbound webhook verification AND the state-binding HMAC on OAuth install (so a third party can't forge a callback that links a code to the wrong Operator).
 
 ---
 
@@ -611,11 +657,23 @@ GET    /v1/oauth/google/callback         # Auth-protected, completes calendar co
        tool: book_appointment ok --> [completed, outcome=booked]
        tool: mark_out_of_scope ----> [completed, outcome=out_of_scope]
        tool: mark_spam ------------> [completed, outcome=spam]
-       tool: escalate_to_human ----> [escalated]
-       turn cap reached -----------> [escalated]
+       tool: escalate_to_human ----> [escalated]   (NON-TERMINAL — Slice 7.5)
+       turn cap reached -----------> [escalated]   (NON-TERMINAL — Slice 7.5)
 ```
 
 Implementation: enum stored in `conversations.status`. Transitions wrapped in DB transaction. `pg-boss` handles delayed jobs (24h abandonment, 1h reminder, fee timeout).
+
+**`escalated` is non-terminal** (Slice 7.5). When a conversation is `escalated`:
+- The AI advance loop **does not** run on new caller SMS; the SMS webhook bridges
+  the caller's message to the Slack thread instead.
+- An agent can hand control back via `/bb back-to-bot` or the "Resume AI" action
+  button on the parent Slack message → status flips to `awaiting_caller` and
+  the next caller SMS resumes the advance loop with full transcript history.
+- An agent can close via `/bb resolve` / "Close" / "Mark spam" → status flips
+  to `completed` with the chosen outcome.
+- One open `escalations` row per conversation is enforced by a partial unique
+  index (`escalations_one_open_per_conversation`). Re-escalation is fine after
+  resolution.
 
 ---
 

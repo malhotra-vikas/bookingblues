@@ -6,6 +6,13 @@ import { UnauthorizedError } from '../errors/app-error';
 export interface AuthenticatedUser {
   readonly userId: string;
   readonly email: string | null;
+  /**
+   * True iff `auth.users.app_metadata.role === 'admin'`. Set server-side via
+   * the Supabase Admin SDK; can NEVER be self-assigned because `app_metadata`
+   * is not writeable by end-users (in contrast to `user_metadata`).
+   * See ADR 0009.
+   */
+  readonly isAdmin: boolean;
 }
 
 /**
@@ -27,9 +34,11 @@ export class JwtVerifierService {
     if (error || !data.user) {
       throw new UnauthorizedError('Invalid or expired token');
     }
+    const role = (data.user.app_metadata as { role?: unknown } | undefined)?.role;
     return {
       userId: data.user.id,
       email: data.user.email ?? null,
+      isAdmin: role === 'admin',
     };
   }
 }

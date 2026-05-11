@@ -84,6 +84,15 @@ const baseSchema = z.object({
   // Comma-separated E.164 numbers. Applied only when NODE_ENV !== 'production'.
   // Unset in non-prod = block-all (fail-safe).
   OUTBOUND_SMS_ALLOWLIST: z.string().optional(),
+
+  // Slack (Slice 7.5 — HITL).
+  // Bot creates: created in api.slack.com/apps. Each operator's workspace install
+  // saves a per-workspace bot token, encrypted at rest. The client/signing
+  // creds below identify *the BookingBlues app itself* for OAuth + signature
+  // verification — they're constant across operators.
+  SLACK_CLIENT_ID: z.string().optional(),
+  SLACK_CLIENT_SECRET: z.string().optional(),
+  SLACK_SIGNING_SECRET: z.string().optional(),
 });
 
 export type Env = Readonly<
