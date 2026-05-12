@@ -54,7 +54,50 @@ const REDACT_PATHS = [
               }
             : {}),
           autoLogging: {
-            ignore: (req) => req.url === '/v1/health',
+            // Skip noisy infra-level requests. Dashboard polling and the
+            // health check shouldn't be in the log feed; we still log the
+            // interesting webhooks + admin actions + errors.
+            ignore: (req) => {
+              const url = req.url ?? '';
+              if (url === '/v1/health') return true;
+              if (url.startsWith('/v1/dashboard/metrics')) return true;
+              if (url.startsWith('/v1/conversations')) return true;
+              if (url.startsWith('/v1/appointments')) return true;
+              if (url.startsWith('/v1/operators/me')) return true;
+              if (url.startsWith('/v1/admin/metrics')) return true;
+              if (url.startsWith('/v1/admin/operators')) return true;
+              if (url.startsWith('/v1/admin/leads')) return true;
+              return false;
+            },
+          },
+          // Trim the per-request payload. Default pino-http dumps every
+          // header + every response header; the resulting JSON is ~3KB per
+          // line. Keep only what we actually need to debug.
+          serializers: {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            req: (req: any) => ({
+              method: req.method,
+              url: req.url,
+              id: req.id,
+            }),
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            res: (res: any) => ({ statusCode: res.statusCode }),
+          },
+          // Drop the "request completed"/"request errored" boilerplate; the
+          // (method, url, status, responseTime) tuple is the useful bit.
+          customSuccessMessage: (req, res, responseTime) =>
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            `${(req as any).method} ${(req as any).url} ${(res as any).statusCode} ${responseTime}ms`,
+          customErrorMessage: (req, res, err) =>
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            `${(req as any).method} ${(req as any).url} ${(res as any).statusCode} — ${err.message}`,
+          // Demote routine 2xx/3xx to debug so they're hidden at level=info
+          // in prod. 4xx → warn, 5xx → error. Tweak LOG_LEVEL=debug in
+          // Railway env to see everything again.
+          customLogLevel: (_req, res, err) => {
+            if (err || res.statusCode >= 500) return 'error';
+            if (res.statusCode >= 400) return 'warn';
+            return 'debug';
           },
           customProps: () => ({ service: 'api' }),
         },

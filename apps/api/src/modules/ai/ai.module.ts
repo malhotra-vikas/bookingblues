@@ -9,6 +9,7 @@ import { ConversationsModule } from '../conversations/conversations.module';
 import { PaymentsModule } from '../payments/payments.module';
 import { SlackModule } from '../slack/slack.module';
 
+import { AdvanceSchedulerService } from './advance-scheduler.service';
 import { AdvanceService } from './advance.service';
 
 @Module({
@@ -22,7 +23,7 @@ import { AdvanceService } from './advance.service';
     SlackModule,
     AppointmentsModule,
   ],
-  providers: [AdvanceService],
-  exports: [AdvanceService],
+  providers: [AdvanceService, AdvanceSchedulerService],
+  exports: [AdvanceService, AdvanceSchedulerService],
 })
 export class AiModule {}

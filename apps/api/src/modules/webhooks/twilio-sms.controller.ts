@@ -18,6 +18,7 @@ import { TwilioService } from '../../common/twilio/twilio.service';
 import { WebhookIdempotencyService } from '../../common/webhooks/webhook-idempotency.service';
 import { ENV_TOKEN } from '../../config/config.module';
 import type { Env } from '../../config/env';
+import { AdvanceSchedulerService } from '../ai/advance-scheduler.service';
 import { AdvanceService } from '../ai/advance.service';
 import { ConversationsService } from '../conversations/conversations.service';
 import { EscalationsService } from '../slack/escalations.service';
@@ -39,6 +40,7 @@ export class TwilioSmsController {
     private readonly twilio: TwilioService,
     private readonly conversations: ConversationsService,
     private readonly advance: AdvanceService,
+    private readonly advanceScheduler: AdvanceSchedulerService,
     private readonly escalations: EscalationsService,
     private readonly idempotency: WebhookIdempotencyService,
     private readonly logger: PinoLogger,
@@ -147,11 +149,19 @@ export class TwilioSmsController {
             // Conversation is owned by a human right now; the AI advance
             // loop is suppressed. The echo above already informed the team.
           } else {
-            await this.advance.advance({
-              operator: operatorRow,
-              conversation: convoFull,
-              callerPhoneE164: form.From,
-            });
+            // Debounce 2s — rapid-fire caller SMS bursts (common: "I need a
+            // plumber" / "kitchen flood" / "08820") collapse into one advance
+            // run that reads all turns at once. Prevents concurrent OpenAI
+            // calls, contradictory replies, and §9.3 rate-limit drops on
+            // the bot's second/third reply.
+            const callerPhone = form.From;
+            this.advanceScheduler.schedule(convoFull.id, () =>
+              this.advance.advance({
+                operator: operatorRow,
+                conversation: convoFull,
+                callerPhoneE164: callerPhone,
+              }),
+            );
           }
         }
       }
