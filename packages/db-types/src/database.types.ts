@@ -7,6 +7,11 @@ export type Json =
   | Json[];
 
 export type Database = {
+  // Allows to automatically instantiate createClient with right options
+  // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
+  __InternalSupabase: {
+    PostgrestVersion: "14.5";
+  };
   public: {
     Tables: {
       appointments: {
@@ -258,6 +263,75 @@ export type Database = {
           },
         ];
       };
+      escalations: {
+        Row: {
+          caller_phone_e164: string;
+          conversation_id: string;
+          created_at: string;
+          fallback_email_sent_at: string | null;
+          id: string;
+          opened_by: Database["public"]["Enums"]["escalation_opener"];
+          operator_id: string;
+          reason: Database["public"]["Enums"]["escalation_reason"];
+          resolution_note: string | null;
+          resolved_at: string | null;
+          resolved_by_user_id: string | null;
+          slack_channel_id: string | null;
+          slack_thread_ts: string | null;
+          status: Database["public"]["Enums"]["escalation_status"];
+          updated_at: string;
+        };
+        Insert: {
+          caller_phone_e164: string;
+          conversation_id: string;
+          created_at?: string;
+          fallback_email_sent_at?: string | null;
+          id?: string;
+          opened_by: Database["public"]["Enums"]["escalation_opener"];
+          operator_id: string;
+          reason: Database["public"]["Enums"]["escalation_reason"];
+          resolution_note?: string | null;
+          resolved_at?: string | null;
+          resolved_by_user_id?: string | null;
+          slack_channel_id?: string | null;
+          slack_thread_ts?: string | null;
+          status?: Database["public"]["Enums"]["escalation_status"];
+          updated_at?: string;
+        };
+        Update: {
+          caller_phone_e164?: string;
+          conversation_id?: string;
+          created_at?: string;
+          fallback_email_sent_at?: string | null;
+          id?: string;
+          opened_by?: Database["public"]["Enums"]["escalation_opener"];
+          operator_id?: string;
+          reason?: Database["public"]["Enums"]["escalation_reason"];
+          resolution_note?: string | null;
+          resolved_at?: string | null;
+          resolved_by_user_id?: string | null;
+          slack_channel_id?: string | null;
+          slack_thread_ts?: string | null;
+          status?: Database["public"]["Enums"]["escalation_status"];
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "escalations_conversation_id_fkey";
+            columns: ["conversation_id"];
+            isOneToOne: true;
+            referencedRelation: "conversations";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "escalations_operator_id_fkey";
+            columns: ["operator_id"];
+            isOneToOne: false;
+            referencedRelation: "operators";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       messages: {
         Row: {
           ai_tool_calls: Json | null;
@@ -266,6 +340,7 @@ export type Database = {
           created_at: string;
           id: string;
           role: Database["public"]["Enums"]["message_role"];
+          slack_message_ts: string | null;
           twilio_message_sid: string | null;
           updated_at: string;
         };
@@ -276,6 +351,7 @@ export type Database = {
           created_at?: string;
           id?: string;
           role: Database["public"]["Enums"]["message_role"];
+          slack_message_ts?: string | null;
           twilio_message_sid?: string | null;
           updated_at?: string;
         };
@@ -286,6 +362,7 @@ export type Database = {
           created_at?: string;
           id?: string;
           role?: Database["public"]["Enums"]["message_role"];
+          slack_message_ts?: string | null;
           twilio_message_sid?: string | null;
           updated_at?: string;
         };
@@ -469,6 +546,62 @@ export type Database = {
           },
         ];
       };
+      slack_connections: {
+        Row: {
+          created_at: string;
+          default_channel_id: string | null;
+          default_channel_name: string | null;
+          encrypted_bot_token: string;
+          id: string;
+          installed_at: string;
+          installed_by_user_id: string | null;
+          operator_id: string;
+          scopes: string[];
+          status: string;
+          team_id: string;
+          team_name: string | null;
+          updated_at: string;
+        };
+        Insert: {
+          created_at?: string;
+          default_channel_id?: string | null;
+          default_channel_name?: string | null;
+          encrypted_bot_token: string;
+          id?: string;
+          installed_at?: string;
+          installed_by_user_id?: string | null;
+          operator_id: string;
+          scopes?: string[];
+          status?: string;
+          team_id: string;
+          team_name?: string | null;
+          updated_at?: string;
+        };
+        Update: {
+          created_at?: string;
+          default_channel_id?: string | null;
+          default_channel_name?: string | null;
+          encrypted_bot_token?: string;
+          id?: string;
+          installed_at?: string;
+          installed_by_user_id?: string | null;
+          operator_id?: string;
+          scopes?: string[];
+          status?: string;
+          team_id?: string;
+          team_name?: string | null;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "slack_connections_operator_id_fkey";
+            columns: ["operator_id"];
+            isOneToOne: true;
+            referencedRelation: "operators";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       twilio_numbers: {
         Row: {
           created_at: string;
@@ -554,6 +687,8 @@ export type Database = {
       [_ in never]: never;
     };
     Functions: {
+      admin_demote: { Args: { p_user_email: string }; Returns: string };
+      admin_promote: { Args: { p_user_email: string }; Returns: string };
       auth_operator_id: { Args: never; Returns: string };
     };
     Enums: {
@@ -585,6 +720,14 @@ export type Database = {
         | "completed"
         | "abandoned"
         | "escalated";
+      escalation_opener: "bot" | "caller" | "operator";
+      escalation_reason:
+        | "bot_stuck"
+        | "caller_requested"
+        | "operator_forced"
+        | "calendar_revoked"
+        | "turn_cap";
+      escalation_status: "open" | "resolved" | "abandoned";
       message_role: "caller" | "bot" | "system";
       payment_status:
         | "pending"
@@ -601,7 +744,12 @@ export type Database = {
         | "incomplete"
         | "incomplete_expired";
       twilio_number_status: "available" | "assigned" | "released";
-      webhook_source: "twilio" | "stripe" | "stripe_connect" | "google";
+      webhook_source:
+        | "twilio"
+        | "stripe"
+        | "stripe_connect"
+        | "google"
+        | "slack";
     };
     CompositeTypes: {
       [_ in never]: never;
@@ -764,6 +912,15 @@ export const Constants = {
         "abandoned",
         "escalated",
       ],
+      escalation_opener: ["bot", "caller", "operator"],
+      escalation_reason: [
+        "bot_stuck",
+        "caller_requested",
+        "operator_forced",
+        "calendar_revoked",
+        "turn_cap",
+      ],
+      escalation_status: ["open", "resolved", "abandoned"],
       message_role: ["caller", "bot", "system"],
       payment_status: [
         "pending",
@@ -782,7 +939,7 @@ export const Constants = {
         "incomplete_expired",
       ],
       twilio_number_status: ["available", "assigned", "released"],
-      webhook_source: ["twilio", "stripe", "stripe_connect", "google"],
+      webhook_source: ["twilio", "stripe", "stripe_connect", "google", "slack"],
     },
   },
 } as const;
