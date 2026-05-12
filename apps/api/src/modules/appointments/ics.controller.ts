@@ -13,7 +13,7 @@ import { BookingsService } from './bookings.service';
  * known to the caller. Revisit if we ever surface attendee emails or
  * fee amounts in the ICS.
  */
-@Controller()
+@Controller('appointments')
 @SkipThrottle()
 export class IcsController {
   constructor(
@@ -21,7 +21,7 @@ export class IcsController {
     private readonly bookings: BookingsService,
   ) {}
 
-  @Get('v1/appointments/:id.ics')
+  @Get(':id.ics')
   @Header('Content-Type', 'text/calendar; charset=utf-8')
   @Header('Content-Disposition', 'inline; filename="appointment.ics"')
   async getIcs(@Param('id', new ParseUUIDPipe()) id: string): Promise<string> {
