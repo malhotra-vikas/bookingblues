@@ -8,10 +8,11 @@ export default async function DashboardLayout({ children }: { children: ReactNod
   const supabase = await getSupabaseServerClient();
   const { data } = await supabase.auth.getUser();
   if (!data.user) redirect('/login');
+  const isAdmin = (data.user.app_metadata as { role?: unknown } | undefined)?.role === 'admin';
 
   return (
     <div className="min-h-screen flex flex-col">
-      <Nav activeUser={{ email: data.user.email ?? null }} />
+      <Nav activeUser={{ email: data.user.email ?? null }} isAdmin={isAdmin} />
       <main className="flex-1 px-6 py-6 max-w-5xl w-full mx-auto">{children}</main>
     </div>
   );
