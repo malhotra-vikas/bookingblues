@@ -62,6 +62,10 @@ export class EscalationsService {
     conversation: ConversationRow;
     callerPhoneE164: string;
     reason: EscalationReason;
+    /** Free-form reason text from the AI (or the operator UI). Surfaced in
+     *  the Slack post so the human sees the model's own explanation, not just
+     *  the normalised enum bucket. */
+    reasonText?: string;
     openedBy: 'bot' | 'caller' | 'operator';
     actorUserId?: string | null;
   }): Promise<{ escalation: EscalationRow; deliveredVia: 'slack' | 'email_fallback' | 'none' }> {
@@ -424,7 +428,7 @@ export class EscalationsService {
   // ── Slack message formatting ───────────────────────────────────────────
 
   private parentMessageText(
-    args: { operator: OperatorRow; conversation: ConversationRow; callerPhoneE164: string; reason: EscalationReason; openedBy: string },
+    args: { operator: OperatorRow; conversation: ConversationRow; callerPhoneE164: string; reason: EscalationReason; reasonText?: string; openedBy: string },
     transcript: ReadonlyArray<{ role: string; body: string }>,
   ): string {
     const last4 = args.callerPhoneE164.slice(-4);
@@ -439,6 +443,7 @@ export class EscalationsService {
     const lines = [
       `:rotating_light: *Needs a human* — ${reasonHuman} (opened by ${args.openedBy})`,
       `${args.operator.business_name} · caller •••${last4} · convo \`${args.conversation.id.slice(0, 8)}\``,
+      ...(args.reasonText ? ['', `*Why:* ${args.reasonText}`] : []),
       '',
       ...transcript.map((t) => {
         const tag = t.role === 'caller' ? '📲 Caller' : t.role === 'bot' ? '🤖 Bot' : '👤 Agent';
@@ -452,7 +457,7 @@ export class EscalationsService {
   }
 
   private parentMessageBlocks(
-    args: { operator: OperatorRow; conversation: ConversationRow; callerPhoneE164: string; reason: EscalationReason },
+    args: { operator: OperatorRow; conversation: ConversationRow; callerPhoneE164: string; reason: EscalationReason; reasonText?: string },
     transcript: ReadonlyArray<{ role: string; body: string }>,
   ): ReadonlyArray<unknown> {
     const last4 = args.callerPhoneE164.slice(-4);
@@ -478,6 +483,12 @@ export class EscalationsService {
           },
         ],
       },
+      args.reasonText
+        ? {
+            type: 'section',
+            text: { type: 'mrkdwn', text: `*Why:* ${args.reasonText}` },
+          }
+        : null,
       transcriptText
         ? {
             type: 'section',

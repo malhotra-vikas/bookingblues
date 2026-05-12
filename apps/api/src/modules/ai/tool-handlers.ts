@@ -264,6 +264,7 @@ export async function escalateToHuman(
       conversation: ctx.conversation,
       callerPhoneE164: ctx.callerPhoneE164,
       reason: reasonNorm,
+      reasonText: args.reason,
       openedBy: reasonNorm === 'caller_requested' ? 'caller' : 'bot',
     });
     ctx.logger.info(
