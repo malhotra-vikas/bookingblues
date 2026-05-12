@@ -58,6 +58,16 @@ export class SlackApiClient {
     });
   }
 
+  async openView(args: {
+    triggerId: string;
+    view: Record<string, unknown>;
+  }): Promise<SlackCommonResponse & { view?: { id?: string } }> {
+    return this.callJson<SlackCommonResponse & { view?: { id?: string } }>(
+      'views.open',
+      { trigger_id: args.triggerId, view: args.view },
+    );
+  }
+
   // ── internal ─────────────────────────────────────────────────────────────
 
   private requireBotToken(): string {

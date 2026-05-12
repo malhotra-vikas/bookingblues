@@ -7,6 +7,7 @@ import { ValidationError } from '../../common/errors/app-error';
 import { WebhookIdempotencyService } from '../../common/webhooks/webhook-idempotency.service';
 
 import { EscalationsService } from './escalations.service';
+import { SlackApiClient } from './slack-api.client';
 import { SlackSignatureGuard } from './slack-signature.guard';
 
 interface SlackEventEnvelope {
@@ -40,7 +41,7 @@ interface SlackSlashCommandBody {
 }
 
 interface SlackInteractivityPayload {
-  type?: 'block_actions';
+  type?: 'block_actions' | 'view_submission';
   team?: { id?: string };
   user?: { id?: string; username?: string };
   channel?: { id?: string };
@@ -50,6 +51,22 @@ interface SlackInteractivityPayload {
   // We ACK the webhook with 200 and POST the actual response here — direct
   // JSON responses to block_actions don't render reliably across clients.
   response_url?: string;
+  trigger_id?: string;
+  view?: {
+    id?: string;
+    callback_id?: string;
+    private_metadata?: string;
+    state?: {
+      values?: Record<string, Record<string, { value?: string }>>;
+    };
+  };
+}
+
+interface ResumeAiModalMetadata {
+  escalationId: string;
+  conversationId: string;
+  responseUrl: string | null;
+  channelId: string | null;
 }
 
 /**
@@ -75,6 +92,7 @@ async function postToResponseUrl(
 export class SlackWebhooksController {
   constructor(
     private readonly escalations: EscalationsService,
+    private readonly slackApi: SlackApiClient,
     private readonly idempotency: WebhookIdempotencyService,
     private readonly logger: PinoLogger,
   ) {
@@ -243,6 +261,9 @@ export class SlackWebhooksController {
     } catch {
       throw new ValidationError('Interactivity payload was not JSON');
     }
+    if (payload.type === 'view_submission') {
+      return this.handleViewSubmission(payload);
+    }
     if (payload.type !== 'block_actions' || !payload.actions?.length) {
       return { ok: true };
     }
@@ -274,18 +295,68 @@ export class SlackWebhooksController {
     // reliably (we hit this with show-number/close/resume-AI returning 200
     // but Slack showing the spinner resolve to nothing).
     switch (action.action_id) {
-      case 'esc_back_to_bot':
-        await this.escalations.backToBot({
-          escalationId: esc.id,
-          resolvedByUserId: null,
-        });
-        if (responseUrl) {
-          await postToResponseUrl(responseUrl, {
-            response_type: 'in_channel',
-            text: `↩ <@${slackUserId}> resumed the bot.`,
-          });
+      case 'esc_back_to_bot': {
+        // Open a modal so the agent can type a handoff message that goes to
+        // the caller as SMS. Modal submit (handleViewSubmission) does the
+        // actual SMS send + status flip; this branch only opens the view.
+        const triggerId = payload.trigger_id;
+        if (!triggerId) {
+          // Trigger IDs expire fast (3s); if absent something else went
+          // wrong. Fall back to the immediate flip.
+          await this.escalations.backToBot({ escalationId: esc.id, resolvedByUserId: null });
+          if (responseUrl) {
+            await postToResponseUrl(responseUrl, {
+              response_type: 'in_channel',
+              text: `↩ <@${slackUserId}> resumed the bot.`,
+            });
+          }
+          return { ok: true };
         }
+        const metadata: ResumeAiModalMetadata = {
+          escalationId: esc.id,
+          conversationId: esc.conversation_id,
+          responseUrl: responseUrl ?? null,
+          channelId: payload.channel?.id ?? null,
+        };
+        await this.slackApi.openView({
+          triggerId,
+          view: {
+            type: 'modal',
+            callback_id: 'bb_resume_ai',
+            private_metadata: JSON.stringify(metadata),
+            title: { type: 'plain_text', text: 'Resume AI' },
+            submit: { type: 'plain_text', text: 'Resume AI' },
+            close: { type: 'plain_text', text: 'Cancel' },
+            blocks: [
+              {
+                type: 'section',
+                text: {
+                  type: 'mrkdwn',
+                  text:
+                    'Optional handoff message to send to the caller as SMS *before* the AI takes back over. Leave blank to resume silently.',
+                },
+              },
+              {
+                type: 'input',
+                block_id: 'handoff_block',
+                optional: true,
+                label: { type: 'plain_text', text: 'Message to caller' },
+                element: {
+                  type: 'plain_text_input',
+                  action_id: 'handoff_text',
+                  multiline: true,
+                  max_length: 480,
+                  placeholder: {
+                    type: 'plain_text',
+                    text: 'e.g. Thanks for waiting — our AI assistant will take it from here.',
+                  },
+                },
+              },
+            ],
+          },
+        });
         return { ok: true };
+      }
 
       case 'esc_mark_spam':
         await this.escalations.resolveEscalation({
@@ -335,5 +406,66 @@ export class SlackWebhooksController {
     }
   }
 
+  /**
+   * Handle the Resume-AI modal submission. Responds with `{}` so Slack closes
+   * the modal. The SMS send + status flip run before we respond so the
+   * caller sees the handoff message before the AI's next turn.
+   */
+  private async handleViewSubmission(
+    payload: SlackInteractivityPayload,
+  ): Promise<Record<string, unknown>> {
+    if (payload.view?.callback_id !== 'bb_resume_ai') return {};
+
+    let meta: ResumeAiModalMetadata;
+    try {
+      meta = JSON.parse(payload.view.private_metadata ?? '{}') as ResumeAiModalMetadata;
+    } catch {
+      this.logger.warn('resume-ai modal had unparseable private_metadata');
+      return {};
+    }
+
+    const handoffText = (
+      payload.view.state?.values?.handoff_block?.handoff_text?.value ?? ''
+    ).trim();
+    const slackUserId = payload.user?.id ?? 'unknown';
+
+    this.logger.info(
+      { escalationId: meta.escalationId, slackUserId, hasHandoff: Boolean(handoffText) },
+      'slack resume-ai submission',
+    );
+
+    if (handoffText) {
+      const send = await this.escalations.sendAgentSmsForEscalation({
+        escalationId: meta.escalationId,
+        text: handoffText,
+      });
+      if (!send.delivered) {
+        // The SMS failed — return validation errors so the modal stays open
+        // and the agent can decide what to do (retry / cancel).
+        return {
+          response_action: 'errors',
+          errors: {
+            handoff_block: `Could not send SMS (${send.reason ?? 'unknown'}). Resume cancelled.`,
+          },
+        };
+      }
+    }
+
+    await this.escalations.backToBot({
+      escalationId: meta.escalationId,
+      resolvedByUserId: null,
+      ...(handoffText ? { note: handoffText } : {}),
+    });
+
+    if (meta.responseUrl) {
+      const tail = handoffText ? ' (handoff SMS sent)' : '';
+      await postToResponseUrl(meta.responseUrl, {
+        response_type: 'in_channel',
+        text: `↩ <@${slackUserId}> resumed the bot${tail}.`,
+      });
+    }
+
+    return {};
+  }
 }
 

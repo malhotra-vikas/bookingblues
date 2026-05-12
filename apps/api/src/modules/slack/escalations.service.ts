@@ -301,6 +301,43 @@ export class EscalationsService {
     return { delivered: true };
   }
 
+  /**
+   * One-shot SMS to the caller in the context of a specific escalation —
+   * used by the Resume-AI modal where we already know the escalation id and
+   * don't need thread/channel routing. No §9.3 rate-limit gate (modal submit
+   * is human-deliberate, not a stream).
+   */
+  async sendAgentSmsForEscalation(args: {
+    escalationId: string;
+    text: string;
+  }): Promise<{ delivered: boolean; reason?: string }> {
+    const esc = await this.requireEscalation(args.escalationId);
+
+    const { data: op, error: opErr } = await this.supabase
+      .db()
+      .from('operators')
+      .select('twilio_number_e164')
+      .eq('id', esc.operator_id)
+      .maybeSingle();
+    if (opErr) throw opErr;
+    if (!op?.twilio_number_e164) return { delivered: false, reason: 'no_operator_number' };
+
+    const send = await this.twilio.sendSms({
+      from: op.twilio_number_e164,
+      to: esc.caller_phone_e164,
+      body: args.text,
+    });
+    if ('skipped' in send) return { delivered: false, reason: `skipped:${send.skipped}` };
+
+    await this.conversations.appendMessage({
+      conversationId: esc.conversation_id,
+      role: 'system',
+      body: args.text,
+      twilioMessageSid: send.sid,
+    });
+    return { delivered: true };
+  }
+
   // ── helpers ─────────────────────────────────────────────────────────────
 
   async findOpenForConversation(conversationId: string): Promise<EscalationRow | null> {
