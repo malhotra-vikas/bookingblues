@@ -718,6 +718,7 @@ export class EscalationsService {
           { type: 'button', action_id: 'esc_mark_spam', text: { type: 'plain_text', text: '🚫 Mark spam', emoji: true }, style: 'danger', value: args.conversation.id },
           { type: 'button', action_id: 'esc_close', text: { type: 'plain_text', text: '✓ Close', emoji: true }, value: args.conversation.id },
           { type: 'button', action_id: 'esc_show_number', text: { type: 'plain_text', text: '👁 Show number', emoji: true }, value: args.conversation.id },
+          { type: 'button', action_id: 'esc_book', text: { type: 'plain_text', text: '📅 Book a slot', emoji: true }, style: 'primary', value: args.conversation.id },
         ],
       },
     ].filter(Boolean);

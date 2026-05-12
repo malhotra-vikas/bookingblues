@@ -9,6 +9,7 @@ import { SupabaseService } from '../../common/supabase/supabase.service';
 import { TwilioService } from '../../common/twilio/twilio.service';
 import { CalendarService } from '../calendar/calendar.service';
 import { ConversationsService } from '../conversations/conversations.service';
+import { BookingsService } from '../appointments/bookings.service';
 import { PaymentsService } from '../payments/payments.service';
 import { EscalationsService } from '../slack/escalations.service';
 import { assembleSystemPrompt, wrapCallerMessage } from './prompts';
@@ -49,6 +50,7 @@ export class AdvanceService {
     private readonly conversations: ConversationsService,
     private readonly payments: PaymentsService,
     private readonly escalations: EscalationsService,
+    private readonly bookings: BookingsService,
     private readonly logger: PinoLogger,
   ) {
     this.logger.setContext(AdvanceService.name);
@@ -202,6 +204,7 @@ export class AdvanceService {
       conversations: this.conversations,
       payments: this.payments,
       escalations: this.escalations,
+      bookings: this.bookings,
       logger: this.logger,
     };
   }

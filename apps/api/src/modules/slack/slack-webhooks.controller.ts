@@ -6,6 +6,9 @@ import type { Json } from '@bookingblues/db-types';
 import { ValidationError } from '../../common/errors/app-error';
 import { WebhookIdempotencyService } from '../../common/webhooks/webhook-idempotency.service';
 
+import { SupabaseService } from '../../common/supabase/supabase.service';
+import { BookingsService } from '../appointments/bookings.service';
+
 import { EscalationsService } from './escalations.service';
 import { SlackApiClient } from './slack-api.client';
 import { SlackSignatureGuard } from './slack-signature.guard';
@@ -69,6 +72,15 @@ interface ResumeAiModalMetadata {
   channelId: string | null;
 }
 
+interface BookModalMetadata {
+  conversationId: string;
+  operatorId: string;
+  callerPhoneE164: string;
+  /** Open escalation id if this booking is being made in an escalation context. */
+  escalationId: string | null;
+  responseUrl: string | null;
+}
+
 /**
  * Send the rendered response back to Slack via the payload's response_url.
  * For block_actions, Slack's response_url defaults `replace_original` to
@@ -93,6 +105,8 @@ export class SlackWebhooksController {
   constructor(
     private readonly escalations: EscalationsService,
     private readonly slackApi: SlackApiClient,
+    private readonly bookings: BookingsService,
+    private readonly supabase: SupabaseService,
     private readonly idempotency: WebhookIdempotencyService,
     private readonly logger: PinoLogger,
   ) {
@@ -243,16 +257,24 @@ export class SlackWebhooksController {
         };
       }
 
-      case 'book':
-        // Full implementation in Slice 9-followup; placeholder so the command
-        // doesn't appear broken.
-        if (!arg) {
-          return { response_type: 'ephemeral', text: 'Usage: `/bb book <ISO datetime>`' };
+      case 'book': {
+        // Manual book — opens a modal regardless of whether there's an open
+        // escalation. Falls back to looking up the conversation by thread so
+        // /bb book works in plain #convos threads too.
+        const triggerId = body.trigger_id;
+        if (!triggerId) {
+          return { response_type: 'ephemeral', text: 'Slack trigger expired — try again.' };
         }
-        return {
-          response_type: 'ephemeral',
-          text: `Manual booking is queued for Slice 9-followup. Date: \`${arg}\``,
-        };
+        const lookup = await this.lookupThreadContext(channelId, threadTs);
+        if (!lookup) {
+          return {
+            response_type: 'ephemeral',
+            text: 'No matching conversation found for this thread.',
+          };
+        }
+        await this.openBookingModal(triggerId, lookup);
+        return { ok: true };
+      }
 
       default:
         return { response_type: 'ephemeral', text: `Unknown subcommand: ${verb}. Try \`/bb help\`.` };
@@ -398,6 +420,19 @@ export class SlackWebhooksController {
         }
         return { ok: true };
 
+      case 'esc_book': {
+        const triggerId = payload.trigger_id;
+        if (!triggerId) return { ok: true };
+        await this.openBookingModal(triggerId, {
+          conversationId: esc.conversation_id,
+          operatorId: esc.operator_id,
+          callerPhoneE164: esc.caller_phone_e164,
+          escalationId: esc.id,
+          responseUrl: responseUrl ?? null,
+        });
+        return { ok: true };
+      }
+
       case 'esc_show_number': {
         const num = await this.escalations.revealCallerNumber({
           escalationId: esc.id,
@@ -426,6 +461,9 @@ export class SlackWebhooksController {
   private async handleViewSubmission(
     payload: SlackInteractivityPayload,
   ): Promise<Record<string, unknown>> {
+    if (payload.view?.callback_id === 'bb_book') {
+      return this.handleBookSubmission(payload);
+    }
     if (payload.view?.callback_id !== 'bb_resume_ai') return {};
 
     let meta: ResumeAiModalMetadata;
@@ -478,6 +516,196 @@ export class SlackWebhooksController {
     }
 
     return {};
+  }
+
+  // ── Manual booking modal (/bb book + "📅 Book a slot" button) ──────────
+
+  private async lookupThreadContext(
+    channelId: string,
+    threadTs: string,
+  ): Promise<BookModalMetadata | null> {
+    // Escalation thread first — the more specific surface — fall back to a
+    // plain conversation thread in #convos.
+    const esc = await this.escalations.findOpenByThread(channelId, threadTs);
+    if (esc) {
+      return {
+        conversationId: esc.conversation_id,
+        operatorId: esc.operator_id,
+        callerPhoneE164: esc.caller_phone_e164,
+        escalationId: esc.id,
+        responseUrl: null,
+      };
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const client = this.supabase.db() as any;
+    const { data, error } = await client
+      .from('conversations')
+      .select('id, operator_id, caller_phone_e164')
+      .eq('slack_channel_id', channelId)
+      .eq('slack_thread_ts', threadTs)
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) return null;
+    return {
+      conversationId: data.id,
+      operatorId: data.operator_id,
+      callerPhoneE164: data.caller_phone_e164,
+      escalationId: null,
+      responseUrl: null,
+    };
+  }
+
+  private async openBookingModal(triggerId: string, meta: BookModalMetadata): Promise<void> {
+    // Default the slot to "tomorrow at 9 AM operator-local" — convenient
+    // baseline the agent usually only needs to nudge.
+    const tomorrow9 = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    tomorrow9.setUTCHours(13, 0, 0, 0); // 9am ET-ish; agent will adjust as needed
+    const initialTs = Math.floor(tomorrow9.getTime() / 1000);
+    await this.slackApi.openView({
+      triggerId,
+      view: {
+        type: 'modal',
+        callback_id: 'bb_book',
+        private_metadata: JSON.stringify(meta),
+        title: { type: 'plain_text', text: 'Book appointment' },
+        submit: { type: 'plain_text', text: 'Book' },
+        close: { type: 'plain_text', text: 'Cancel' },
+        blocks: [
+          {
+            type: 'section',
+            text: {
+              type: 'mrkdwn',
+              text:
+                'Books the appointment in the operator\'s calendar and texts the caller a tap-to-add calendar link. 60-minute slot.',
+            },
+          },
+          {
+            type: 'input',
+            block_id: 'start',
+            label: { type: 'plain_text', text: 'Start time' },
+            element: {
+              type: 'datetimepicker',
+              action_id: 'start_ts',
+              initial_date_time: initialTs,
+            },
+          },
+          {
+            type: 'input',
+            block_id: 'caller_name',
+            label: { type: 'plain_text', text: 'Caller name' },
+            element: {
+              type: 'plain_text_input',
+              action_id: 'caller_name_input',
+              max_length: 120,
+              placeholder: { type: 'plain_text', text: 'e.g. Jane Doe' },
+            },
+          },
+          {
+            type: 'input',
+            block_id: 'job_summary',
+            label: { type: 'plain_text', text: 'Job summary' },
+            element: {
+              type: 'plain_text_input',
+              action_id: 'job_summary_input',
+              multiline: true,
+              max_length: 500,
+              placeholder: {
+                type: 'plain_text',
+                text: 'e.g. Dishwasher install + new wiring run',
+              },
+            },
+          },
+        ],
+      },
+    });
+  }
+
+  private async handleBookSubmission(
+    payload: SlackInteractivityPayload,
+  ): Promise<Record<string, unknown>> {
+    let meta: BookModalMetadata;
+    try {
+      meta = JSON.parse(payload.view?.private_metadata ?? '{}') as BookModalMetadata;
+    } catch {
+      this.logger.warn('book modal had unparseable private_metadata');
+      return {};
+    }
+    const v = payload.view?.state?.values ?? {};
+    const startTs = Number(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (v.start?.start_ts as unknown as { selected_date_time?: number } | undefined)?.selected_date_time,
+    );
+    const callerName = (v.caller_name?.caller_name_input?.value ?? '').trim();
+    const jobSummary = (v.job_summary?.job_summary_input?.value ?? '').trim();
+    const slackUserId = payload.user?.id ?? 'unknown';
+
+    const errors: Record<string, string> = {};
+    if (!startTs || Number.isNaN(startTs)) errors.start = 'Pick a start time';
+    if (!callerName) errors.caller_name = 'Required';
+    if (!jobSummary) errors.job_summary = 'Required';
+    if (Object.keys(errors).length > 0) {
+      return { response_action: 'errors', errors };
+    }
+
+    const startIso = new Date(startTs * 1000).toISOString();
+    const endIso = new Date((startTs + 60 * 60) * 1000).toISOString();
+
+    // Load the operator row (needed for timezone + twilio number + business name).
+    const { data: op, error: opErr } = await this.supabase
+      .db()
+      .from('operators')
+      .select('*')
+      .eq('id', meta.operatorId)
+      .single();
+    if (opErr) {
+      return { response_action: 'errors', errors: { start: `Operator lookup failed: ${opErr.message}` } };
+    }
+
+    try {
+      const result = await this.bookings.book({
+        operator: op,
+        conversationId: meta.conversationId,
+        callerPhoneE164: meta.callerPhoneE164,
+        callerName,
+        jobSummary,
+        startIso,
+        endIso,
+        bookedByUserId: null, // we don't map Slack user → auth.users id today
+      });
+
+      // Resolve the escalation (if any) — the booking is the resolution.
+      if (meta.escalationId) {
+        await this.escalations.resolveEscalation({
+          escalationId: meta.escalationId,
+          resolvedByUserId: null,
+          outcome: 'booked',
+        }).catch((err) => {
+          this.logger.warn(
+            { escalationId: meta.escalationId, err: (err as Error).message },
+            'resolveEscalation after manual book failed (non-fatal)',
+          );
+        });
+      }
+
+      // Surface success back to the channel via response_url if we have one
+      // (button-click path); otherwise just close the modal silently — the
+      // confirmation SMS already went out.
+      if (meta.responseUrl) {
+        await postToResponseUrl(meta.responseUrl, {
+          response_type: 'in_channel',
+          text: `📅 <@${slackUserId}> booked ${callerName} for ${new Date(startIso).toUTCString()}. ICS link sent to caller.`,
+        });
+      }
+
+      return {};
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.logger.warn({ err: msg, meta }, 'manual book failed');
+      return {
+        response_action: 'errors',
+        errors: { start: `Couldn't book: ${msg.slice(0, 180)}` },
+      };
+    }
   }
 
   /**

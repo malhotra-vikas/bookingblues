@@ -2,6 +2,7 @@ import type { PinoLogger } from 'nestjs-pino';
 import type { Tables } from '@bookingblues/db-types';
 
 import { ConflictError, ValidationError } from '../../common/errors/app-error';
+import type { BookingsService } from '../appointments/bookings.service';
 import type { CalendarService } from '../calendar/calendar.service';
 import { isBookingFeeCollectible } from './prompts';
 import type { ConversationsService } from '../conversations/conversations.service';
@@ -32,6 +33,7 @@ export interface ToolContext {
   readonly conversations: ConversationsService;
   readonly payments: PaymentsService;
   readonly escalations: EscalationsService;
+  readonly bookings: BookingsService;
   readonly logger: PinoLogger;
 }
 
@@ -98,69 +100,26 @@ export async function bookAppointment(
   args: BookAppointmentArgs,
   ctx: ToolContext,
 ): Promise<ToolResult> {
-  if (new Date(args.end).getTime() <= new Date(args.start).getTime()) {
-    throw new ValidationError('book_appointment.end must be after start');
-  }
-
-  // Insert first; the partial unique index on (operator_id, scheduled_for_start)
-  // for status IN ('proposed','confirmed') is the race-protection (CLAUDE.md §17).
-  const { data: appt, error: insertErr } = await ctx.supabase
-    .db()
-    .from('appointments')
-    .insert({
-      operator_id: ctx.operator.id,
-      conversation_id: ctx.conversation.id,
-      caller_phone_e164: ctx.callerPhoneE164,
-      caller_name: args.caller_name,
-      ...(args.caller_email ? { caller_email: args.caller_email } : {}),
-      job_summary: args.job_summary,
-      scheduled_for_start: args.start,
-      scheduled_for_end: args.end,
-      status: 'confirmed',
-    })
-    .select('id')
-    .single();
-  if (insertErr) {
-    if (insertErr.code === '23505') {
-      throw new ConflictError('That slot was just taken — pick another.');
-    }
-    throw insertErr;
-  }
-  const appointmentId = appt.id;
-
-  // Try to insert the calendar event. If it fails, revert the appointment so
-  // we don't have a phantom booking the operator never sees.
-  try {
-    const calendarRes = await ctx.calendar.insertEvent({
-      operatorId: ctx.operator.id,
-      summary: `${ctx.operator.business_name}: ${args.job_summary.slice(0, 80)}`,
-      description: `Caller: ${args.caller_name} ${ctx.callerPhoneE164}\nUrgency: ${args.urgency}\n\n${args.job_summary}`,
-      startIso: args.start,
-      endIso: args.end,
-      timeZone: ctx.operator.timezone,
-      attendeeEmails: args.caller_email ? [args.caller_email] : [],
-    });
-    await ctx.supabase
-      .db()
-      .from('appointments')
-      .update({ google_event_id: calendarRes.id })
-      .eq('id', appointmentId);
-  } catch (err) {
-    await ctx.supabase
-      .db()
-      .from('appointments')
-      .update({ status: 'cancelled' })
-      .eq('id', appointmentId);
-    ctx.logger.error(
-      { appointmentId, err: (err as Error).message },
-      'Calendar insert failed; appointment cancelled',
-    );
-    throw err;
-  }
+  // Delegate to the shared BookingsService so the AI path and the manual
+  // paths (`/bb book`, Slack button) share advisory lock, calendar insert,
+  // and confirmation SMS with the tap-to-add ICS link.
+  const result = await ctx.bookings.book({
+    operator: ctx.operator,
+    conversationId: ctx.conversation.id,
+    callerPhoneE164: ctx.callerPhoneE164,
+    callerName: args.caller_name,
+    ...(args.caller_email ? { callerEmail: args.caller_email } : {}),
+    jobSummary: args.job_summary,
+    urgency: args.urgency,
+    startIso: args.start,
+    endIso: args.end,
+    // AI path — don't double-audit (advance layer already logs).
+  });
 
   return {
     content: {
-      appointment_id: appointmentId,
+      appointment_id: result.appointmentId,
+      ics_url: result.icsUrl,
       // Honor the full §9.5 eligibility set — same predicate the prompt uses
       // to decide whether to mention a fee. Prevents the bot from chaining
       // `request_payment_link` when Connect isn't ready, which would error

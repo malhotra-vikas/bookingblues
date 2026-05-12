@@ -29,6 +29,7 @@ function makeCtx(open: jest.Mock): ToolContext {
     conversations: {} as never,
     payments: {} as never,
     escalations: { openEscalation: open } as unknown as ToolContext['escalations'],
+    bookings: {} as never,
     logger: makeLogger(),
   };
 }

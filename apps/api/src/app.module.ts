@@ -16,6 +16,7 @@ import { WebhooksModule as IdempotencyWebhooksModule } from './common/webhooks/w
 import { ConfigModule } from './config/config.module';
 import { AdminModule } from './modules/admin/admin.module';
 import { AiModule } from './modules/ai/ai.module';
+import { AppointmentsModule } from './modules/appointments/appointments.module';
 import { BillingModule } from './modules/billing/billing.module';
 import { CalendarModule } from './modules/calendar/calendar.module';
 import { ConversationsModule } from './modules/conversations/conversations.module';
@@ -57,6 +58,7 @@ import { WebhooksModule } from './modules/webhooks/webhooks.module';
     CalendarModule,
     PaymentsModule,
     DashboardModule,
+    AppointmentsModule,
     AiModule,
     AdminModule,
     SlackModule,

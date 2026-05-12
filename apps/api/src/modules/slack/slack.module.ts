@@ -5,6 +5,7 @@ import { AuthModule } from '../../common/auth/auth.module';
 import { SupabaseModule } from '../../common/supabase/supabase.module';
 import { TwilioModule } from '../../common/twilio/twilio.module';
 import { WebhooksModule as IdempotencyWebhooksModule } from '../../common/webhooks/webhooks.module';
+import { AppointmentsModule } from '../appointments/appointments.module';
 import { ConversationsModule } from '../conversations/conversations.module';
 
 import { EscalationsService } from './escalations.service';
@@ -20,6 +21,7 @@ import { SlackWebhooksController } from './slack-webhooks.controller';
     TwilioModule,
     IdempotencyWebhooksModule,
     ConversationsModule,
+    AppointmentsModule,
   ],
   controllers: [SlackWebhooksController],
   providers: [SlackApiClient, EscalationsService, SlackSignatureGuard],
