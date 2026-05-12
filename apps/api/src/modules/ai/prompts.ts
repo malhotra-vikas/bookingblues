@@ -5,6 +5,23 @@ import { expandServiceArea, parseRadiusZones } from './service-area';
 type OperatorRow = Tables<'operators'>;
 type CategoryRow = Tables<'categories'>;
 
+/**
+ * CLAUDE.md §9.5: booking fees only collectible when all 4 gates are true.
+ * If any fails (typical: Connect onboarding not complete), the bot must
+ * proceed to book *without* a fee. Single source of truth so prompt copy
+ * and tool dispatch agree.
+ */
+export function isBookingFeeCollectible(op: OperatorRow): boolean {
+  if (!op.booking_fee_enabled) return false;
+  if (op.booking_fee_cents == null) return false;
+  if (op.subscription_status !== 'trialing' && op.subscription_status !== 'active') {
+    return false;
+  }
+  if (!op.stripe_connect_charges_enabled) return false;
+  if (!op.stripe_connect_payouts_enabled) return false;
+  return true;
+}
+
 const STATIC_FRAME = `
 You are the booking assistant for a small blue-collar service business. You operate
 exclusively over SMS. Your goal is to qualify the lead, capture the job, and book a
@@ -61,11 +78,13 @@ Hard rules:
 `.trim();
 
 export function operatorBlock(operator: OperatorRow, nowIso: string): string {
-  const fee =
-    operator.booking_fee_enabled && operator.booking_fee_cents != null
-      ? `A non-refundable booking fee of $${(operator.booking_fee_cents / 100).toFixed(2)} ` +
-        `is collected via the secure checkout link before the appointment is confirmed.`
-      : 'No booking fee is collected.';
+  // Only mention the fee if it's actually collectible end-to-end. Stopping
+  // mid-booking on `fee_unavailable` (e.g. Connect onboarding not done) was
+  // costing real bookings. Fall through to no-fee instead.
+  const fee = isBookingFeeCollectible(operator)
+    ? `A non-refundable booking fee of $${(operator.booking_fee_cents! / 100).toFixed(2)} ` +
+      `is collected via the secure checkout link before the appointment is confirmed.`
+    : 'No booking fee is collected.';
   const expandedZips = expandServiceArea(operator);
   const zones = parseRadiusZones(operator.service_radius_zones);
   let serviceArea: string;

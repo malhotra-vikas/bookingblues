@@ -3,6 +3,7 @@ import type { Tables } from '@bookingblues/db-types';
 
 import { ConflictError, ValidationError } from '../../common/errors/app-error';
 import type { CalendarService } from '../calendar/calendar.service';
+import { isBookingFeeCollectible } from './prompts';
 import type { ConversationsService } from '../conversations/conversations.service';
 import type { PaymentsService } from '../payments/payments.service';
 import type { EscalationsService } from '../slack/escalations.service';
@@ -160,8 +161,11 @@ export async function bookAppointment(
   return {
     content: {
       appointment_id: appointmentId,
-      booking_fee_required:
-        ctx.operator.booking_fee_enabled && ctx.operator.booking_fee_cents != null,
+      // Honor the full §9.5 eligibility set — same predicate the prompt uses
+      // to decide whether to mention a fee. Prevents the bot from chaining
+      // `request_payment_link` when Connect isn't ready, which would error
+      // out and leave the caller hanging.
+      booking_fee_required: isBookingFeeCollectible(ctx.operator),
     },
     state: 'completed',
     outcome: 'booked',

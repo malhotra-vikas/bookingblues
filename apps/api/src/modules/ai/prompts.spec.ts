@@ -40,14 +40,34 @@ describe('operatorBlock', () => {
     expect(text).toContain('No booking fee');
   });
 
-  it('includes a formatted fee when enabled', () => {
+  it('includes a formatted fee only when all §9.5 eligibility gates pass', () => {
     const op: Tables<'operators'> = {
       ...baseOperator,
       booking_fee_enabled: true,
       booking_fee_cents: 4500,
+      subscription_status: 'active',
+      stripe_connect_charges_enabled: true,
+      stripe_connect_payouts_enabled: true,
     };
     const text = operatorBlock(op, '2026-05-06T10:00:00Z');
     expect(text).toContain('$45.00');
+  });
+
+  it('falls back to no-fee when Stripe Connect is not ready', () => {
+    // Real scenario from QA 2026-05-12: operator enabled fee but never
+    // finished Connect onboarding. Mentioning a fee the bot can't actually
+    // collect leaves the caller hanging after slot selection.
+    const op: Tables<'operators'> = {
+      ...baseOperator,
+      booking_fee_enabled: true,
+      booking_fee_cents: 4500,
+      subscription_status: 'active',
+      stripe_connect_charges_enabled: false,
+      stripe_connect_payouts_enabled: false,
+    };
+    const text = operatorBlock(op, '2026-05-06T10:00:00Z');
+    expect(text).toContain('No booking fee');
+    expect(text).not.toContain('$45.00');
   });
 });
 
