@@ -46,6 +46,22 @@ interface SlackInteractivityPayload {
   channel?: { id?: string };
   message?: { ts?: string; thread_ts?: string };
   actions?: Array<{ action_id?: string; value?: string; type?: string }>;
+  // Slack supplies a short-lived URL (~30min) on every interactivity payload.
+  // We ACK the webhook with 200 and POST the actual response here — direct
+  // JSON responses to block_actions don't render reliably across clients.
+  response_url?: string;
+}
+
+/** Send the rendered response back to Slack via the payload's response_url. */
+async function postToResponseUrl(
+  url: string,
+  body: Record<string, unknown>,
+): Promise<void> {
+  await fetch(url, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json; charset=utf-8' },
+    body: JSON.stringify(body),
+  });
 }
 
 @Controller('webhooks/slack')
@@ -227,26 +243,44 @@ export class SlackWebhooksController {
     }
 
     const action = payload.actions[0]!;
+    const slackUserId = payload.user?.id ?? 'unknown';
+    const responseUrl = payload.response_url;
+    this.logger.info(
+      { actionId: action.action_id, slackUserId, hasResponseUrl: Boolean(responseUrl) },
+      'slack interactivity click',
+    );
+
     const conversationId = action.value ?? '';
     if (!conversationId) return { ok: true };
 
     const esc = await this.escalations.findOpenForConversation(conversationId);
     if (!esc) {
-      return { response_type: 'ephemeral', text: 'This escalation is no longer open.' };
+      if (responseUrl) {
+        await postToResponseUrl(responseUrl, {
+          response_type: 'ephemeral',
+          text: 'This escalation is no longer open.',
+        });
+      }
+      return { ok: true };
     }
-    const slackUserId = payload.user?.id ?? 'unknown';
 
+    // We ACK Slack with `{ok:true}` and post the user-facing response via
+    // response_url. Direct JSON responses to block_actions don't render
+    // reliably (we hit this with show-number/close/resume-AI returning 200
+    // but Slack showing the spinner resolve to nothing).
     switch (action.action_id) {
       case 'esc_back_to_bot':
         await this.escalations.backToBot({
           escalationId: esc.id,
           resolvedByUserId: null,
         });
-        return {
-          replace_original: false,
-          response_type: 'in_channel',
-          text: `↩ <@${slackUserId}> resumed the bot.`,
-        };
+        if (responseUrl) {
+          await postToResponseUrl(responseUrl, {
+            response_type: 'in_channel',
+            text: `↩ <@${slackUserId}> resumed the bot.`,
+          });
+        }
+        return { ok: true };
 
       case 'esc_mark_spam':
         await this.escalations.resolveEscalation({
@@ -254,11 +288,13 @@ export class SlackWebhooksController {
           resolvedByUserId: null,
           outcome: 'spam',
         });
-        return {
-          replace_original: false,
-          response_type: 'in_channel',
-          text: `🚫 <@${slackUserId}> marked spam.`,
-        };
+        if (responseUrl) {
+          await postToResponseUrl(responseUrl, {
+            response_type: 'in_channel',
+            text: `🚫 <@${slackUserId}> marked spam.`,
+          });
+        }
+        return { ok: true };
 
       case 'esc_close':
         await this.escalations.resolveEscalation({
@@ -266,11 +302,13 @@ export class SlackWebhooksController {
           resolvedByUserId: null,
           outcome: 'rejected',
         });
-        return {
-          replace_original: false,
-          response_type: 'in_channel',
-          text: `✓ <@${slackUserId}> closed the escalation.`,
-        };
+        if (responseUrl) {
+          await postToResponseUrl(responseUrl, {
+            response_type: 'in_channel',
+            text: `✓ <@${slackUserId}> closed the escalation.`,
+          });
+        }
+        return { ok: true };
 
       case 'esc_show_number': {
         const num = await this.escalations.revealCallerNumber({
@@ -278,10 +316,13 @@ export class SlackWebhooksController {
           requestedByUserId: null,
           requestedBySlackUserId: slackUserId,
         });
-        return {
-          response_type: 'ephemeral',
-          text: `📞 Caller: ${num} (audit-logged)`,
-        };
+        if (responseUrl) {
+          await postToResponseUrl(responseUrl, {
+            response_type: 'ephemeral',
+            text: `📞 Caller: ${num} (audit-logged)`,
+          });
+        }
+        return { ok: true };
       }
 
       default:
