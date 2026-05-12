@@ -665,10 +665,17 @@ Implementation: enum stored in `conversations.status`. Transitions wrapped in DB
 - The AI advance loop **does not** run on new caller SMS; the SMS webhook bridges
   the caller's message to the Slack thread instead.
 - An agent can hand control back via `/bb back-to-bot` or the "Resume AI" action
-  button on the parent Slack message → status flips to `awaiting_caller` and
-  the next caller SMS resumes the advance loop with full transcript history.
-- An agent can close via `/bb resolve` / "Close" / "Mark spam" → status flips
-  to `completed` with the chosen outcome.
+  button on the parent Slack message → conversation status flips to
+  `awaiting_caller` (so the next caller SMS resumes the advance loop) **but the
+  escalation row stays `open`**. The Slack thread remains a live control
+  surface — agents can still reply in-thread (bridged to SMS) or terminate via
+  Close / Mark spam at any time after resuming.
+- An escalation row only flips to `resolved` on explicit close: the "Close" /
+  "Mark spam" buttons, or `/bb resolve` / `/bb close-spam`. That also moves the
+  conversation to `completed` with the chosen outcome.
+- The Resume AI modal lets the agent pass a free-form handoff message that is
+  SMS'd to the caller before the AI takes back over (stored as a `system`-role
+  message in the conversation transcript so the next AI turn sees it).
 - One open `escalations` row per conversation is enforced by a partial unique
   index (`escalations_one_open_per_conversation`). Re-escalation is fine after
   resolution.

@@ -143,7 +143,12 @@ export class EscalationsService {
   }
 
   /**
-   * Hand back to the AI. Caller messages from this point resume the advance loop.
+   * Hand back to the AI without closing the escalation. Caller messages from
+   * this point resume the advance loop, but the Slack thread stays open as a
+   * control surface — agents can still intervene in-thread, mark spam, or
+   * close. The escalation row only flips to `resolved` via explicit Close /
+   * Mark spam / `/bb resolve` / `/bb close-spam`. The handoff note is durably
+   * captured in the audit log even though it's not written to the row.
    */
   async backToBot(args: {
     escalationId: string;
@@ -151,12 +156,6 @@ export class EscalationsService {
     note?: string;
   }): Promise<void> {
     const esc = await this.requireEscalation(args.escalationId);
-    await this.updateEscalation(esc.id, {
-      status: 'resolved',
-      resolved_at: new Date().toISOString(),
-      resolved_by_user_id: args.resolvedByUserId,
-      resolution_note: args.note ?? null,
-    });
     await this.flipConversationStatus(esc.conversation_id, 'awaiting_caller');
 
     await this.audit.write({
