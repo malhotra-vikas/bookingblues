@@ -301,6 +301,34 @@ export class EscalationsService {
   }
 
   /**
+   * Mirror the AI bot's outbound SMS into the open escalation's Slack
+   * thread (if any). Lets the human in #hitl see both sides of the
+   * conversation after Resume AI, so they can decide whether to re-engage.
+   * Best-effort — any Slack failure is swallowed so the bot's SMS pipeline
+   * is never blocked by Slack downtime.
+   */
+  async echoBotReplyToOpenEscalation(args: {
+    conversationId: string;
+    text: string;
+  }): Promise<void> {
+    try {
+      const esc = await this.findOpenForConversation(args.conversationId);
+      if (!esc?.slack_channel_id || !esc.slack_thread_ts) return;
+      const body = args.text.length > 480 ? `${args.text.slice(0, 480)}…` : args.text;
+      await this.slackApi.postMessage({
+        channel: esc.slack_channel_id,
+        threadTs: esc.slack_thread_ts,
+        text: `🤖 Bot: ${body}`,
+      });
+    } catch (err) {
+      this.logger.warn(
+        { conversationId: args.conversationId, err: (err as Error).message },
+        'echoBotReplyToOpenEscalation failed (non-fatal)',
+      );
+    }
+  }
+
+  /**
    * One-shot SMS to the caller in the context of a specific escalation —
    * used by the Resume-AI modal where we already know the escalation id and
    * don't need thread/channel routing. No §9.3 rate-limit gate (modal submit

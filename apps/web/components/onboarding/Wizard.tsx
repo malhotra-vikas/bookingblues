@@ -28,6 +28,14 @@ interface Operator {
 
 type Category = { slug: string; display_name: string };
 
+interface TwilioCandidate {
+  phone_number_e164: string;
+  friendly_name: string;
+  vanity_match: string | null;
+  locality: string | null;
+  region: string | null;
+}
+
 const CATEGORIES: Category[] = [
   { slug: 'plumbing', display_name: 'Plumbing' },
   { slug: 'hvac', display_name: 'HVAC' },
@@ -35,6 +43,12 @@ const CATEGORIES: Category[] = [
   { slug: 'roofing', display_name: 'Roofing' },
   { slug: 'garage_door', display_name: 'Garage Door' },
 ];
+
+/** US E.164 → `(415) 555-1234` for display. Non-US falls through unchanged. */
+function formatE164(e164: string): string {
+  const m = e164.match(/^\+1(\d{3})(\d{3})(\d{4})$/);
+  return m ? `(${m[1]}) ${m[2]}-${m[3]}` : e164;
+}
 
 async function authedFetch(path: string, init?: RequestInit): Promise<Response> {
   const supabase = getSupabaseBrowserClient();
@@ -57,6 +71,7 @@ export function Wizard({ initial }: { initial: Operator | null }): JSX.Element {
 
   const [pendingCategory, setPendingCategory] = useState(op?.category ?? '');
   const [pendingAreaCode, setPendingAreaCode] = useState('');
+  const [candidates, setCandidates] = useState<TwilioCandidate[] | null>(null);
   const [pendingFeeEnabled, setPendingFeeEnabled] = useState(op?.booking_fee_enabled ?? false);
   const [pendingFeeDollars, setPendingFeeDollars] = useState(
     op?.booking_fee_cents != null
@@ -115,10 +130,27 @@ export function Wizard({ initial }: { initial: Operator | null }): JSX.Element {
     });
   }
 
-  async function provisionTwilio(): Promise<void> {
-    await handle('provisionTwilio', async () => {
+  async function fetchCandidates(): Promise<void> {
+    await handle('fetchCandidates', async () => {
+      const qs = new URLSearchParams();
+      if (pendingAreaCode) qs.set('area_code', pendingAreaCode);
+      qs.set('limit', '4');
+      const res = await authedFetch(`/v1/operators/me/twilio-number/candidates?${qs.toString()}`);
+      if (!res.ok) {
+        const detail = await res.json().catch(() => ({}));
+        throw new Error(detail.detail ?? `Could not load options (${res.status})`);
+      }
+      const data = (await res.json()) as { candidates: TwilioCandidate[] };
+      setCandidates(data.candidates);
+    });
+  }
+
+  /** Buy a specific candidate the operator picked. */
+  async function provisionTwilio(phoneNumberE164?: string): Promise<void> {
+    await handle(phoneNumberE164 ?? 'provisionTwilio', async () => {
       const body: Record<string, string> = {};
       if (pendingAreaCode) body.area_code = pendingAreaCode;
+      if (phoneNumberE164) body.phone_number_e164 = phoneNumberE164;
       const res = await authedFetch('/v1/operators/me/twilio-number', {
         method: 'POST',
         body: JSON.stringify(body),
@@ -127,6 +159,7 @@ export function Wizard({ initial }: { initial: Operator | null }): JSX.Element {
         const detail = await res.json().catch(() => ({}));
         throw new Error(detail.detail ?? `Could not get a number (${res.status})`);
       }
+      setCandidates(null);
       router.refresh();
     });
   }
@@ -434,21 +467,70 @@ export function Wizard({ initial }: { initial: Operator | null }): JSX.Element {
         done={twilioDone}
       >
         {!twilioDone ? (
-          <div className="flex gap-2 items-center">
-            <input
-              placeholder="Area code (optional, e.g. 415)"
-              value={pendingAreaCode}
-              onChange={(e) => setPendingAreaCode(e.target.value.replace(/\D/g, '').slice(0, 3))}
-              className="rounded-md border border-slate-300 px-3 py-2 text-sm w-48"
-            />
-            <button
-              type="button"
-              onClick={provisionTwilio}
-              disabled={isBusy('provisionTwilio')}
-              className="rounded-md bg-accent px-3 py-2 text-sm text-white disabled:opacity-50"
-            >
-              {isBusy('provisionTwilio') ? 'Getting number…' : 'Get my number'}
-            </button>
+          <div className="flex flex-col gap-3">
+            <div className="flex gap-2 items-center">
+              <input
+                placeholder="Area code (optional, e.g. 415)"
+                value={pendingAreaCode}
+                onChange={(e) =>
+                  setPendingAreaCode(e.target.value.replace(/\D/g, '').slice(0, 3))
+                }
+                className="rounded-md border border-slate-300 px-3 py-2 text-sm w-48"
+              />
+              <button
+                type="button"
+                onClick={fetchCandidates}
+                disabled={isBusy('fetchCandidates')}
+                className="rounded-md bg-accent px-3 py-2 text-sm text-white disabled:opacity-50"
+              >
+                {isBusy('fetchCandidates') ? 'Finding…' : 'Show me options'}
+              </button>
+              <button
+                type="button"
+                onClick={() => provisionTwilio()}
+                disabled={isBusy('provisionTwilio')}
+                className="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-50"
+                title="Skip the picker and grab the first vanity match we can find"
+              >
+                {isBusy('provisionTwilio') ? 'Getting…' : 'Just pick one for me'}
+              </button>
+            </div>
+
+            {candidates && candidates.length > 0 && (
+              <ul className="flex flex-col gap-2">
+                {candidates.map((c) => (
+                  <li key={c.phone_number_e164}>
+                    <button
+                      type="button"
+                      onClick={() => provisionTwilio(c.phone_number_e164)}
+                      disabled={isBusy(c.phone_number_e164)}
+                      className="w-full text-left rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-50 flex items-center justify-between"
+                    >
+                      <span className="font-mono">{formatE164(c.phone_number_e164)}</span>
+                      <span className="text-xs text-slate-500 flex items-center gap-2">
+                        {c.vanity_match && (
+                          <span className="rounded bg-emerald-50 text-emerald-700 px-1.5 py-0.5 font-medium">
+                            Contains {c.vanity_match}
+                          </span>
+                        )}
+                        {c.locality && c.region && (
+                          <span>
+                            {c.locality}, {c.region}
+                          </span>
+                        )}
+                        {isBusy(c.phone_number_e164) ? 'Buying…' : ''}
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+            {candidates && candidates.length === 0 && (
+              <p className="text-sm text-slate-500">
+                No options found{pendingAreaCode ? ` in ${pendingAreaCode}` : ''}. Try a
+                different area code or use &quot;Just pick one for me.&quot;
+              </p>
+            )}
           </div>
         ) : (
           <div className="flex items-center gap-3">

@@ -297,6 +297,11 @@ export class AdvanceService {
       body: 'sid' in send ? body : `[skipped: ${send.skipped}] ${body}`,
       ...('sid' in send ? { twilioMessageSid: send.sid } : {}),
     });
+    // Mirror into the Slack thread if a human resumed an open escalation.
+    // No-op when there's no open escalation or no Slack thread.
+    if ('sid' in send) {
+      await this.escalations.echoBotReplyToOpenEscalation({ conversationId, text: body });
+    }
   }
 }
 

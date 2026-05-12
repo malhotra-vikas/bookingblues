@@ -36,6 +36,9 @@ export default async function AdminLayout({ children }: { children: ReactNode })
           <Link href="/admin/operators" className="no-underline">
             Operators
           </Link>
+          <Link href="/admin/sales-calculator" className="no-underline">
+            Sales Calculator
+          </Link>
         </nav>
         <div className="ml-auto flex items-center gap-4 text-sm text-muted">
           <Link href="/dashboard" className="no-underline text-ink">

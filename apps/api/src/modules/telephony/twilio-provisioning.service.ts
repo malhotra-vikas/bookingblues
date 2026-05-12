@@ -11,7 +11,8 @@ import { TwilioService } from '../../common/twilio/twilio.service';
 import { SupabaseService } from '../../common/supabase/supabase.service';
 import { ENV_TOKEN } from '../../config/config.module';
 import type { Env } from '../../config/env';
-import type { ProvisionNumberResponse } from './twilio-provisioning.dto';
+import type { CandidateNumber, ProvisionNumberResponse } from './twilio-provisioning.dto';
+import { vanitySlugs } from './vanity-slugs';
 
 @Injectable()
 export class TwilioProvisioningService {
@@ -24,7 +25,114 @@ export class TwilioProvisioningService {
     this.logger.setContext(TwilioProvisioningService.name);
   }
 
-  async provision(userId: string, areaCode?: string): Promise<ProvisionNumberResponse> {
+  /**
+   * Returns up to `limit` candidate local US numbers, biased toward vanity
+   * matches derived from the operator's business name / trade category. The
+   * UI shows these and the operator picks one to buy. Vanity hits are listed
+   * first; we top up with plain area-code matches if vanity didn't fill the
+   * list. Toll-free numbers are explicitly excluded — CLAUDE.md §17 (we use
+   * local for the BB messaging service).
+   */
+  async findCandidates(args: {
+    userId: string;
+    areaCode?: string;
+    limit?: number;
+  }): Promise<ReadonlyArray<CandidateNumber>> {
+    const limit = Math.max(1, Math.min(8, args.limit ?? 4));
+    const { data: operator, error } = await this.supabase
+      .db()
+      .from('operators')
+      .select('id, business_name, category')
+      .eq('user_id', args.userId)
+      .maybeSingle();
+    if (error) throw error;
+    if (!operator) throw new NotFoundError('Operator not found for this user');
+
+    const slugs = vanitySlugs({
+      businessName: operator.business_name,
+      category: operator.category,
+    });
+
+    const out: CandidateNumber[] = [];
+    const seen = new Set<string>();
+
+    for (const slug of slugs) {
+      if (out.length >= limit) break;
+      const remaining = limit - out.length;
+      try {
+        const hits = await this.twilio.client().availablePhoneNumbers('US').local.list({
+          ...(args.areaCode ? { areaCode: Number(args.areaCode) } : {}),
+          contains: slug,
+          smsEnabled: true,
+          voiceEnabled: true,
+          limit: remaining,
+        });
+        for (const h of hits) {
+          if (seen.has(h.phoneNumber)) continue;
+          seen.add(h.phoneNumber);
+          out.push({
+            phone_number_e164: h.phoneNumber,
+            friendly_name: h.friendlyName ?? h.phoneNumber,
+            vanity_match: slug,
+            locality: h.locality ?? null,
+            region: h.region ?? null,
+          });
+          if (out.length >= limit) break;
+        }
+      } catch (err) {
+        // Twilio occasionally 400s on unsupported Contains values per region —
+        // log and continue rather than fail the whole search.
+        this.logger.warn(
+          { slug, err: (err as Error).message },
+          'vanity search failed for slug; continuing',
+        );
+      }
+    }
+
+    // Top up with plain (no-Contains) hits if vanity didn't fill the quota.
+    if (out.length < limit) {
+      const remaining = limit - out.length;
+      const plain = await this.twilio.client().availablePhoneNumbers('US').local.list({
+        ...(args.areaCode ? { areaCode: Number(args.areaCode) } : {}),
+        smsEnabled: true,
+        voiceEnabled: true,
+        limit: remaining + out.length, // overshoot, dedupe below
+      });
+      for (const h of plain) {
+        if (out.length >= limit) break;
+        if (seen.has(h.phoneNumber)) continue;
+        seen.add(h.phoneNumber);
+        out.push({
+          phone_number_e164: h.phoneNumber,
+          friendly_name: h.friendlyName ?? h.phoneNumber,
+          vanity_match: null,
+          locality: h.locality ?? null,
+          region: h.region ?? null,
+        });
+      }
+    }
+
+    if (out.length === 0) {
+      throw new ExternalServiceError(
+        'twilio',
+        args.areaCode
+          ? `No local numbers available in area code ${args.areaCode}`
+          : 'No local US numbers available',
+      );
+    }
+    return out;
+  }
+
+  /**
+   * Provision a Twilio number for the operator. If `phoneNumberE164` is
+   * supplied (typical: operator picked from `findCandidates`), buy that
+   * specific number. Otherwise auto-pick the first cascading vanity hit
+   * (falls back to plain area-code search if no vanity matches).
+   */
+  async provision(
+    userId: string,
+    args: { areaCode?: string; phoneNumberE164?: string } = {},
+  ): Promise<ProvisionNumberResponse> {
     const { data: operator, error: lookupErr } = await this.supabase
       .db()
       .from('operators')
@@ -40,22 +148,16 @@ export class TwilioProvisioningService {
     const voiceUrl = `${this.env.API_URL}/webhooks/twilio/voice/${operator.id}`;
     const smsUrl = `${this.env.API_URL}/webhooks/twilio/sms/${operator.id}`;
 
-    // Search for an available local US number in the requested area code (or any).
-    const search = await this.twilio.client().availablePhoneNumbers('US').local.list({
-      ...(areaCode ? { areaCode: Number(areaCode) } : {}),
-      smsEnabled: true,
-      voiceEnabled: true,
-      limit: 1,
-    });
-    if (search.length === 0) {
-      throw new ExternalServiceError(
-        'twilio',
-        areaCode
-          ? `No local numbers available in area code ${areaCode}`
-          : 'No local US numbers available',
-      );
+    let candidate: string;
+    if (args.phoneNumberE164) {
+      // Operator picked a specific candidate. Trust it; Twilio will reject if
+      // the number is no longer available or doesn't pass capability checks.
+      candidate = args.phoneNumberE164;
+    } else {
+      // Auto-pick: first hit from the vanity-first cascading search.
+      const candidates = await this.findCandidates({ userId, ...(args.areaCode ? { areaCode: args.areaCode } : {}), limit: 1 });
+      candidate = candidates[0]!.phone_number_e164;
     }
-    const candidate = search[0]!.phoneNumber;
 
     // Purchase + configure webhooks atomically (Twilio side).
     const purchased = await this.twilio.client().incomingPhoneNumbers.create({
