@@ -38,6 +38,9 @@ export default async function AdminLayout({ children }: { children: ReactNode })
           </Link>
         </nav>
         <div className="ml-auto flex items-center gap-4 text-sm text-muted">
+          <Link href="/dashboard" className="no-underline text-ink">
+            ← Exit admin
+          </Link>
           <span className="hidden sm:inline">{data.user.email}</span>
           <SignOutButton />
         </div>
