@@ -52,7 +52,12 @@ interface SlackInteractivityPayload {
   response_url?: string;
 }
 
-/** Send the rendered response back to Slack via the payload's response_url. */
+/**
+ * Send the rendered response back to Slack via the payload's response_url.
+ * For block_actions, Slack's response_url defaults `replace_original` to
+ * `true` — which overwrites the parent message and makes the action buttons
+ * vanish. We always force `replace_original: false` so the parent stays.
+ */
 async function postToResponseUrl(
   url: string,
   body: Record<string, unknown>,
@@ -60,7 +65,7 @@ async function postToResponseUrl(
   await fetch(url, {
     method: 'POST',
     headers: { 'content-type': 'application/json; charset=utf-8' },
-    body: JSON.stringify(body),
+    body: JSON.stringify({ replace_original: false, ...body }),
   });
 }
 
