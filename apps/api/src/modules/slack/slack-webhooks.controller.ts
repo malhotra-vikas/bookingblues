@@ -129,15 +129,27 @@ export class SlackWebhooksController {
       // operator). Bot's own messages are ignored.
       const ev = body.event;
       if (ev.type === 'message' && !ev.bot_id && ev.thread_ts && ev.channel && ev.user && ev.text && ev.ts) {
-        await this.escalations.forwardAgentReplyToSms({
-          channelId: ev.channel,
-          threadTs: ev.thread_ts,
-          slackMessageTs: ev.ts,
-          slackUserId: ev.user,
-          text: ev.text,
-        }).catch((err) => {
-          this.logger.warn({ err: (err as Error).message }, 'forwardAgentReplyToSms failed');
-        });
+        const result = await this.escalations
+          .forwardAgentReplyToSms({
+            channelId: ev.channel,
+            threadTs: ev.thread_ts,
+            slackMessageTs: ev.ts,
+            slackUserId: ev.user,
+            text: ev.text,
+          })
+          .catch((err) => {
+            this.logger.warn({ err: (err as Error).message }, 'forwardAgentReplyToSms failed');
+            return { delivered: false, reason: 'exception' as const };
+          });
+
+        // Silent drops were the second confounder behind "SMS late or didn't
+        // land". Surface the failure as an in-thread reply so the agent can
+        // retry rather than think it went through.
+        if (!result.delivered) {
+          await this.postDeliveryFailure(ev.channel, ev.thread_ts, result.reason ?? 'unknown', ev.user).catch(
+            () => undefined,
+          );
+        }
       }
       await this.idempotency.markProcessed(recorded.id);
     } catch (err) {
@@ -466,6 +478,37 @@ export class SlackWebhooksController {
     }
 
     return {};
+  }
+
+  /**
+   * Post an in-thread reply when a bridge attempt failed, so the agent
+   * knows their message didn't go out and can retry. We don't have a
+   * response_url here (events webhooks don't carry one), so a regular
+   * thread reply is the visible-to-thread option.
+   */
+  private async postDeliveryFailure(
+    channelId: string,
+    threadTs: string,
+    reason: string,
+    slackUserId: string,
+  ): Promise<void> {
+    const friendly = (
+      {
+        rate_limited:
+          '⏳ Rate-limited (1 SMS / 8s per conversation, CLAUDE §9.3). Wait ~8 seconds, then retry.',
+        no_open_escalation:
+          "⚠ No open escalation OR conversation thread match for this thread. Can't bridge to SMS.",
+        no_matching_thread:
+          "⚠ Couldn't match this thread to a conversation — was the thread opened by BookingBlues?",
+        no_operator_number: '⚠ Operator has no Twilio number assigned — SMS not sent.',
+        exception: '⚠ Internal error while bridging to SMS — check Railway logs.',
+      } as Record<string, string>
+    )[reason] ?? `⚠ Bridge failed (${reason}). SMS not sent.`;
+    await this.slackApi.postMessage({
+      channel: channelId,
+      threadTs,
+      text: `<@${slackUserId}> heads up: ${friendly}`,
+    });
   }
 }
 

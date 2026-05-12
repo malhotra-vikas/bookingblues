@@ -6,10 +6,21 @@ import { SupabaseService } from '../../common/supabase/supabase.service';
 type ConversationRow = Tables<'conversations'>;
 type MessageRole = Database['public']['Enums']['message_role'];
 
+/**
+ * Statuses that mean the conversation is done — `getOrCreate` will start a
+ * fresh row when a caller texts in this state.
+ *
+ * `escalated` is intentionally NOT here. Per ADR 0010 amendment + CLAUDE.md
+ * §12, escalated is non-terminal: a human is mid-conversation with the
+ * caller via the Slack thread. The next caller SMS must land on the SAME
+ * conversation row (and thus the SAME `#convos` thread); otherwise the
+ * agent's replies route to one conversation while the caller's new messages
+ * spawn a fresh thread, which is exactly the "new conversation shows up
+ * while it is the same thread" bug we hit in QA.
+ */
 const TERMINAL_STATUSES: ReadonlyArray<Database['public']['Enums']['conversation_status']> = [
   'completed',
   'abandoned',
-  'escalated',
 ];
 
 @Injectable()

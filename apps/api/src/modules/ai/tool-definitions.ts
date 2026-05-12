@@ -1,7 +1,20 @@
 import type OpenAI from 'openai';
 import { z } from 'zod';
 
-const IsoDateTime = z.string().datetime({ offset: true });
+/**
+ * Tolerant ISO-8601 datetime. The model occasionally emits offset-less
+ * strings like `2026-05-12T19:00:00`; we coerce those to UTC by appending
+ * `Z` before zod validates. Anything still malformed after the patch is a
+ * legitimate validation error.
+ */
+const IsoDateTime = z.preprocess((v) => {
+  if (typeof v !== 'string') return v;
+  // Already has Z or ±HH:MM offset → leave alone.
+  if (/[Zz]$|[+-]\d{2}:?\d{2}$/.test(v)) return v;
+  // Bare `YYYY-MM-DDTHH:MM(:SS(.sss)?)?` → assume UTC.
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?$/.test(v)) return `${v}Z`;
+  return v;
+}, z.string().datetime({ offset: true }));
 
 export const CheckAvailabilityArgs = z.object({
   window_start: IsoDateTime,
@@ -50,7 +63,7 @@ export const TOOL_DEFINITIONS: ReadonlyArray<OpenAI.Chat.Completions.ChatComplet
     function: {
       name: 'check_availability',
       description:
-        "Returns the operator's free 60-minute slots between window_start and window_end (ISO 8601 with offset). Use the operator's timezone implicitly; the tool returns slots that are within the operator's business hours and not already booked.",
+        "Returns the operator's free 60-minute slots between window_start and window_end. Both MUST be ISO 8601 with a `Z` (UTC) or numeric offset like `-04:00` — never offset-less. Example: `2026-05-13T13:00:00Z`. The tool returns slots within the operator's business hours and not already booked.",
       parameters: {
         type: 'object',
         properties: {

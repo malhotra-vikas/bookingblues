@@ -14,10 +14,25 @@ describe('Tool argument schemas', () => {
     expect(ok.success).toBe(true);
   });
 
-  it('CheckAvailabilityArgs rejects naive datetimes (no offset)', () => {
-    const bad = CheckAvailabilityArgs.safeParse({
+  it('CheckAvailabilityArgs tolerates offset-less datetimes (coerced to UTC)', () => {
+    // The model regularly emits `YYYY-MM-DDTHH:MM:SS` without a zone. We
+    // preprocess by appending `Z` rather than failing the tool call. See
+    // tool-definitions.ts → IsoDateTime.
+    const parsed = CheckAvailabilityArgs.safeParse({
       window_start: '2026-05-07T09:00:00',
       window_end: '2026-05-08T17:00:00',
+    });
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      expect(parsed.data.window_start.endsWith('Z')).toBe(true);
+      expect(parsed.data.window_end.endsWith('Z')).toBe(true);
+    }
+  });
+
+  it('CheckAvailabilityArgs still rejects truly garbage datetimes', () => {
+    const bad = CheckAvailabilityArgs.safeParse({
+      window_start: 'tomorrow morning',
+      window_end: '2026-05-08',
     });
     expect(bad.success).toBe(false);
   });
