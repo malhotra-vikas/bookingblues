@@ -71,7 +71,11 @@ export class BillingService {
     }
     const session = await this.stripe.client().billingPortal.sessions.create({
       customer: operator.stripe_customer_id,
-      return_url: `${this.env.APP_URL}/settings/billing`,
+      // Stripe portal redirects here when the user clicks Return. The simple
+      // /settings page is the natural landing — it already shows subscription
+      // status and the "Open billing portal" button, so the customer ends
+      // up exactly where they would've expected.
+      return_url: `${this.env.APP_URL}/settings`,
     });
     return { url: session.url };
   }

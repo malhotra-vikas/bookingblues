@@ -196,7 +196,14 @@ export function Wizard({ initial }: { initial: Operator | null }): JSX.Element {
   async function startStripeConnect(): Promise<void> {
     await handle('startStripeConnect', async () => {
       const res = await authedFetch('/v1/operators/me/connect/onboarding-link', { method: 'POST' });
-      if (!res.ok) throw new Error('Could not start Stripe payout setup');
+      if (!res.ok) {
+        // Surface the underlying problem-details so the operator can act on it
+        // (e.g. "your Stripe platform doesn't have Connect enabled in test mode").
+        const detail = await res.json().catch(() => ({}));
+        throw new Error(
+          detail.detail ?? detail.message ?? `Could not start Stripe payout setup (${res.status})`,
+        );
+      }
       const { url } = (await res.json()) as { url: string };
       window.location.href = url;
     });

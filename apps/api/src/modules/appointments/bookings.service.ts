@@ -10,6 +10,8 @@ import { ENV_TOKEN } from '../../config/config.module';
 import type { Env } from '../../config/env';
 import { CalendarService } from '../calendar/calendar.service';
 import { ConversationsService } from '../conversations/conversations.service';
+import { isBookingFeeCollectible } from '../ai/prompts';
+import { PaymentsService } from '../payments/payments.service';
 
 type OperatorRow = Tables<'operators'>;
 type Urgency = 'low' | 'normal' | 'high' | 'emergency';
@@ -39,6 +41,7 @@ export class BookingsService {
     private readonly twilio: TwilioService,
     private readonly conversations: ConversationsService,
     private readonly audit: AuditLogService,
+    private readonly payments: PaymentsService,
     private readonly logger: PinoLogger,
     @Inject(ENV_TOKEN) private readonly env: Env,
   ) {
@@ -57,7 +60,14 @@ export class BookingsService {
     endIso: string;
     /** `null` for AI-driven bookings; `user_id` for /bb book or button click. */
     bookedByUserId?: string | null;
-  }): Promise<BookResult> {
+    /**
+     * When true (manual book paths), if §9.5 eligibility passes, generate
+     * the booking-fee Checkout link and append it to the confirmation SMS.
+     * The AI tool path keeps this off — the bot orchestrates the fee step
+     * itself via `request_payment_link` so it can phrase the message.
+     */
+    chargeFeeIfEligible?: boolean;
+  }): Promise<BookResult & { feeCheckoutUrl: string | null }> {
     if (new Date(args.endIso).getTime() <= new Date(args.startIso).getTime()) {
       throw new ValidationError('Appointment end must be after start');
     }
@@ -123,10 +133,32 @@ export class BookingsService {
 
     const icsUrl = this.icsUrl(appointmentId);
 
-    // 3. Confirmation SMS to caller with a tap-to-add calendar link. The
-    //    operator gets their own event in Google Calendar via the insertEvent
-    //    above. Failure to send the SMS is non-fatal — the appointment is
-    //    booked DB+calendar-side; we log and continue.
+    // 3a. If the manual path requested it AND §9.5 eligibility passes, also
+    //     generate the booking-fee Checkout URL so the confirmation SMS can
+    //     ask the caller to pay. Eligibility failure (e.g. Connect not done)
+    //     silently falls through to a no-fee confirmation — that's the §9.5
+    //     contract. Stripe failures are logged and skipped; the appointment
+    //     itself is durable so we still send the booking confirmation.
+    let feeCheckoutUrl: string | null = null;
+    if (args.chargeFeeIfEligible && isBookingFeeCollectible(args.operator)) {
+      try {
+        const session = await this.payments.createBookingFeeCheckout({
+          operatorId: args.operator.id,
+          appointmentId,
+        });
+        feeCheckoutUrl = session.url;
+      } catch (err) {
+        this.logger.warn(
+          { appointmentId, err: (err as Error).message },
+          'manual book: createBookingFeeCheckout failed (sending confirmation without fee)',
+        );
+      }
+    }
+
+    // 3b. Confirmation SMS to caller — calendar link + (optionally) fee CTA.
+    //     The operator gets their own event in Google Calendar via insertEvent
+    //     above. Failure to send the SMS is non-fatal — the appointment is
+    //     booked DB + calendar-side; we log and continue.
     if (args.conversationId) {
       await this.sendConfirmationSms({
         operator: args.operator,
@@ -134,6 +166,7 @@ export class BookingsService {
         callerPhoneE164: args.callerPhoneE164,
         startIso: args.startIso,
         icsUrl,
+        feeCheckoutUrl,
       }).catch((err) => {
         this.logger.warn(
           { appointmentId, err: (err as Error).message },
@@ -160,7 +193,7 @@ export class BookingsService {
       });
     }
 
-    return { appointmentId, icsUrl, operatorEventUrl };
+    return { appointmentId, icsUrl, operatorEventUrl, feeCheckoutUrl };
   }
 
   /** Public, unauthenticated deep-link the caller can tap to add to their calendar. */
@@ -223,6 +256,7 @@ export class BookingsService {
     callerPhoneE164: string;
     startIso: string;
     icsUrl: string;
+    feeCheckoutUrl: string | null;
   }): Promise<void> {
     if (!args.operator.twilio_number_e164) return;
     const friendlyTime = new Date(args.startIso).toLocaleString('en-US', {
@@ -233,9 +267,14 @@ export class BookingsService {
       hour: 'numeric',
       minute: '2-digit',
     });
+    const cents = args.operator.booking_fee_cents ?? 0;
+    const feeLine = args.feeCheckoutUrl
+      ? ` Please secure your slot with the $${(cents / 100).toFixed(2)} booking fee: ${args.feeCheckoutUrl}`
+      : '';
     const body =
       `✅ You're booked with ${args.operator.business_name} for ${friendlyTime}. ` +
-      `Add to your calendar: ${args.icsUrl}`;
+      `Add to your calendar: ${args.icsUrl}` +
+      feeLine;
     const send = await this.twilio.sendSms({
       from: args.operator.twilio_number_e164,
       to: args.callerPhoneE164,

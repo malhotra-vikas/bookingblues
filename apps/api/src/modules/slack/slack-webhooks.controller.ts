@@ -671,6 +671,10 @@ export class SlackWebhooksController {
         startIso,
         endIso,
         bookedByUserId: null, // we don't map Slack user → auth.users id today
+        // If §9.5 eligibility passes, the confirmation SMS carries the fee
+        // checkout link alongside the calendar link. Eligibility fails →
+        // silently no-fee, same as the AI tool path.
+        chargeFeeIfEligible: true,
       });
 
       // Resolve the escalation (if any) — the booking is the resolution.
@@ -691,9 +695,12 @@ export class SlackWebhooksController {
       // (button-click path); otherwise just close the modal silently — the
       // confirmation SMS already went out.
       if (meta.responseUrl) {
+        const feeNote = result.feeCheckoutUrl ? ' Booking-fee Checkout link sent.' : '';
         await postToResponseUrl(meta.responseUrl, {
           response_type: 'in_channel',
-          text: `📅 <@${slackUserId}> booked ${callerName} for ${new Date(startIso).toUTCString()}. ICS link sent to caller.`,
+          text:
+            `📅 <@${slackUserId}> booked ${callerName} for ${new Date(startIso).toUTCString()}. ` +
+            `ICS link sent to caller.${feeNote}`,
         });
       }
 
