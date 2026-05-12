@@ -1,18 +1,21 @@
-# BookingBlues — Slack app manifest
+# BookingBlues — Slack app manifest (ADR 0010)
 #
 # What this is: the YAML you paste into api.slack.com/apps → "Create New App"
-# → "From an app manifest" → pick a development workspace. Slack creates the
-# app with the scopes, slash command, event subscriptions, interactivity URL,
-# and OAuth redirect URLs pre-filled.
+# → "From an app manifest" → pick the BookingBlues workspace. Slack creates
+# the app with the scopes, slash command, event subscriptions, and
+# interactivity URLs pre-filled.
+#
+# Per ADR 0010, the app is installed **once** into the BookingBlues internal
+# workspace — there is no per-operator OAuth flow, no `oauth_config.redirect_urls`,
+# and no public distribution. All operators' escalations land in the channel
+# pointed to by SLACK_DEFAULT_CHANNEL_ID.
 #
 # After Slack creates the app:
-#   1. Basic Information → "App-Level Tokens" (skip — we don't use Socket Mode)
-#   2. Basic Information → "Signing Secret" → copy to SLACK_SIGNING_SECRET
-#   3. Basic Information → "Client ID" → copy to SLACK_CLIENT_ID
-#   4. Basic Information → "Client Secret" → copy to SLACK_CLIENT_SECRET
-#   5. "Install to Workspace" (only available after the manifest is saved + verified)
-#   6. Slash commands and events use the URLs below — confirm they match your
-#      API's public URL. For local dev, swap to your ngrok tunnel.
+#   1. "OAuth & Permissions" → "Install to Workspace" → approve scopes
+#   2. Copy the "Bot User OAuth Token" (xoxb-…)        → SLACK_BOT_TOKEN
+#   3. Basic Information → "Signing Secret"            → SLACK_SIGNING_SECRET
+#   4. In Slack, get the `#hitl` channel ID            → SLACK_DEFAULT_CHANNEL_ID
+#   5. `/invite @BookingBlues` in `#hitl`              (otherwise not_in_channel)
 #
 # IMPORTANT — replace `https://bookingbluesapi-production.up.railway.app` with
 # your actual API URL before pasting. The manifest is just YAML; you can also
@@ -20,14 +23,14 @@
 
 display_information:
   name: BookingBlues
-  description: Human-in-the-loop for missed-call bookings — pages your team when the bot needs help.
+  description: Human-in-the-loop for missed-call bookings — pages our team when the bot needs help.
   background_color: "#1e40af"
   long_description: >-
     BookingBlues converts missed calls into booked appointments. When the AI
-    bot can't make progress, a caller asks for a human, or you flag a thread
-    from the admin dashboard, BookingBlues posts an escalation in this Slack
-    channel and bridges the SMS conversation: reply in-thread to send an SMS
-    to the caller; use /bb back-to-bot to hand control back to the AI.
+    bot can't make progress, a caller asks for a human, or staff flag a thread
+    from the admin dashboard, BookingBlues posts an escalation in #hitl and
+    bridges the SMS conversation: reply in-thread to send an SMS to the
+    caller; use /bb back-to-bot to hand control back to the AI.
 
 features:
   bot_user:
@@ -42,8 +45,6 @@ features:
       should_escape: false
 
 oauth_config:
-  redirect_urls:
-    - https://bookingbluesapi-production.up.railway.app/webhooks/slack/oauth/callback
   scopes:
     bot:
       - chat:write
@@ -51,11 +52,7 @@ oauth_config:
       - channels:read
       - groups:history
       - groups:read
-      - im:history
-      - app_mentions:read
       - commands
-      - users:read
-      - team:read
 
 settings:
   event_subscriptions:
@@ -66,7 +63,6 @@ settings:
       # an open escalation.
       - message.channels
       - message.groups
-      - app_mention
 
   interactivity:
     is_enabled: true

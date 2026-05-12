@@ -4,11 +4,9 @@ import { PinoLogger } from 'nestjs-pino';
 import type { Json } from '@bookingblues/db-types';
 
 import { ValidationError } from '../../common/errors/app-error';
-import { SupabaseService } from '../../common/supabase/supabase.service';
 import { WebhookIdempotencyService } from '../../common/webhooks/webhook-idempotency.service';
 
 import { EscalationsService } from './escalations.service';
-import { SlackConnectionsService } from './slack-connections.service';
 import { SlackSignatureGuard } from './slack-signature.guard';
 
 interface SlackEventEnvelope {
@@ -32,6 +30,7 @@ interface SlackSlashCommandBody {
   token?: string;
   team_id?: string;
   channel_id?: string;
+  thread_ts?: string;
   user_id?: string;
   user_name?: string;
   command?: string;
@@ -54,8 +53,6 @@ interface SlackInteractivityPayload {
 @UseGuards(SlackSignatureGuard)
 export class SlackWebhooksController {
   constructor(
-    private readonly supabase: SupabaseService,
-    private readonly connections: SlackConnectionsService,
     private readonly escalations: EscalationsService,
     private readonly idempotency: WebhookIdempotencyService,
     private readonly logger: PinoLogger,
@@ -87,12 +84,13 @@ export class SlackWebhooksController {
     if (recorded.status === 'duplicate') return { ok: true };
 
     try {
-      // We care about thread replies in channels where we have an active
-      // escalation. Bot's own messages are ignored.
+      // We care about thread replies that sit on top of an open escalation.
+      // forwardAgentReplyToSms resolves the operator from the escalation row
+      // (single platform workspace — channel alone no longer identifies the
+      // operator). Bot's own messages are ignored.
       const ev = body.event;
       if (ev.type === 'message' && !ev.bot_id && ev.thread_ts && ev.channel && ev.user && ev.text && ev.ts) {
         await this.escalations.forwardAgentReplyToSms({
-          operatorId: await this.operatorIdForChannel(body.team_id, ev.channel),
           channelId: ev.channel,
           threadTs: ev.thread_ts,
           slackMessageTs: ev.ts,
@@ -123,13 +121,6 @@ export class SlackWebhooksController {
       return { response_type: 'ephemeral', text: `Unknown command ${cmd}` };
     }
 
-    // Resolve the escalation from the channel — slash commands fire from the
-    // channel, not the thread. We use the most recent open escalation as a
-    // best-effort: the operator should invoke from inside a thread for now.
-    const teamId = body.team_id ?? '';
-    const channelId = body.channel_id ?? '';
-    const operatorId = await this.operatorIdForChannel(teamId, channelId).catch(() => null);
-
     const [verb, ...rest] = sub.split(/\s+/);
     const arg = rest.join(' ').trim();
 
@@ -141,19 +132,25 @@ export class SlackWebhooksController {
           '`/bb close-spam` — close as spam\n' +
           '`/bb back-to-bot` — hand control back to the AI\n' +
           '`/bb show-number` — reveal the caller number (audit-logged)\n' +
-          '`/bb book <ISO datetime>` — record a manual booking, bypassing the bot',
+          '`/bb book <ISO datetime>` — record a manual booking, bypassing the bot\n' +
+          '_Run any command from inside the escalation thread._',
       };
     }
 
-    if (!operatorId) {
-      return { response_type: 'ephemeral', text: 'No active escalation in this channel.' };
+    // Resolve the escalation from the thread the command was fired in.
+    // ADR 0010 — the platform-Slack model has many operators sharing one
+    // channel, so we route by (channel, thread_ts), not by channel alone.
+    const channelId = body.channel_id ?? '';
+    const threadTs = body.thread_ts ?? '';
+    if (!channelId || !threadTs) {
+      return {
+        response_type: 'ephemeral',
+        text: 'Run `/bb` inside the escalation thread (so we know which conversation).',
+      };
     }
-
-    // The slash-command path needs us to find the in-flight escalation.
-    // For MVP, find the most recent open one for the operator.
-    const esc = await this.mostRecentOpenEscalationForOperator(operatorId);
+    const esc = await this.escalations.findOpenByThread(channelId, threadTs);
     if (!esc) {
-      return { response_type: 'ephemeral', text: 'No open escalation for this operator.' };
+      return { response_type: 'ephemeral', text: 'No open escalation for this thread.' };
     }
 
     switch (verb) {
@@ -292,36 +289,5 @@ export class SlackWebhooksController {
     }
   }
 
-  // ── helpers ─────────────────────────────────────────────────────────────
-
-  /**
-   * Map (team, channel) → operator. For MVP we trust that each operator's
-   * install pins a single default channel; channels other than the default
-   * fall back to the team-level lookup.
-   */
-  private async operatorIdForChannel(teamId: string, channelId: string): Promise<string> {
-    const byChannel = await this.connections.findByChannelId(teamId, channelId);
-    if (byChannel) return byChannel.operatorId;
-    const byTeam = await this.connections.findByTeamId(teamId);
-    if (byTeam) return byTeam.operatorId;
-    throw new ValidationError(`No Slack install found for team ${teamId}`);
-  }
-
-  private async mostRecentOpenEscalationForOperator(
-    operatorId: string,
-  ): Promise<{ id: string; conversation_id: string } | null> {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const client = this.supabase.db() as any;
-    const { data, error } = await client
-      .from('escalations')
-      .select('id, conversation_id')
-      .eq('operator_id', operatorId)
-      .eq('status', 'open')
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    if (error) throw error;
-    return data ?? null;
-  }
 }
 

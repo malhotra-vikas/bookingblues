@@ -9,7 +9,6 @@ import { TwilioService } from '../../common/twilio/twilio.service';
 import { ConversationsService } from '../conversations/conversations.service';
 
 import { SlackApiClient } from './slack-api.client';
-import { SlackConnectionsService } from './slack-connections.service';
 
 type EscalationReason =
   | 'bot_stuck'
@@ -42,7 +41,6 @@ export class EscalationsService {
   constructor(
     private readonly supabase: SupabaseService,
     private readonly slackApi: SlackApiClient,
-    private readonly connections: SlackConnectionsService,
     private readonly twilio: TwilioService,
     private readonly conversations: ConversationsService,
     private readonly audit: AuditLogService,
@@ -81,19 +79,17 @@ export class EscalationsService {
     let channelId: string | null = null;
     let threadTs: string | null = null;
 
-    const connection = await this.connections.getByOperatorId(args.operator.id);
-    if (connection?.status === 'active' && connection.defaultChannelId) {
+    const defaultChannel = this.slackApi.defaultChannelId();
+    if (this.slackApi.isConfigured() && defaultChannel) {
       try {
-        const botToken = await this.connections.getBotToken(args.operator.id);
         const transcript = await this.lastTurns(args.conversation.id, 10);
         const post = await this.slackApi.postMessage({
-          botToken,
-          channel: connection.defaultChannelId,
+          channel: defaultChannel,
           text: this.parentMessageText(args, transcript),
           blocks: this.parentMessageBlocks(args, transcript),
         });
         if (post.ok && post.ts) {
-          channelId = post.channel ?? connection.defaultChannelId;
+          channelId = post.channel ?? defaultChannel;
           threadTs = post.ts;
           deliveredVia = 'slack';
         } else {
@@ -111,7 +107,7 @@ export class EscalationsService {
         deliveredVia = 'email_fallback';
       }
     } else {
-      // No Slack connection configured — email fallback when Slice 10 wires Resend.
+      // SLACK_BOT_TOKEN / SLACK_DEFAULT_CHANNEL_ID unset — email fallback when Slice 10 wires Resend.
       deliveredVia = 'email_fallback';
     }
 
@@ -219,10 +215,8 @@ export class EscalationsService {
       return;
     }
     try {
-      const botToken = await this.connections.getBotToken(args.operator.id);
       const last4 = args.callerPhoneE164.slice(-4);
       const post = await this.slackApi.postMessage({
-        botToken,
         channel: esc.slack_channel_id,
         threadTs: esc.slack_thread_ts,
         text: `📲 Caller (•••${last4}): ${args.body}`,
@@ -250,7 +244,6 @@ export class EscalationsService {
   // ── bridge: outbound Slack thread reply → SMS ──────────────────────────
 
   async forwardAgentReplyToSms(args: {
-    operatorId: string;
     channelId: string;
     threadTs: string;
     slackMessageTs: string;

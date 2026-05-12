@@ -85,13 +85,14 @@ Everything else is secondary. If a feature does not directly serve this loop, it
 
                          +-------------------+
                          |  Slack            |
-                         |  (per-operator    |
-                         |   workspace)      |
+                         |  (single BB-team  |
+                         |   workspace —     |
+                         |   ADR 0010)       |
                          +---------+---------+
                                    ^
                                    | (HITL — Slice 7.5)
                                    | escalations, slash cmds,
-                                   | interactive blocks, OAuth
+                                   | interactive blocks
                                    v
                                   API
 ```
@@ -117,7 +118,7 @@ The API is the only service that talks to Twilio, OpenAI, Stripe, and Google. Th
 | Calendar | Google Calendar API v3 | Required by Operator audience |
 | Payments | Stripe (Subscriptions for BookingBlues SaaS, Connect Express for Operator booking fees) | Industry standard, marketplace pattern |
 | Email | Resend | Simple API, good DX, transactional only |
-| HITL | Slack (per-Operator workspace install) | Operators live in messaging more than email; in-thread reply bridges to SMS |
+| HITL | Slack (single BB-team workspace, ADR 0010) | BB internal team handles escalations; one bot token in env, one shared #hitl channel for all operators |
 | Queue | Postgres-backed via `pg-boss` | One less infra dependency for MVP |
 | Deployment | Railway (API + Web as separate services) | Operator preference, simple env management |
 | Logging | Pino with redaction config | Structured JSON, PII redaction built-in |
@@ -249,6 +250,9 @@ All variables loaded via `apps/api/src/config/env.ts` using `zod` validation. Th
 | `SENTRY_DSN_API` | api | |
 | `SENTRY_DSN_WEB` | web | |
 | `LOG_LEVEL` | api | `info` in prod, `debug` in dev |
+| `SLACK_BOT_TOKEN` | api | `xoxb-…` for the single BookingBlues-team workspace (ADR 0010). Must be redacted in logs. |
+| `SLACK_DEFAULT_CHANNEL_ID` | api | Channel ID where all HITL escalations post (e.g. `C0123ABCDEF`). |
+| `SLACK_SIGNING_SECRET` | api | HMAC secret used by `SlackSignatureGuard` to verify inbound webhooks (events, commands, interactivity). |
 
 Rotation: `ENCRYPTION_KEY` is versioned; the encryption helper writes a key version prefix on every ciphertext so we can rotate without downtime. See `apps/api/src/common/crypto/encryption.service.ts`.
 
@@ -426,7 +430,7 @@ The Web app uses the anon key and reads via RLS. The API uses the service role a
 - `request_payment_link(appointment_id)` — generates a Stripe Connect Checkout link tied to the Operator's connected account, sends URL via SMS.
 - `mark_out_of_scope(reason)` — ends conversation, sends polite handoff message.
 - `mark_spam(reason)` — silent end, no further messages.
-- `escalate_to_human(reason)` — opens a Slack thread in the Operator's connected workspace (Slice 7.5) with the conversation summary, last 10 turns, and action buttons (Resume AI / Mark spam / Close / Show number). The agent can reply in-thread to send an SMS to the caller, run `/bb back-to-bot` to hand control back to the AI, or close with `/bb resolve`. If Slack isn't installed or fails, falls back to email (Slice 10). Either way, conversation status flips to `escalated` and the AI stops replying until resolved.
+- `escalate_to_human(reason)` — opens a Slack thread in the BookingBlues team workspace (single shared #hitl channel, ADR 0010) with the conversation summary, last 10 turns, and action buttons (Resume AI / Mark spam / Close / Show number). BB ops staff can reply in-thread to send an SMS to the caller, run `/bb back-to-bot` to hand control back to the AI, or close with `/bb resolve`. The thread header carries operator business name + caller last-4 + reason so triage is obvious. If `SLACK_BOT_TOKEN` is unset or the post fails, falls back to email (Slice 10). Either way, conversation status flips to `escalated` and the AI stops replying until resolved.
 
 **Tool execution rules**:
 - All tools execute server-side in the API. The model never sees raw secrets.
@@ -565,7 +569,6 @@ POST   /webhooks/twilio/sms/:operatorId
 POST   /webhooks/stripe                  # platform
 POST   /webhooks/stripe/connect          # connected accounts
 GET    /webhooks/google/oauth/callback   # OAuth redirect target
-GET    /webhooks/slack/oauth/callback    # Slack install redirect (Slice 7.5)
 POST   /webhooks/slack/events            # Events API (HMAC X-Slack-Signature)
 POST   /webhooks/slack/commands          # /bb slash commands
 POST   /webhooks/slack/interactivity     # block actions (buttons)
@@ -589,11 +592,6 @@ POST   /v1/admin/operators/:id/release-twilio-number
 POST   /v1/admin/operators/:id/refund-payment/:paymentId
 POST   /v1/admin/operators/:id/impersonate            # short-lived magic link
 POST   /v1/admin/conversations/:id/force-end
-```
-
-### Slack install (Operator-authed)
-```
-GET    /v1/operators/me/slack/install   # returns OAuth URL
 ```
 
 ### OAuth callback (Operator-initiated)
@@ -634,7 +632,7 @@ GET    /v1/oauth/google/callback         # Auth-protected, completes calendar co
 20. **HTTPS only**. HSTS preload. Cookies are `Secure`, `HttpOnly`, `SameSite=Lax`.
 21. **Admin authorization** (Slice 15). `AdminGuard` requires `auth.users.app_metadata.role = 'admin'`. `app_metadata` is server-only-writable in Supabase, so operators cannot self-promote. The admin role is also derived locally at JWT-verify time and surfaced on `AuthenticatedUser.isAdmin`. See ADR 0009.
 22. **Audit log on every admin write** (Slice 15) — operator deactivation, refunds, subscription cancels, impersonation, force-end, admin promote/demote. Audit failures must NOT block the user action (denial-of-service vector); log loudly instead. `AuditLogService.fromRequest()` captures IP + user-agent for the entry.
-23. **Slack bot tokens encrypted at rest** (Slice 7.5) with the same versioned AES-256-GCM key as Google refresh tokens. Per-Operator workspace install. Slack signing secret is the single HMAC secret for inbound webhook verification AND the state-binding HMAC on OAuth install (so a third party can't forge a callback that links a code to the wrong Operator).
+23. **Slack — single BookingBlues-team workspace** (Slice 7.5, ADR 0010). The bot token (`SLACK_BOT_TOKEN`) and target channel (`SLACK_DEFAULT_CHANNEL_ID`) live in env vars, not in the database — there is no per-operator OAuth, no `slack_connections` table, no encrypted-token-per-row. `SLACK_SIGNING_SECRET` remains the HMAC secret for inbound webhook signature verification (`X-Slack-Signature` v0 with a 5-minute replay window). The bot token must be redacted in logs (see §11.5 redact paths).
 
 ---
 
