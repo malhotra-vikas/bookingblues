@@ -102,15 +102,28 @@ export function AuthForm({ mode }: { mode: 'login' | 'signup' }): JSX.Element {
         minLength={8}
         required
       />
-      {error ? <p className="text-sm text-red-600">{error}</p> : null}
-      {info ? <p className="text-sm text-emerald-700">{info}</p> : null}
+      {error ? (
+        <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+          {error}
+        </div>
+      ) : null}
+      {info ? (
+        <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+          {info}
+        </div>
+      ) : null}
       <button
         type="submit"
         disabled={busy}
-        className="w-full rounded-md bg-accent px-4 py-2 font-medium text-white disabled:opacity-50"
+        className="w-full rounded-md bg-accent px-4 py-2.5 text-base font-medium text-white shadow-sm hover:bg-blue-700 transition-colors disabled:opacity-50"
       >
         {busy ? 'Working…' : mode === 'signup' ? 'Create account' : 'Sign in'}
       </button>
+      {mode === 'signup' ? (
+        <p className="text-[11px] text-slate-500 text-center">
+          By creating an account you agree to our terms. We&apos;ll only charge after the 7-day trial.
+        </p>
+      ) : null}
     </form>
   );
 }
