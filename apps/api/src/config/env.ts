@@ -91,7 +91,8 @@ const baseSchema = z.object({
   // channel with operator + business in the header). SLACK_SIGNING_SECRET is
   // still required for inbound webhook signature verification.
   SLACK_BOT_TOKEN: z.string().optional(),
-  SLACK_DEFAULT_CHANNEL_ID: z.string().optional(),
+  SLACK_DEFAULT_CHANNEL_ID: z.string().optional(),   // #hitl — escalation alarms + control buttons
+  SLACK_CONVOS_CHANNEL_ID: z.string().optional(),    // #convos — per-conversation monitoring threads
   SLACK_SIGNING_SECRET: z.string().optional(),
 });
 

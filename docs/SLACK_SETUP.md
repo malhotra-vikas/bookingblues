@@ -36,11 +36,17 @@ subscriptions, and interactivity URLs pre-filled.
 
 Set these in Railway (api service) and in your local `.env.local`:
 
-| Field            | Env var                    |
-|------------------|----------------------------|
-| Bot User OAuth   | `SLACK_BOT_TOKEN`          |
-| `#hitl` channel  | `SLACK_DEFAULT_CHANNEL_ID` |
-| Signing Secret   | `SLACK_SIGNING_SECRET`     |
+| Field             | Env var                    |
+|-------------------|----------------------------|
+| Bot User OAuth    | `SLACK_BOT_TOKEN`          |
+| `#hitl` channel   | `SLACK_DEFAULT_CHANNEL_ID` |
+| `#convos` channel | `SLACK_CONVOS_CHANNEL_ID`  |
+| Signing Secret    | `SLACK_SIGNING_SECRET`     |
+
+Create both channels in the BB workspace: `#hitl` (escalation alarms +
+buttons) and `#convos` (one thread per conversation — the team's live
+view of every AI⟷caller exchange). `#convos` will be the noisier channel;
+expect 1 thread per missed call.
 
 Without these the Slack module logs a warning, the escalation falls through
 to the email fallback path (Slice 10), and the conversation still flips to
@@ -48,16 +54,17 @@ to the email fallback path (Slice 10), and the conversation still flips to
 
 ---
 
-## 3. Invite the bot to `#hitl`
+## 3. Invite the bot to BOTH channels
 
-In the BB Slack workspace, in the `#hitl` channel:
+In the BB Slack workspace, in each channel:
 
 ```
-/invite @BookingBlues
+/invite @bookingblues
 ```
 
-Without this, `chat.postMessage` returns `not_in_channel` and escalations
-fall through to email fallback.
+Run in `#hitl` AND `#convos`. Without this, `chat.postMessage` returns
+`not_in_channel` and the monitoring thread / escalation alarm silently
+fall through to the email fallback.
 
 ---
 

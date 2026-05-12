@@ -35,6 +35,24 @@ export interface OperatorDossier {
   };
 }
 
+export interface LeadListItem {
+  readonly user_id: string;
+  readonly email: string | null;
+  readonly email_confirmed_at: string | null;
+  readonly signed_up_at: string;
+  readonly business_name: string | null;
+  readonly personal_phone_e164: string | null;
+  readonly category: string | null;
+  readonly subscription_status: string | null;
+  readonly twilio_number_e164: string | null;
+  readonly onboarding_completed_at: string | null;
+}
+
+export interface ListLeadsResult {
+  readonly items: ReadonlyArray<LeadListItem>;
+  readonly next_page: string | null;
+}
+
 export interface GlobalMetrics {
   readonly operators: {
     readonly total: number;
@@ -128,6 +146,59 @@ export class AdminReadService {
       rows.length > args.limit ? rows[args.limit - 1] : null;
     const nextCursor = next ? encodeCursor(next.created_at, next.id) : null;
     return { items, next_cursor: nextCursor };
+  }
+
+  /**
+   * Sales-facing list of recent signups. Joins auth.users (the source of
+   * truth for "signed up") with operators by user_id. Includes users who
+   * haven't yet bootstrapped an operator row — those are pure leads (signed
+   * up but never confirmed email or never landed on /dashboard). Page-based
+   * cursor since we're driving off auth.users which doesn't share our
+   * created_at|id cursor scheme.
+   */
+  async listLeads(args: { page: number; perPage: number }): Promise<ListLeadsResult> {
+    const { data: userResp, error: userErr } = await this.supabase
+      .db()
+      .auth.admin.listUsers({ page: args.page, perPage: args.perPage });
+    if (userErr) throw userErr;
+    const users = userResp.users ?? [];
+    if (users.length === 0) return { items: [], next_page: null };
+
+    const userIds = users.map((u) => u.id);
+    const { data: ops, error: opsErr } = await this.supabase
+      .db()
+      .from('operators')
+      .select('user_id, business_name, personal_phone_e164, category, subscription_status, twilio_number_e164, onboarding_completed_at')
+      .in('user_id', userIds);
+    if (opsErr) throw opsErr;
+    const opByUser = new Map((ops ?? []).map((o) => [o.user_id, o]));
+
+    const items: LeadListItem[] = users.map((u) => {
+      const op = opByUser.get(u.id);
+      const metaName = typeof u.user_metadata?.business_name === 'string'
+        ? u.user_metadata.business_name
+        : null;
+      const metaPhone = typeof u.user_metadata?.personal_phone_e164 === 'string'
+        ? u.user_metadata.personal_phone_e164
+        : null;
+      return {
+        user_id: u.id,
+        email: u.email ?? null,
+        email_confirmed_at: u.email_confirmed_at ?? null,
+        signed_up_at: u.created_at,
+        business_name: op?.business_name ?? metaName,
+        personal_phone_e164: op?.personal_phone_e164 ?? metaPhone,
+        category: op?.category ?? null,
+        subscription_status: op?.subscription_status ?? null,
+        twilio_number_e164: op?.twilio_number_e164 ?? null,
+        onboarding_completed_at: op?.onboarding_completed_at ?? null,
+      };
+    });
+
+    // listUsers paginates by page number; expose next page when we got a
+    // full page back (Supabase doesn't always set total reliably).
+    const nextPage = users.length === args.perPage ? String(args.page + 1) : null;
+    return { items, next_page: nextPage };
   }
 
   async getOperatorDossier(operatorId: string): Promise<OperatorDossier> {

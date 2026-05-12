@@ -33,6 +33,14 @@ interface EscalationRow {
 
 const SMS_BRIDGE_MIN_GAP_MS = 8_000; // CLAUDE.md §9.3 — one outbound per 8s.
 
+const REASON_HUMAN: Record<EscalationReason, string> = {
+  bot_stuck: 'Bot got stuck',
+  caller_requested: 'Caller asked for a human',
+  operator_forced: 'Operator forced from dashboard',
+  calendar_revoked: 'Calendar access revoked',
+  turn_cap: 'Conversation hit the turn cap',
+};
+
 @Injectable()
 export class EscalationsService {
   /** Tracks the last outbound SMS time per conversation, for the §9.3 rate limit. */
@@ -49,11 +57,107 @@ export class EscalationsService {
     this.logger.setContext(EscalationsService.name);
   }
 
+  // ── conversation monitoring thread (every convo, in #convos) ────────────
+
+  /**
+   * Ensure a conversation has a Slack monitoring thread. Posts a low-key
+   * parent message in SLACK_CONVOS_CHANNEL_ID and stores channel_id +
+   * thread_ts on the conversation row. Idempotent — no-op if already opened
+   * or if Slack isn't configured. Failures are logged and swallowed; the
+   * caller's flow is never blocked by Slack.
+   */
+  async ensureConversationThread(args: {
+    operator: OperatorRow;
+    conversation: ConversationRow;
+  }): Promise<{ channelId: string | null; threadTs: string | null }> {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const cv = args.conversation as any;
+    if (cv.slack_thread_ts && cv.slack_channel_id) {
+      return {
+        channelId: cv.slack_channel_id,
+        threadTs: cv.slack_thread_ts,
+      };
+    }
+    const convosChannel = this.slackApi.convosChannelId();
+    if (!this.slackApi.isConfigured() || !convosChannel) {
+      return { channelId: null, threadTs: null };
+    }
+    try {
+      const last4 = args.conversation.caller_phone_e164.slice(-4);
+      const post = await this.slackApi.postMessage({
+        channel: convosChannel,
+        text:
+          `:eyes: *New conversation* — ${args.operator.business_name} · caller •••${last4} · convo \`${args.conversation.id.slice(0, 8)}\``,
+        blocks: [
+          {
+            type: 'context',
+            elements: [
+              {
+                type: 'mrkdwn',
+                text: `:eyes: *${args.operator.business_name}* · caller •••${last4} · convo \`${args.conversation.id.slice(0, 8)}\` · _new conversation_`,
+              },
+            ],
+          },
+        ],
+      });
+      if (post.ok && post.ts) {
+        const channelId = post.channel ?? convosChannel;
+        await this.supabase
+          .db()
+          .from('conversations')
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          .update({ slack_channel_id: channelId, slack_thread_ts: post.ts } as any)
+          .eq('id', args.conversation.id);
+        return { channelId, threadTs: post.ts };
+      }
+      this.logger.warn(
+        { conversationId: args.conversation.id, err: post.error },
+        'openConversationThread postMessage returned ok=false',
+      );
+    } catch (err) {
+      this.logger.warn(
+        { conversationId: args.conversation.id, err: (err as Error).message },
+        'openConversationThread failed (non-fatal)',
+      );
+    }
+    return { channelId: null, threadTs: null };
+  }
+
+  /**
+   * Echo a caller's inbound SMS into the conversation's monitoring thread.
+   * Always runs — pre- and post-escalation. Replaces the old
+   * forwardCallerSmsToSlack which was gated on the conversation being in
+   * `escalated` state.
+   */
+  async echoCallerMessageToConversationThread(args: {
+    conversation: ConversationRow;
+    body: string;
+  }): Promise<void> {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const cv = args.conversation as any;
+    if (!cv.slack_channel_id || !cv.slack_thread_ts) return;
+    try {
+      const last4 = args.conversation.caller_phone_e164.slice(-4);
+      await this.slackApi.postMessage({
+        channel: cv.slack_channel_id,
+        threadTs: cv.slack_thread_ts,
+        text: `📲 Caller (•••${last4}): ${args.body}`,
+      });
+    } catch (err) {
+      this.logger.warn(
+        { conversationId: args.conversation.id, err: (err as Error).message },
+        'echoCallerMessageToConversationThread failed (non-fatal)',
+      );
+    }
+  }
+
   // ── opening + state transitions ─────────────────────────────────────────
 
   /**
-   * Open or reuse an escalation for a conversation. Returns the escalation
-   * row. Posts the parent Slack message + action buttons. If Slack isn't
+   * Open or reuse an escalation for a conversation. Posts a short alarm in
+   * SLACK_DEFAULT_CHANNEL_ID (#hitl) — buttons + permalink to the
+   * conversation's monitoring thread in #convos. The transcript itself
+   * lives in the convo thread; we don't fork it here. If Slack isn't
    * configured / fails, falls back to email (Slice 10) and still flips the
    * conversation to `escalated` so the bot doesn't reply.
    */
@@ -62,38 +166,47 @@ export class EscalationsService {
     conversation: ConversationRow;
     callerPhoneE164: string;
     reason: EscalationReason;
-    /** Free-form reason text from the AI (or the operator UI). Surfaced in
-     *  the Slack post so the human sees the model's own explanation, not just
-     *  the normalised enum bucket. */
+    /** Free-form reason text from the AI (or the operator UI). */
     reasonText?: string;
     openedBy: 'bot' | 'caller' | 'operator';
     actorUserId?: string | null;
   }): Promise<{ escalation: EscalationRow; deliveredVia: 'slack' | 'email_fallback' | 'none' }> {
-    // 1. Re-use any open escalation for this conversation.
     const existing = await this.findOpenForConversation(args.conversation.id);
     if (existing) {
       return { escalation: existing, deliveredVia: existing.slack_thread_ts ? 'slack' : 'none' };
     }
 
-    // 2. Flip the conversation to 'escalated' first (idempotent for callers).
     await this.flipConversationStatus(args.conversation.id, 'escalated');
 
-    // 3. Try Slack post; fall back to email if it fails or isn't configured.
     let deliveredVia: 'slack' | 'email_fallback' | 'none' = 'none';
     let channelId: string | null = null;
     let threadTs: string | null = null;
 
-    const defaultChannel = this.slackApi.defaultChannelId();
-    if (this.slackApi.isConfigured() && defaultChannel) {
+    const hitlChannel = this.slackApi.defaultChannelId();
+    if (this.slackApi.isConfigured() && hitlChannel) {
       try {
-        const transcript = await this.lastTurns(args.conversation.id, 10);
+        // Build a permalink to the convo thread (best-effort).
+        let convoPermalink: string | null = null;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const cv = args.conversation as any;
+        if (cv.slack_channel_id && cv.slack_thread_ts) {
+          try {
+            const r = await this.slackApi.getPermalink({
+              channel: cv.slack_channel_id,
+              messageTs: cv.slack_thread_ts,
+            });
+            if (r.ok && r.permalink) convoPermalink = r.permalink;
+          } catch {
+            // Non-fatal; fall through to alarm without permalink.
+          }
+        }
         const post = await this.slackApi.postMessage({
-          channel: defaultChannel,
-          text: this.parentMessageText(args, transcript),
-          blocks: this.parentMessageBlocks(args, transcript),
+          channel: hitlChannel,
+          text: this.alarmText(args, convoPermalink),
+          blocks: this.alarmBlocks(args, convoPermalink),
         });
         if (post.ok && post.ts) {
-          channelId = post.channel ?? defaultChannel;
+          channelId = post.channel ?? hitlChannel;
           threadTs = post.ts;
           deliveredVia = 'slack';
         } else {
@@ -111,7 +224,6 @@ export class EscalationsService {
         deliveredVia = 'email_fallback';
       }
     } else {
-      // SLACK_BOT_TOKEN / SLACK_DEFAULT_CHANNEL_ID unset — email fallback when Slice 10 wires Resend.
       deliveredVia = 'email_fallback';
     }
 
@@ -253,12 +365,30 @@ export class EscalationsService {
     text: string;
     slackUserId: string;
   }): Promise<{ delivered: boolean; reason?: string }> {
+    // The thread can live in either channel:
+    //   #hitl   — an open escalation row (alarm + buttons) — preferred since
+    //             the agent's intent is clearly to intervene
+    //   #convos — the conversation's monitoring thread, no open escalation
+    //             required (agents can intervene any time)
     const esc = await this.findOpenByThread(args.channelId, args.threadTs);
-    if (!esc) return { delivered: false, reason: 'no_open_escalation' };
+    let operatorId: string;
+    let conversationId: string;
+    let callerPhoneE164: string;
+    if (esc) {
+      operatorId = esc.operator_id;
+      conversationId = esc.conversation_id;
+      callerPhoneE164 = esc.caller_phone_e164;
+    } else {
+      const convo = await this.findConversationByThread(args.channelId, args.threadTs);
+      if (!convo) return { delivered: false, reason: 'no_matching_thread' };
+      operatorId = convo.operator_id;
+      conversationId = convo.id;
+      callerPhoneE164 = convo.caller_phone_e164;
+    }
 
     // §9.3 rate limit (8s/conversation outbound).
     const now = Date.now();
-    const last = this.lastSmsAt.get(esc.conversation_id) ?? 0;
+    const last = this.lastSmsAt.get(conversationId) ?? 0;
     if (now - last < SMS_BRIDGE_MIN_GAP_MS) {
       return { delivered: false, reason: 'rate_limited' };
     }
@@ -267,7 +397,7 @@ export class EscalationsService {
       .db()
       .from('operators')
       .select('twilio_number_e164')
-      .eq('id', esc.operator_id)
+      .eq('id', operatorId)
       .maybeSingle();
     if (opErr) throw opErr;
     if (!op?.twilio_number_e164) {
@@ -276,15 +406,15 @@ export class EscalationsService {
 
     const send = await this.twilio.sendSms({
       from: op.twilio_number_e164,
-      to: esc.caller_phone_e164,
+      to: callerPhoneE164,
       body: args.text,
     });
     if ('skipped' in send) return { delivered: false, reason: `skipped:${send.skipped}` };
-    this.lastSmsAt.set(esc.conversation_id, now);
+    this.lastSmsAt.set(conversationId, now);
 
     // Persist as a system-role message so the transcript shows the operator's reply.
     await this.conversations.appendMessage({
-      conversationId: esc.conversation_id,
+      conversationId,
       role: 'system',
       body: args.text,
       twilioMessageSid: send.sid,
@@ -300,26 +430,72 @@ export class EscalationsService {
     return { delivered: true };
   }
 
+  /** Look up a conversation by the Slack thread its monitoring post lives in. */
+  private async findConversationByThread(
+    channelId: string,
+    threadTs: string,
+  ): Promise<{ id: string; operator_id: string; caller_phone_e164: string } | null> {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const client = this.supabase.db() as any;
+    const { data, error } = await client
+      .from('conversations')
+      .select('id, operator_id, caller_phone_e164')
+      .eq('slack_channel_id', channelId)
+      .eq('slack_thread_ts', threadTs)
+      .maybeSingle();
+    if (error) throw error;
+    return data ?? null;
+  }
+
   /**
-   * Mirror the AI bot's outbound SMS into the open escalation's Slack
-   * thread (if any). Lets the human in #hitl see both sides of the
-   * conversation after Resume AI, so they can decide whether to re-engage.
-   * Best-effort — any Slack failure is swallowed so the bot's SMS pipeline
-   * is never blocked by Slack downtime.
+   * Mirror the AI bot's outbound SMS into the conversation's monitoring
+   * thread in #convos (and the escalation thread in #hitl when one is open).
+   * Lets the team watch both sides of the conversation live and decide
+   * whether to intervene. Best-effort — any Slack failure is swallowed so
+   * the bot's SMS pipeline is never blocked by Slack downtime.
    */
   async echoBotReplyToOpenEscalation(args: {
     conversationId: string;
     text: string;
   }): Promise<void> {
     try {
-      const esc = await this.findOpenForConversation(args.conversationId);
-      if (!esc?.slack_channel_id || !esc.slack_thread_ts) return;
       const body = args.text.length > 480 ? `${args.text.slice(0, 480)}…` : args.text;
-      await this.slackApi.postMessage({
-        channel: esc.slack_channel_id,
-        threadTs: esc.slack_thread_ts,
-        text: `🤖 Bot: ${body}`,
-      });
+      const text = `🤖 Bot: ${body}`;
+
+      // 1) The conversation's monitoring thread (#convos) — every convo has one
+      //    if the bot is configured; runs pre-escalation too.
+      const { data: convo } = await this.supabase
+        .db()
+        .from('conversations')
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        .select('slack_channel_id, slack_thread_ts' as any)
+        .eq('id', args.conversationId)
+        .maybeSingle();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const c = convo as any;
+      if (c?.slack_channel_id && c?.slack_thread_ts) {
+        await this.slackApi.postMessage({
+          channel: c.slack_channel_id,
+          threadTs: c.slack_thread_ts,
+          text,
+        });
+      }
+
+      // 2) The escalation thread (#hitl) — only when an escalation is open and
+      //    has its own thread. Skip if it's the same channel/ts as the convo
+      //    thread (defensive — shouldn't happen with split channels).
+      const esc = await this.findOpenForConversation(args.conversationId);
+      if (
+        esc?.slack_channel_id &&
+        esc.slack_thread_ts &&
+        !(esc.slack_channel_id === c?.slack_channel_id && esc.slack_thread_ts === c?.slack_thread_ts)
+      ) {
+        await this.slackApi.postMessage({
+          channel: esc.slack_channel_id,
+          threadTs: esc.slack_thread_ts,
+          text,
+        });
+      }
     } catch (err) {
       this.logger.warn(
         { conversationId: args.conversationId, err: (err as Error).message },
@@ -489,105 +665,59 @@ export class EscalationsService {
     return (data ?? []).reverse().map((m) => ({ role: m.role, body: m.body }));
   }
 
-  // ── Slack message formatting ───────────────────────────────────────────
+  // ── Slack message formatting (escalation alarm in #hitl) ───────────────
 
-  private parentMessageText(
-    args: { operator: OperatorRow; conversation: ConversationRow; callerPhoneE164: string; reason: EscalationReason; reasonText?: string; openedBy: string },
-    transcript: ReadonlyArray<{ role: string; body: string }>,
+  private alarmText(
+    args: { operator: OperatorRow; conversation: ConversationRow; callerPhoneE164: string; reason: EscalationReason; reasonText?: string; openedBy: 'bot' | 'caller' | 'operator' },
+    permalink: string | null,
   ): string {
     const last4 = args.callerPhoneE164.slice(-4);
-    const reasonHuman = {
-      bot_stuck: 'Bot got stuck',
-      caller_requested: 'Caller asked for a human',
-      operator_forced: 'Operator forced from dashboard',
-      calendar_revoked: 'Calendar access revoked',
-      turn_cap: 'Conversation hit the turn cap',
-    }[args.reason];
-
+    const reasonHuman = REASON_HUMAN[args.reason];
     const lines = [
       `:rotating_light: *Needs a human* — ${reasonHuman} (opened by ${args.openedBy})`,
       `${args.operator.business_name} · caller •••${last4} · convo \`${args.conversation.id.slice(0, 8)}\``,
-      ...(args.reasonText ? ['', `*Why:* ${args.reasonText}`] : []),
-      '',
-      ...transcript.map((t) => {
-        const tag = t.role === 'caller' ? '📲 Caller' : t.role === 'bot' ? '🤖 Bot' : '👤 Agent';
-        const body = t.body.length > 280 ? `${t.body.slice(0, 280)}…` : t.body;
-        return `${tag}: ${body}`;
-      }),
-      '',
-      "_Reply in this thread to send an SMS to the caller. Use `/bb back-to-bot` to hand control back to the AI, `/bb resolve` to close, or `/bb show-number` to reveal the full caller number (audit-logged)._",
     ];
+    if (args.reasonText) lines.push('', `*Why:* ${args.reasonText}`);
+    if (permalink) lines.push('', `Transcript & live updates: ${permalink}`);
+    lines.push(
+      '',
+      "_Reply in the conversation thread to send an SMS to the caller. Use the buttons below to resume the AI, mark spam, close, or reveal the caller's full number (audit-logged)._",
+    );
     return lines.join('\n');
   }
 
-  private parentMessageBlocks(
+  private alarmBlocks(
     args: { operator: OperatorRow; conversation: ConversationRow; callerPhoneE164: string; reason: EscalationReason; reasonText?: string },
-    transcript: ReadonlyArray<{ role: string; body: string }>,
+    permalink: string | null,
   ): ReadonlyArray<unknown> {
     const last4 = args.callerPhoneE164.slice(-4);
-    const transcriptText = transcript
-      .map((t) => {
-        const tag = t.role === 'caller' ? '📲' : t.role === 'bot' ? '🤖' : '👤';
-        const body = t.body.length > 280 ? `${t.body.slice(0, 280)}…` : t.body;
-        return `${tag} ${body}`;
-      })
-      .join('\n');
-
+    const reasonHuman = REASON_HUMAN[args.reason];
     return [
-      {
-        type: 'header',
-        text: { type: 'plain_text', text: '🚨 Needs a human', emoji: true },
-      },
+      { type: 'header', text: { type: 'plain_text', text: '🚨 Needs a human', emoji: true } },
       {
         type: 'context',
         elements: [
           {
             type: 'mrkdwn',
-            text: `*${args.operator.business_name}* · caller •••${last4} · convo \`${args.conversation.id.slice(0, 8)}\` · reason \`${args.reason}\``,
+            text: `*${args.operator.business_name}* · caller •••${last4} · convo \`${args.conversation.id.slice(0, 8)}\` · ${reasonHuman}`,
           },
         ],
       },
-      args.reasonText
+      args.reasonText ? { type: 'section', text: { type: 'mrkdwn', text: `*Why:* ${args.reasonText}` } } : null,
+      permalink
         ? {
             type: 'section',
-            text: { type: 'mrkdwn', text: `*Why:* ${args.reasonText}` },
-          }
-        : null,
-      transcriptText
-        ? {
-            type: 'section',
-            text: { type: 'mrkdwn', text: transcriptText },
+            text: { type: 'mrkdwn', text: `<${permalink}|→ Open the conversation thread>` },
           }
         : null,
       {
         type: 'actions',
         block_id: 'esc_actions',
         elements: [
-          {
-            type: 'button',
-            action_id: 'esc_back_to_bot',
-            text: { type: 'plain_text', text: '↩ Resume AI', emoji: true },
-            value: args.conversation.id,
-          },
-          {
-            type: 'button',
-            action_id: 'esc_mark_spam',
-            text: { type: 'plain_text', text: '🚫 Mark spam', emoji: true },
-            style: 'danger',
-            value: args.conversation.id,
-          },
-          {
-            type: 'button',
-            action_id: 'esc_close',
-            text: { type: 'plain_text', text: '✓ Close', emoji: true },
-            value: args.conversation.id,
-          },
-          {
-            type: 'button',
-            action_id: 'esc_show_number',
-            text: { type: 'plain_text', text: '👁 Show number', emoji: true },
-            value: args.conversation.id,
-          },
+          { type: 'button', action_id: 'esc_back_to_bot', text: { type: 'plain_text', text: '↩ Resume AI', emoji: true }, value: args.conversation.id },
+          { type: 'button', action_id: 'esc_mark_spam', text: { type: 'plain_text', text: '🚫 Mark spam', emoji: true }, style: 'danger', value: args.conversation.id },
+          { type: 'button', action_id: 'esc_close', text: { type: 'plain_text', text: '✓ Close', emoji: true }, value: args.conversation.id },
+          { type: 'button', action_id: 'esc_show_number', text: { type: 'plain_text', text: '👁 Show number', emoji: true }, value: args.conversation.id },
         ],
       },
     ].filter(Boolean);

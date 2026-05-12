@@ -30,6 +30,14 @@ export class AdminReadController {
     return this.read.globalMetrics();
   }
 
+  @Get('leads')
+  async listLeads(
+    @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
+    @Query('per_page', new DefaultValuePipe(50), ParseIntPipe) perPage: number,
+  ) {
+    return this.read.listLeads({ page, perPage });
+  }
+
   @Get('operators')
   async listOperators(
     @Query('q') q?: string,

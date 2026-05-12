@@ -1,5 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import type { Tables, TablesUpdate } from '@bookingblues/db-types';
+import parsePhoneNumber from 'libphonenumber-js';
+import { PinoLogger } from 'nestjs-pino';
 
 import { SupabaseService } from '../../common/supabase/supabase.service';
 import { ConflictError, NotFoundError, ValidationError } from '../../common/errors/app-error';
@@ -20,7 +22,12 @@ export interface OnboardingStatus {
 
 @Injectable()
 export class OperatorsService {
-  constructor(private readonly supabase: SupabaseService) {}
+  constructor(
+    private readonly supabase: SupabaseService,
+    private readonly logger: PinoLogger,
+  ) {
+    this.logger.setContext(OperatorsService.name);
+  }
 
   async getByUserId(userId: string): Promise<OperatorRow | null> {
     const { data, error } = await this.supabase
@@ -30,7 +37,60 @@ export class OperatorsService {
       .eq('user_id', userId)
       .maybeSingle();
     if (error) throw error;
-    return data;
+    if (data) return data;
+
+    // Lazy bootstrap: fresh signups don't have an operator row yet.
+    // Signup stashes business_name + personal_phone_e164 in user_metadata
+    // (Supabase Auth). Read it and insert the row idempotently. Returns null
+    // if signup metadata is missing — the controller surfaces a clear error.
+    return this.tryBootstrapFromAuthMetadata(userId);
+  }
+
+  private async tryBootstrapFromAuthMetadata(userId: string): Promise<OperatorRow | null> {
+    let metadata: Record<string, unknown> = {};
+    try {
+      const { data, error } = await this.supabase.db().auth.admin.getUserById(userId);
+      if (error || !data?.user) return null;
+      metadata = (data.user.user_metadata ?? {}) as Record<string, unknown>;
+    } catch (err) {
+      this.logger.warn({ userId, err: (err as Error).message }, 'auth.getUserById failed during bootstrap');
+      return null;
+    }
+
+    const businessName = typeof metadata.business_name === 'string' ? metadata.business_name.trim() : '';
+    if (!businessName) return null;
+
+    const phoneRaw = typeof metadata.personal_phone_e164 === 'string' ? metadata.personal_phone_e164 : '';
+    const parsed = phoneRaw ? parsePhoneNumber(phoneRaw, 'US') : null;
+    const phoneE164 = parsed?.isValid() ? parsed.number : null;
+
+    const insert = {
+      user_id: userId,
+      business_name: businessName,
+      ...(phoneE164 ? { personal_phone_e164: phoneE164 } : {}),
+    };
+    const { data: created, error: insertErr } = await this.supabase
+      .db()
+      .from('operators')
+      .insert(insert)
+      .select('*')
+      .single();
+    if (insertErr) {
+      // Race — another concurrent request already inserted. Re-read and return.
+      if (insertErr.code === '23505') {
+        const { data: existing } = await this.supabase
+          .db()
+          .from('operators')
+          .select('*')
+          .eq('user_id', userId)
+          .maybeSingle();
+        return existing ?? null;
+      }
+      this.logger.error({ userId, err: insertErr.message }, 'bootstrap insert failed');
+      throw insertErr;
+    }
+    this.logger.info({ userId, operatorId: created.id }, 'bootstrapped operator from signup metadata');
+    return created;
   }
 
   async getByUserIdRequired(userId: string): Promise<OperatorRow> {

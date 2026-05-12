@@ -37,6 +37,11 @@ export const CancelSubscriptionSchema = z.object({
 });
 export type CancelSubscription = z.infer<typeof CancelSubscriptionSchema>;
 
+export const MarkEmailVerifiedSchema = z.object({
+  reason: z.string().min(1).max(500),
+});
+export type MarkEmailVerified = z.infer<typeof MarkEmailVerifiedSchema>;
+
 export const ForceEndConversationSchema = z.object({
   outcome: z
     .enum(['rejected', 'out_of_scope', 'spam', 'no_show_intent', 'timeout'])

@@ -251,7 +251,8 @@ All variables loaded via `apps/api/src/config/env.ts` using `zod` validation. Th
 | `SENTRY_DSN_WEB` | web | |
 | `LOG_LEVEL` | api | `info` in prod, `debug` in dev |
 | `SLACK_BOT_TOKEN` | api | `xoxb-…` for the single BookingBlues-team workspace (ADR 0010). Must be redacted in logs. |
-| `SLACK_DEFAULT_CHANNEL_ID` | api | Channel ID where all HITL escalations post (e.g. `C0123ABCDEF`). |
+| `SLACK_DEFAULT_CHANNEL_ID` | api | `#hitl` — channel where escalation alarms + control buttons post. |
+| `SLACK_CONVOS_CHANNEL_ID` | api | `#convos` — channel where every conversation gets a monitoring thread (ADR 0010 amendment, Slice 7.5 follow-up). |
 | `SLACK_SIGNING_SECRET` | api | HMAC secret used by `SlackSignatureGuard` to verify inbound webhooks (events, commands, interactivity). |
 
 Rotation: `ENCRYPTION_KEY` is versioned; the encryption helper writes a key version prefix on every ciphertext so we can rotate without downtime. See `apps/api/src/common/crypto/encryption.service.ts`.
@@ -430,7 +431,9 @@ The Web app uses the anon key and reads via RLS. The API uses the service role a
 - `request_payment_link(appointment_id)` — generates a Stripe Connect Checkout link tied to the Operator's connected account, sends URL via SMS.
 - `mark_out_of_scope(reason)` — ends conversation, sends polite handoff message.
 - `mark_spam(reason)` — silent end, no further messages.
-- `escalate_to_human(reason)` — opens a Slack thread in the BookingBlues team workspace (single shared #hitl channel, ADR 0010) with the conversation summary, last 10 turns, and action buttons (Resume AI / Mark spam / Close / Show number). BB ops staff can reply in-thread to send an SMS to the caller, run `/bb back-to-bot` to hand control back to the AI, or close with `/bb resolve`. The thread header carries operator business name + caller last-4 + reason so triage is obvious. If `SLACK_BOT_TOKEN` is unset or the post fails, falls back to email (Slice 10). Either way, conversation status flips to `escalated` and the AI stops replying until resolved.
+- `escalate_to_human(reason)` — posts an alarm with action buttons (Resume AI / Mark spam / Close / Show number) in `#hitl` (`SLACK_DEFAULT_CHANNEL_ID`). The alarm includes a permalink to the conversation's monitoring thread in `#convos` where the full transcript lives. BB ops staff reply in either thread to send an SMS to the caller (the bridge resolves the operator via the escalation row first, then the conversation's `slack_thread_ts`). `/bb back-to-bot`, `/bb resolve`, etc still work. If `SLACK_BOT_TOKEN` is unset or the post fails, falls back to email (Slice 10). Either way, conversation status flips to `escalated` and the AI stops replying until resolved.
+
+  Separate from escalations, **every** new conversation opens a monitoring thread in `#convos` (`SLACK_CONVOS_CHANNEL_ID`) at first contact via `ensureConversationThread`. Every caller SMS and every bot reply is echoed into that thread automatically, so the team can watch the AI live and intervene at any time. Agents replying in the `#convos` thread bridge to SMS the same way as `#hitl` thread replies do — no formal escalation required.
 
 **Tool execution rules**:
 - All tools execute server-side in the API. The model never sees raw secrets.

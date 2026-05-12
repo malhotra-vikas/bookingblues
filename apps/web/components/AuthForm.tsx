@@ -12,6 +12,8 @@ export function AuthForm({ mode }: { mode: 'login' | 'signup' }): JSX.Element {
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [businessName, setBusinessName] = useState('');
+  const [phone, setPhone] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
@@ -24,9 +26,24 @@ export function AuthForm({ mode }: { mode: 'login' | 'signup' }): JSX.Element {
     const supabase = getSupabaseBrowserClient();
     try {
       if (mode === 'signup') {
-        const { error: signupErr } = await supabase.auth.signUp({ email, password });
+        const trimmedName = businessName.trim();
+        if (!trimmedName) throw new Error('Business name is required');
+        const phoneE164 = normalizeUsPhone(phone);
+        if (!phoneE164) throw new Error('Enter a valid US phone number');
+        const { error: signupErr } = await supabase.auth.signUp({
+          email,
+          password,
+          options: {
+            data: {
+              business_name: trimmedName,
+              personal_phone_e164: phoneE164,
+            },
+          },
+        });
         if (signupErr) throw signupErr;
-        setInfo("Check your email to confirm — then sign in.");
+        setInfo(
+          "We sent a confirmation link to your email. Click it, then sign in to finish setup.",
+        );
         return;
       }
       const { error: loginErr } = await supabase.auth.signInWithPassword({ email, password });
@@ -42,35 +59,49 @@ export function AuthForm({ mode }: { mode: 'login' | 'signup' }): JSX.Element {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
-      <div>
-        <label htmlFor="email" className="block text-sm font-medium">
-          Email
-        </label>
-        <input
-          id="email"
-          type="email"
-          autoComplete="email"
-          required
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          className="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 outline-none focus:border-accent"
-        />
-      </div>
-      <div>
-        <label htmlFor="password" className="block text-sm font-medium">
-          Password
-        </label>
-        <input
-          id="password"
-          type="password"
-          autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
-          required
-          minLength={8}
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          className="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 outline-none focus:border-accent"
-        />
-      </div>
+      {mode === 'signup' && (
+        <>
+          <Field
+            id="business_name"
+            label="Business name"
+            placeholder="Zeus Electrical"
+            value={businessName}
+            onChange={setBusinessName}
+            autoComplete="organization"
+            required
+          />
+          <Field
+            id="phone"
+            label="Mobile phone (US)"
+            type="tel"
+            placeholder="(415) 555-1234"
+            value={phone}
+            onChange={setPhone}
+            autoComplete="tel"
+            required
+            hint="We'll text this number when sales reaches out. Keep it the same number that takes your customer calls."
+          />
+        </>
+      )}
+      <Field
+        id="email"
+        label="Email"
+        type="email"
+        value={email}
+        onChange={setEmail}
+        autoComplete="email"
+        required
+      />
+      <Field
+        id="password"
+        label="Password"
+        type="password"
+        value={password}
+        onChange={setPassword}
+        autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
+        minLength={8}
+        required
+      />
       {error ? <p className="text-sm text-red-600">{error}</p> : null}
       {info ? <p className="text-sm text-emerald-700">{info}</p> : null}
       <button
@@ -82,4 +113,49 @@ export function AuthForm({ mode }: { mode: 'login' | 'signup' }): JSX.Element {
       </button>
     </form>
   );
+}
+
+function Field({
+  id, label, value, onChange, type = 'text', placeholder, autoComplete, required, minLength, hint,
+}: {
+  id: string;
+  label: string;
+  value: string;
+  onChange: (s: string) => void;
+  type?: string;
+  placeholder?: string;
+  autoComplete?: string;
+  required?: boolean;
+  minLength?: number;
+  hint?: string;
+}): JSX.Element {
+  return (
+    <div>
+      <label htmlFor={id} className="block text-sm font-medium">{label}</label>
+      <input
+        id={id}
+        type={type}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        {...(placeholder ? { placeholder } : {})}
+        {...(autoComplete ? { autoComplete } : {})}
+        {...(required ? { required: true } : {})}
+        {...(minLength ? { minLength } : {})}
+        className="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 outline-none focus:border-accent"
+      />
+      {hint ? <p className="mt-1 text-xs text-muted">{hint}</p> : null}
+    </div>
+  );
+}
+
+/**
+ * Lightweight US E.164 normalization for signup. Server-side validates
+ * strictly via libphonenumber-js — this is just a guard for the obvious
+ * mistakes (letters, missing digits) so users get instant feedback.
+ */
+function normalizeUsPhone(raw: string): string | null {
+  const digits = raw.replace(/\D/g, '');
+  if (digits.length === 10) return `+1${digits}`;
+  if (digits.length === 11 && digits.startsWith('1')) return `+${digits}`;
+  return null;
 }

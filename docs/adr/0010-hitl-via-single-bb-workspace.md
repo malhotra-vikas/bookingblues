@@ -100,3 +100,30 @@ Forward-only per CLAUDE.md §8. Reverting would require a new migration to
 re-create `slack_connections`, restoring the install controller, and adding
 back the channel-resolution code paths in webhook handlers. Not anticipated
 for MVP horizon.
+
+## Amendment (2026-05-12) — full conversation monitoring
+
+Layered on top of the original ADR: every conversation, not just escalated
+ones, gets a Slack thread the team can watch. Two channels in one workspace:
+
+- **`#hitl`** (`SLACK_DEFAULT_CHANNEL_ID`) — escalation alarms + control
+  buttons (Resume AI / Mark spam / Close / Show number). One short post per
+  escalation, with a permalink to the convo thread.
+- **`#convos`** (`SLACK_CONVOS_CHANNEL_ID`) — one thread per conversation,
+  opened on first caller SMS. Caller SMS, bot replies, and agent
+  interventions all post into this thread automatically. Source-of-truth
+  transcript surface.
+
+Migration `20260512000003_conversation_slack_thread.sql` adds nullable
+`slack_channel_id` + `slack_thread_ts` to `conversations`. Failure to open a
+thread (Slack down, env unset) is logged and swallowed — the conversation
+continues without the thread (fail-soft).
+
+Agent reply bridging routes by escalation thread first, then falls back to
+matching the conversation by `(slack_channel_id, slack_thread_ts)`. Agents
+can intervene in either channel at any time; no click-to-take-over is
+required.
+
+The "noisy at scale" concern is the same in shape but now split — `#hitl`
+stays quiet (one alarm per escalation, not per call) while `#convos` gets
+the full chatter and can be muted/scanned as a feed.

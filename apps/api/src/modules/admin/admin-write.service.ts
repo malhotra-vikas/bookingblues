@@ -39,6 +39,61 @@ export class AdminWriteService {
     this.logger.setContext(AdminWriteService.name);
   }
 
+  // ── lead actions ─────────────────────────────────────────────────────────
+
+  /**
+   * Sales-team action: flip a user's email_confirmed_at when they've verified
+   * out-of-band (e.g. confirmed verbally on a sales call, signed paperwork).
+   * Doesn't send the user a confirmation email — just marks the auth.users
+   * row as confirmed so they can sign in. Audit-logged with reason.
+   */
+  async markEmailVerified(args: {
+    userId: string;
+    actor: AdminActorContext;
+    reason: string;
+  }): Promise<{ user_id: string; email: string | null }> {
+    const { data: userResp, error: lookupErr } = await this.supabase
+      .db()
+      .auth.admin.getUserById(args.userId);
+    if (lookupErr || !userResp?.user) {
+      throw new NotFoundError(`No auth user with id ${args.userId}`);
+    }
+    if (userResp.user.email_confirmed_at) {
+      // Already confirmed — idempotent no-op, still audit so we know sales tried.
+      await this.audit.write({
+        actorUserId: args.actor.actorUserId,
+        operatorId: null,
+        action: 'lead.email_already_verified',
+        resourceType: 'auth_user',
+        resourceId: args.userId,
+        metadata: { reason: args.reason, email: userResp.user.email ?? null },
+        ipAddress: args.actor.ipAddress,
+        userAgent: args.actor.userAgent,
+      });
+      return { user_id: args.userId, email: userResp.user.email ?? null };
+    }
+
+    const { error: updErr } = await this.supabase
+      .db()
+      .auth.admin.updateUserById(args.userId, { email_confirm: true });
+    if (updErr) {
+      this.logger.error({ userId: args.userId, err: updErr.message }, 'markEmailVerified failed');
+      throw new AppError({ code: 'admin.email_verify_failed', status: 502, detail: updErr.message });
+    }
+
+    await this.audit.write({
+      actorUserId: args.actor.actorUserId,
+      operatorId: null,
+      action: 'lead.email_verified',
+      resourceType: 'auth_user',
+      resourceId: args.userId,
+      metadata: { reason: args.reason, email: userResp.user.email ?? null },
+      ipAddress: args.actor.ipAddress,
+      userAgent: args.actor.userAgent,
+    });
+    return { user_id: args.userId, email: userResp.user.email ?? null };
+  }
+
   // ── admin promotion ──────────────────────────────────────────────────────
 
   async promoteAdmin(args: { email: string; actor: AdminActorContext }): Promise<{

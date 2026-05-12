@@ -33,6 +33,9 @@ export default async function AdminLayout({ children }: { children: ReactNode })
           <Link href="/admin" className="no-underline">
             Overview
           </Link>
+          <Link href="/admin/leads" className="no-underline">
+            Leads
+          </Link>
           <Link href="/admin/operators" className="no-underline">
             Operators
           </Link>

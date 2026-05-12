@@ -21,12 +21,14 @@ import {
   DeactivateOperatorSchema,
   ForceEndConversationSchema,
   ImpersonateSchema,
+  MarkEmailVerifiedSchema,
   PromoteAdminSchema,
   RefundPaymentSchema,
   type CancelSubscription,
   type DeactivateOperator,
   type ForceEndConversation,
   type Impersonate,
+  type MarkEmailVerified,
   type PromoteAdmin,
   type RefundPayment,
 } from './admin.dto';
@@ -73,6 +75,24 @@ export class AdminWriteController {
       actor: { actorUserId: actor.userId, ...ctx },
     });
     return { ok: true };
+  }
+
+  // ── lead actions ───────────────────────────────────────────────────────
+
+  @Post('leads/:userId/verify-email')
+  async markEmailVerified(
+    @Req() req: Request,
+    @CurrentUser() actor: AuthenticatedUser,
+    @Param('userId', new ParseUUIDPipe()) userId: string,
+    @Body(new ZodBodyPipe(MarkEmailVerifiedSchema)) body: MarkEmailVerified,
+  ): Promise<{ ok: true; user_id: string; email: string | null }> {
+    const ctx = this.audit.fromRequest(req);
+    const r = await this.write.markEmailVerified({
+      userId,
+      reason: body.reason,
+      actor: { actorUserId: actor.userId, ...ctx },
+    });
+    return { ok: true, ...r };
   }
 
   // ── operator lifecycle ─────────────────────────────────────────────────

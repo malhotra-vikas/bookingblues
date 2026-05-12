@@ -36,12 +36,40 @@ export class SlackApiClient {
     this.logger.setContext(SlackApiClient.name);
   }
 
+  /** True iff the bot token is configured (any Slack post is feasible). */
   isConfigured(): boolean {
-    return Boolean(this.env.SLACK_BOT_TOKEN && this.env.SLACK_DEFAULT_CHANNEL_ID);
+    return Boolean(this.env.SLACK_BOT_TOKEN);
   }
 
+  /** Channel where escalation alarms + buttons post (`#hitl`). */
   defaultChannelId(): string | null {
     return this.env.SLACK_DEFAULT_CHANNEL_ID ?? null;
+  }
+
+  /** Channel where every conversation gets a monitoring thread (`#convos`). */
+  convosChannelId(): string | null {
+    return this.env.SLACK_CONVOS_CHANNEL_ID ?? null;
+  }
+
+  /**
+   * chat.getPermalink is one of the few Slack methods that only accepts
+   * GET with query-string params, not POST JSON — hence the direct fetch.
+   */
+  async getPermalink(args: {
+    channel: string;
+    messageTs: string;
+  }): Promise<SlackCommonResponse & { permalink?: string }> {
+    const token = this.requireBotToken();
+    const qs = new URLSearchParams({ channel: args.channel, message_ts: args.messageTs });
+    const res = await fetch(`https://slack.com/api/chat.getPermalink?${qs.toString()}`, {
+      headers: { authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) {
+      throw new ExternalServiceError('slack', `chat.getPermalink returned HTTP ${res.status}`);
+    }
+    const data = (await res.json()) as SlackCommonResponse & { permalink?: string };
+    if (!data.ok) this.logger.warn({ method: 'chat.getPermalink', error: data.error }, 'Slack API returned ok=false');
+    return data;
   }
 
   async postMessage(args: {

@@ -121,15 +121,31 @@ export class TwilioSmsController {
             .single()
         ).data;
         if (convoFull) {
+          // Slice 7.5 (ADR 0010 amendment): every conversation has a
+          // monitoring thread in #convos. Open it on first contact (idempotent).
+          const thread = await this.escalations.ensureConversationThread({
+            operator: operatorRow,
+            conversation: convoFull,
+          });
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const cvFull = convoFull as any;
+          if (thread.threadTs && !cvFull.slack_thread_ts) {
+            // ensureConversationThread persisted the columns; reflect locally
+            // so the echo path below sees them.
+            cvFull.slack_channel_id = thread.channelId;
+            cvFull.slack_thread_ts = thread.threadTs;
+          }
+
+          // Always echo the caller's inbound SMS into the convo thread —
+          // pre- and post-escalation. Source-of-truth transcript surface.
+          await this.escalations.echoCallerMessageToConversationThread({
+            conversation: convoFull,
+            body: form.Body,
+          });
+
           if (convoFull.status === 'escalated') {
-            // Slice 7.5: HITL bridge — forward the caller message to the Slack
-            // thread instead of running the AI advance loop.
-            await this.escalations.forwardCallerSmsToSlack({
-              operator: operatorRow,
-              conversation: convoFull,
-              callerPhoneE164: form.From,
-              body: form.Body,
-            });
+            // Conversation is owned by a human right now; the AI advance
+            // loop is suppressed. The echo above already informed the team.
           } else {
             await this.advance.advance({
               operator: operatorRow,
