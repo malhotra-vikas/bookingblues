@@ -8,11 +8,16 @@ interface Operator {
   business_name: string;
   category: string | null;
   timezone: string;
+  personal_phone_e164: string | null;
   twilio_number_e164: string | null;
   google_calendar_id: string | null;
   booking_fee_enabled: boolean;
   booking_fee_cents: number | null;
   subscription_status: string | null;
+  trial_ends_at: string | null;
+  stripe_connect_account_id: string | null;
+  stripe_connect_charges_enabled: boolean;
+  stripe_connect_payouts_enabled: boolean;
 }
 
 export default async function SettingsPage(): Promise<JSX.Element> {

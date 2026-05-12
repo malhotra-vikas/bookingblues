@@ -1,7 +1,7 @@
 'use client';
 
-import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { useEffect, useState } from 'react';
 
 import { ConfirmModal } from '../ConfirmModal';
 import { getSupabaseBrowserClient } from '../../lib/supabase/browser';
@@ -304,8 +304,38 @@ export function Wizard({ initial }: { initial: Operator | null }): JSX.Element {
   const feeDecided = op != null && (!op.booking_fee_enabled || op.booking_fee_cents != null);
   const serviceAreaSet = (op?.service_zip_codes?.length ?? 0) > 0;
 
+  // Stripe redirects back here after Connect onboarding with ?connect=return
+  // or ?connect=refresh. Surface a banner so the operator sees acknowledgement
+  // (the actual charges_enabled/payouts_enabled flips arrive via webhook —
+  // can be a beat or two later — so we keep it informational rather than
+  // claiming completion).
+  const searchParams = useSearchParams();
+  const connectStatus = searchParams.get('connect');
+  const [connectBanner, setConnectBanner] = useState<string | null>(
+    connectStatus === 'return'
+      ? "Thanks — we're syncing your Stripe payout details. Status updates in a moment."
+      : connectStatus === 'refresh'
+        ? "Stripe needs a bit more from you. Continue setup below."
+        : null,
+  );
+  useEffect(() => {
+    if (!connectBanner) return;
+    // Strip the query param after a few seconds so refreshing doesn't re-show.
+    const t = setTimeout(() => {
+      setConnectBanner(null);
+      router.replace('/onboarding');
+      router.refresh();
+    }, 5000);
+    return () => clearTimeout(t);
+  }, [connectBanner, router]);
+
   return (
     <div className="space-y-4">
+      {connectBanner ? (
+        <div className="rounded-md border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800">
+          {connectBanner}
+        </div>
+      ) : null}
       {error ? (
         <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
           {error}
@@ -586,19 +616,32 @@ export function Wizard({ initial }: { initial: Operator | null }): JSX.Element {
         description="Lets us send the booking-fee money straight to your bank. Skip this step if you don't take deposits."
         done={stripeConnectDone}
       >
-        {!stripeConnectDone ? (
-          <button
-            type="button"
-            onClick={startStripeConnect}
-            disabled={isBusy('startStripeConnect')}
-            className="rounded-md border border-slate-300 px-4 py-2 text-sm disabled:opacity-50"
-          >
-            {isBusy('startStripeConnect') ? 'Opening Stripe…' : 'Set up payouts with Stripe'}
-          </button>
-        ) : (
+        {stripeConnectDone ? (
           <p className="text-sm text-emerald-700">
             ✓ Payouts ready — money goes straight to your bank.
           </p>
+        ) : (
+          <div className="flex flex-col gap-2">
+            <ConnectStatusInline
+              hasAccount={Boolean(op?.stripe_connect_account_id)}
+              charges={Boolean(op?.stripe_connect_charges_enabled)}
+              payouts={Boolean(op?.stripe_connect_payouts_enabled)}
+            />
+            <div>
+              <button
+                type="button"
+                onClick={startStripeConnect}
+                disabled={isBusy('startStripeConnect')}
+                className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+              >
+                {isBusy('startStripeConnect')
+                  ? 'Opening Stripe…'
+                  : op?.stripe_connect_account_id
+                    ? 'Continue Stripe setup'
+                    : 'Set up payouts with Stripe'}
+              </button>
+            </div>
+          </div>
         )}
       </StepCard>
 
@@ -751,5 +794,35 @@ function FeeBreakdown({ depositDollars }: { depositDollars: number }): JSX.Eleme
         <li className="flex justify-between font-medium text-ink border-t pt-1"><span>You get</span><span className="font-mono">{fmt(operatorKeepsCents)}</span></li>
       </ul>
     </div>
+  );
+}
+
+function ConnectStatusInline({
+  hasAccount,
+  charges,
+  payouts,
+}: {
+  hasAccount: boolean;
+  charges: boolean;
+  payouts: boolean;
+}): JSX.Element {
+  if (!hasAccount) {
+    return (
+      <p className="text-xs text-slate-500">
+        Stripe will ask for your bank details and basic verification. We never see your bank info.
+      </p>
+    );
+  }
+  if (!charges || !payouts) {
+    return (
+      <div className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-md p-2 inline-flex items-center gap-2">
+        <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+        Stripe is still verifying your account
+        {!charges && ' (charges)'} {!payouts && '(payouts)'}. Continue setup if anything's missing.
+      </div>
+    );
+  }
+  return (
+    <p className="text-xs text-emerald-700">✓ Stripe says you&apos;re ready to receive payouts.</p>
   );
 }
