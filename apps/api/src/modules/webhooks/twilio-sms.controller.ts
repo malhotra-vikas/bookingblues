@@ -145,9 +145,14 @@ export class TwilioSmsController {
             body: form.Body,
           });
 
-          if (convoFull.status === 'escalated') {
-            // Conversation is owned by a human right now; the AI advance
-            // loop is suppressed. The echo above already informed the team.
+          // Suppress the AI advance loop only when a human currently owns
+          // the conversation — i.e. there's an OPEN escalation row. Keying
+          // off `conversation.status === 'escalated'` alone left rows stuck
+          // when the escalation was resolved but the conversation status
+          // wasn't flipped (race or older code path) — see QA 2026-05-12.
+          const openEsc = await this.escalations.findOpenForConversation(convoFull.id);
+          if (openEsc) {
+            // Human is on it; the echo above already informed the team.
           } else {
             // Debounce 2s — rapid-fire caller SMS bursts (common: "I need a
             // plumber" / "kitchen flood" / "08820") collapse into one advance
