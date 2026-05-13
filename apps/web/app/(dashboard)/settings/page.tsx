@@ -33,10 +33,10 @@ export default async function SettingsPage(): Promise<JSX.Element> {
   if (notFound || !operator) {
     return (
       <div className="space-y-3">
-        <h1 className="text-2xl font-semibold">Settings</h1>
-        <p className="text-sm text-muted">
+        <h1 className="text-2xl font-semibold dark:text-slate-100">Settings</h1>
+        <p className="text-sm text-muted dark:text-slate-400">
           Finish onboarding to access settings.{' '}
-          <Link href="/onboarding" className="text-accent">
+          <Link href="/onboarding" className="text-accent dark:text-blue-400">
             Go to onboarding
           </Link>
           .
@@ -48,7 +48,7 @@ export default async function SettingsPage(): Promise<JSX.Element> {
   return (
     <div className="space-y-6">
       <header>
-        <h1 className="text-2xl font-semibold">Settings</h1>
+        <h1 className="text-2xl font-semibold dark:text-slate-100">Settings</h1>
       </header>
       <SettingsPanel operator={operator} />
     </div>

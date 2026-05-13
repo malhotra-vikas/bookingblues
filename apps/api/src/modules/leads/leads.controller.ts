@@ -9,6 +9,7 @@ import type { Env } from '../../config/env';
 import { SlackApiClient } from '../slack/slack-api.client';
 
 const NotifyLeadSchema = z.object({
+  user_id: z.string().uuid(),
   email: z.string().email(),
   business_name: z.string().trim().min(1).max(120),
   phone_e164: z
@@ -22,10 +23,53 @@ function maskPhone(e164: string): string {
   return `•••${e164.slice(-4)}`;
 }
 
-function maskEmail(email: string): string {
-  const [local, domain] = email.split('@');
-  if (!local || !domain) return email;
-  return `${local[0] ?? '•'}•••@${domain}`;
+/**
+ * Build the Block Kit message for a new lead. Pulled out so the Slack
+ * interactivity handler can rebuild + extend it on claim with the same
+ * shape.
+ */
+export function buildLeadBlocks(args: {
+  userId: string;
+  email: string;
+  businessName: string;
+  phoneE164: string;
+  adminUrl: string;
+}): ReadonlyArray<unknown> {
+  return [
+    {
+      type: 'section',
+      text: {
+        type: 'mrkdwn',
+        text: `:tada: *New lead* — *${args.businessName}*`,
+      },
+    },
+    {
+      type: 'section',
+      fields: [
+        { type: 'mrkdwn', text: `*Email*\n${args.email}` },
+        { type: 'mrkdwn', text: `*Phone*\n${maskPhone(args.phoneE164)}` },
+      ],
+    },
+    {
+      type: 'actions',
+      block_id: `lead_actions_${args.userId}`,
+      elements: [
+        {
+          type: 'button',
+          action_id: 'lead_claim',
+          style: 'primary',
+          text: { type: 'plain_text', text: 'Claim this lead', emoji: true },
+          value: args.userId,
+        },
+        {
+          type: 'button',
+          action_id: 'lead_view_in_admin',
+          text: { type: 'plain_text', text: 'View in admin', emoji: true },
+          url: args.adminUrl,
+        },
+      ],
+    },
+  ];
 }
 
 /**
@@ -35,6 +79,10 @@ function maskEmail(email: string): string {
  * if someone scripts the endpoint.
  *
  * Failure is intentionally swallowed — a Slack outage must not block signup.
+ *
+ * Full email + business name go in the message (per request); the phone is
+ * still masked since it's the operator's mobile and not needed for first
+ * outreach.
  */
 @Controller('leads')
 export class LeadsController {
@@ -58,38 +106,19 @@ export class LeadsController {
 
     const adminUrl = `${this.env.APP_URL.replace(/\/$/, '')}/admin/leads`;
     const businessName = body.business_name;
-    const fallbackText = `New lead: ${businessName} · ${maskEmail(body.email)} · ${maskPhone(body.phone_e164)}`;
+    const fallbackText = `New lead: ${businessName} · ${body.email} · ${maskPhone(body.phone_e164)}`;
 
     try {
       await this.slack.postMessage({
         channel,
         text: fallbackText,
-        blocks: [
-          {
-            type: 'section',
-            text: {
-              type: 'mrkdwn',
-              text: `:tada: *New lead* — *${businessName}*`,
-            },
-          },
-          {
-            type: 'section',
-            fields: [
-              { type: 'mrkdwn', text: `*Email*\n${maskEmail(body.email)}` },
-              { type: 'mrkdwn', text: `*Phone*\n${maskPhone(body.phone_e164)}` },
-            ],
-          },
-          {
-            type: 'actions',
-            elements: [
-              {
-                type: 'button',
-                text: { type: 'plain_text', text: 'View in admin', emoji: true },
-                url: adminUrl,
-              },
-            ],
-          },
-        ],
+        blocks: buildLeadBlocks({
+          userId: body.user_id,
+          email: body.email,
+          businessName,
+          phoneE164: body.phone_e164,
+          adminUrl,
+        }),
       });
     } catch (err) {
       // Best-effort. Loud log, don't fail the request — signup already

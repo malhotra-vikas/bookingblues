@@ -46,6 +46,9 @@ export interface LeadListItem {
   readonly subscription_status: string | null;
   readonly twilio_number_e164: string | null;
   readonly onboarding_completed_at: string | null;
+  readonly claimed_by_slack_username: string | null;
+  readonly claimed_by_slack_user_id: string | null;
+  readonly claimed_at: string | null;
 }
 
 export interface ListLeadsResult {
@@ -165,16 +168,28 @@ export class AdminReadService {
     if (users.length === 0) return { items: [], next_page: null };
 
     const userIds = users.map((u) => u.id);
-    const { data: ops, error: opsErr } = await this.supabase
-      .db()
-      .from('operators')
-      .select('user_id, business_name, personal_phone_e164, category, subscription_status, twilio_number_e164, onboarding_completed_at')
-      .in('user_id', userIds);
+    const [{ data: ops, error: opsErr }, { data: claims, error: claimsErr }] = await Promise.all([
+      this.supabase
+        .db()
+        .from('operators')
+        .select('user_id, business_name, personal_phone_e164, category, subscription_status, twilio_number_e164, onboarding_completed_at')
+        .in('user_id', userIds),
+      this.supabase
+        .db()
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        .from('lead_claims' as any)
+        .select('user_id, claimed_by_slack_user_id, claimed_by_slack_username, claimed_at')
+        .in('user_id', userIds),
+    ]);
     if (opsErr) throw opsErr;
+    if (claimsErr) throw claimsErr;
     const opByUser = new Map((ops ?? []).map((o) => [o.user_id, o]));
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const claimByUser = new Map<string, any>(((claims ?? []) as any[]).map((c) => [c.user_id, c]));
 
     const items: LeadListItem[] = users.map((u) => {
       const op = opByUser.get(u.id);
+      const claim = claimByUser.get(u.id);
       const metaName = typeof u.user_metadata?.business_name === 'string'
         ? u.user_metadata.business_name
         : null;
@@ -192,6 +207,9 @@ export class AdminReadService {
         subscription_status: op?.subscription_status ?? null,
         twilio_number_e164: op?.twilio_number_e164 ?? null,
         onboarding_completed_at: op?.onboarding_completed_at ?? null,
+        claimed_by_slack_username: claim?.claimed_by_slack_username ?? null,
+        claimed_by_slack_user_id: claim?.claimed_by_slack_user_id ?? null,
+        claimed_at: claim?.claimed_at ?? null,
       };
     });
 

@@ -8,6 +8,7 @@ import { WebhookIdempotencyService } from '../../common/webhooks/webhook-idempot
 
 import { SupabaseService } from '../../common/supabase/supabase.service';
 import { BookingsService } from '../appointments/bookings.service';
+import { buildLeadBlocks } from '../leads/leads.controller';
 
 import { EscalationsService } from './escalations.service';
 import { SlackApiClient } from './slack-api.client';
@@ -304,11 +305,30 @@ export class SlackWebhooksController {
 
     const action = payload.actions[0]!;
     const slackUserId = payload.user?.id ?? 'unknown';
+    const slackUsername = payload.user?.username ?? null;
     const responseUrl = payload.response_url;
     this.logger.info(
       { actionId: action.action_id, slackUserId, hasResponseUrl: Boolean(responseUrl) },
       'slack interactivity click',
     );
+
+    // Lead-claim from #bb-leads — branches before the escalation lookup since
+    // a lead has no conversation.
+    if (action.action_id === 'lead_claim') {
+      const userId = action.value ?? '';
+      if (!userId) return { ok: true };
+      await this.handleLeadClaim({
+        userId,
+        slackUserId,
+        slackUsername,
+        responseUrl: responseUrl ?? null,
+      });
+      return { ok: true };
+    }
+    if (action.action_id === 'lead_view_in_admin') {
+      // URL buttons are handled client-side by Slack; nothing to do.
+      return { ok: true };
+    }
 
     const conversationId = action.value ?? '';
     if (!conversationId) return { ok: true };
@@ -712,6 +732,106 @@ export class SlackWebhooksController {
         response_action: 'errors',
         errors: { start: `Couldn't book: ${msg.slice(0, 180)}` },
       };
+    }
+  }
+
+  /**
+   * Sales team claims a lead from the #bb-leads channel. Upserts a row in
+   * `lead_claims` keyed on the auth.users.id (passed as the button's value),
+   * then replaces the Slack message to show who owns it. Re-claims are
+   * allowed but rare — the upsert just rewrites the ownership row.
+   */
+  private async handleLeadClaim(args: {
+    userId: string;
+    slackUserId: string;
+    slackUsername: string | null;
+    responseUrl: string | null;
+  }): Promise<void> {
+    // Look up the lead for re-rendering the message — auth.users + operator
+    // metadata. The original post embedded all of these in the blocks, but
+    // Slack hands us only the action.value (user_id), not the prior blocks.
+    const { data: userResp, error: userErr } = await this.supabase
+      .db()
+      .auth.admin.getUserById(args.userId);
+    if (userErr || !userResp?.user) {
+      this.logger.warn({ err: userErr?.message, userId: args.userId }, 'lead_claim: user not found');
+      if (args.responseUrl) {
+        await postToResponseUrl(args.responseUrl, {
+          response_type: 'ephemeral',
+          text: ":x: Couldn't find that lead anymore (was the account deleted?)",
+        });
+      }
+      return;
+    }
+    const u = userResp.user;
+    const email = u.email ?? '(no email)';
+    const meta = (u.user_metadata ?? {}) as { business_name?: string; personal_phone_e164?: string };
+    const businessName = meta.business_name ?? '(unnamed)';
+    const phoneE164 = meta.personal_phone_e164 ?? '+10000000000';
+
+    const { error: upsertErr } = await this.supabase
+      .db()
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .from('lead_claims' as any)
+      .upsert(
+        {
+          user_id: args.userId,
+          claimed_by_slack_user_id: args.slackUserId,
+          claimed_by_slack_username: args.slackUsername,
+          claimed_at: new Date().toISOString(),
+        },
+        { onConflict: 'user_id' },
+      );
+    if (upsertErr) {
+      this.logger.error({ err: upsertErr.message, userId: args.userId }, 'lead_claim: upsert failed');
+      if (args.responseUrl) {
+        await postToResponseUrl(args.responseUrl, {
+          response_type: 'ephemeral',
+          text: `:x: Couldn't save the claim: ${upsertErr.message}`,
+        });
+      }
+      return;
+    }
+
+    // Replace the original message: keep the lead info, swap the action row
+    // for a "claimed by …" banner. We force `replace_original: true` here
+    // (overriding the global helper's `false`) because we want the buttons
+    // to vanish once claimed — otherwise two agents can both "claim" and
+    // race.
+    const baseBlocks = buildLeadBlocks({
+      userId: args.userId,
+      email,
+      businessName,
+      phoneE164,
+      adminUrl: '', // unused — we strip the actions row below
+    });
+    // Drop the original actions block and replace with the claimed banner.
+    const withoutActions = baseBlocks.filter(
+      (b) => (b as { type?: string }).type !== 'actions',
+    );
+    const claimedBlocks = [
+      ...withoutActions,
+      {
+        type: 'context',
+        elements: [
+          {
+            type: 'mrkdwn',
+            text: `:lock: Claimed by <@${args.slackUserId}> · ${new Date().toLocaleString('en-US', { timeZone: 'UTC' })} UTC`,
+          },
+        ],
+      },
+    ];
+
+    if (args.responseUrl) {
+      await fetch(args.responseUrl, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json; charset=utf-8' },
+        body: JSON.stringify({
+          replace_original: true,
+          text: `New lead — ${businessName} · claimed by <@${args.slackUserId}>`,
+          blocks: claimedBlocks,
+        }),
+      });
     }
   }
 

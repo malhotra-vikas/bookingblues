@@ -31,7 +31,7 @@ export function AuthForm({ mode }: { mode: 'login' | 'signup' }): JSX.Element {
         if (!trimmedName) throw new Error('Business name is required');
         const phoneE164 = normalizeUsPhone(phone);
         if (!phoneE164) throw new Error('Enter a valid US phone number');
-        const { error: signupErr } = await supabase.auth.signUp({
+        const { data: signupData, error: signupErr } = await supabase.auth.signUp({
           email,
           password,
           options: {
@@ -42,20 +42,25 @@ export function AuthForm({ mode }: { mode: 'login' | 'signup' }): JSX.Element {
           },
         });
         if (signupErr) throw signupErr;
+        const newUserId = signupData.user?.id;
         // Fire-and-forget Slack #bb-leads notification. Failure is silent —
         // signup already succeeded; the lead is in `auth.users` regardless.
-        void fetch(`${publicEnv.NEXT_PUBLIC_API_URL}/v1/leads/notify`, {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({
-            email,
-            business_name: trimmedName,
-            phone_e164: phoneE164,
-          }),
-          keepalive: true,
-        }).catch(() => {
-          // Intentionally swallowed.
-        });
+        // user_id lets the claim button reconcile against auth.users later.
+        if (newUserId) {
+          void fetch(`${publicEnv.NEXT_PUBLIC_API_URL}/v1/leads/notify`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({
+              user_id: newUserId,
+              email,
+              business_name: trimmedName,
+              phone_e164: phoneE164,
+            }),
+            keepalive: true,
+          }).catch(() => {
+            // Intentionally swallowed.
+          });
+        }
         setInfo(
           "We sent a confirmation link to your email. Click it, then sign in to finish setup.",
         );

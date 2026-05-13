@@ -33,14 +33,14 @@ export default async function OnboardingPage(): Promise<JSX.Element> {
   return (
     <div className="space-y-6">
       <header>
-        <h1 className="text-2xl font-semibold">Onboarding</h1>
-        <p className="text-sm text-muted mt-1">
+        <h1 className="text-2xl font-semibold dark:text-slate-100">Onboarding</h1>
+        <p className="text-sm text-muted dark:text-slate-400 mt-1">
           Six steps to start booking missed calls. You can come back to this page anytime.
         </p>
       </header>
 
       {notFound ? (
-        <p className="text-sm text-muted">
+        <p className="text-sm text-muted dark:text-slate-400">
           We couldn&apos;t find your operator profile yet. Start with the subscription step below — it
           will create your profile automatically.
         </p>
@@ -48,9 +48,9 @@ export default async function OnboardingPage(): Promise<JSX.Element> {
 
       <Wizard initial={operator} />
 
-      <p className="text-sm text-muted">
+      <p className="text-sm text-muted dark:text-slate-400">
         Done?{' '}
-        <Link href="/dashboard" className="text-accent">
+        <Link href="/dashboard" className="text-accent dark:text-blue-400">
           Go to your dashboard
         </Link>
         .

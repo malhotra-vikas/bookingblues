@@ -12,6 +12,9 @@ interface LeadListItem {
   subscription_status: string | null;
   twilio_number_e164: string | null;
   onboarding_completed_at: string | null;
+  claimed_by_slack_username: string | null;
+  claimed_by_slack_user_id: string | null;
+  claimed_at: string | null;
 }
 
 interface ListResp {
@@ -59,6 +62,7 @@ export default async function LeadsPage({
               <th className="px-3 py-2">Business</th>
               <th className="px-3 py-2">Email</th>
               <th className="px-3 py-2">Phone</th>
+              <th className="px-3 py-2">Owner</th>
               <th className="px-3 py-2">Status</th>
               <th className="px-3 py-2">Onboarding</th>
               <th className="px-3 py-2">Actions</th>
@@ -98,6 +102,15 @@ export default async function LeadsPage({
                     '—'
                   )}
                 </td>
+                <td className="px-3 py-2 text-xs">
+                  {lead.claimed_by_slack_username ? (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-900 px-2 py-0.5 font-medium text-blue-700 dark:text-blue-300">
+                      @{lead.claimed_by_slack_username}
+                    </span>
+                  ) : (
+                    <span className="text-muted italic">Unclaimed</span>
+                  )}
+                </td>
                 <td className="px-3 py-2">
                   {lead.subscription_status ?? (
                     <span className="text-amber-700 text-xs">not subscribed</span>
@@ -123,7 +136,7 @@ export default async function LeadsPage({
             ))}
             {(resp?.items.length ?? 0) === 0 ? (
               <tr>
-                <td colSpan={7} className="px-3 py-6 text-center text-muted">
+                <td colSpan={8} className="px-3 py-6 text-center text-muted">
                   No leads yet — newest signups appear here.
                 </td>
               </tr>

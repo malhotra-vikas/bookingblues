@@ -155,7 +155,7 @@ export function SettingsPanel({ operator }: { operator: Operator }): JSX.Element
           <input
             value={businessName}
             onChange={(e) => setBusinessName(e.target.value)}
-            className="rounded-md border border-slate-300 px-3 py-2 text-sm w-full"
+            className="rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 dark:text-slate-100 px-3 py-2 text-sm w-full"
           />
         </Field>
         <Field label="Timezone" hint="IANA name — e.g. America/New_York, America/Los_Angeles">
@@ -166,7 +166,7 @@ export function SettingsPanel({ operator }: { operator: Operator }): JSX.Element
           />
         </Field>
         <Field label="Your mobile (read-only)" hint="Set at signup. Reach us to change.">
-          <div className="text-sm font-mono text-muted">{formatE164(operator.personal_phone_e164)}</div>
+          <div className="text-sm font-mono text-muted dark:text-slate-300">{formatE164(operator.personal_phone_e164)}</div>
         </Field>
         <SaveButton busy={busy === 'save'} onClick={saveProfile} />
       </Card>
@@ -194,17 +194,17 @@ export function SettingsPanel({ operator }: { operator: Operator }): JSX.Element
                 min="0"
                 value={feeDollars}
                 onChange={(e) => setFeeDollars(e.target.value)}
-                className="rounded-md border border-slate-300 px-3 py-2 text-sm w-32"
+                className="rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 dark:text-slate-100 px-3 py-2 text-sm w-32"
               />
             </Field>
             {feeCents > 0 && (
-              <div className="rounded-md bg-slate-50 border border-slate-200 p-3 text-sm">
-                <div className="text-xs text-muted uppercase tracking-wide mb-2">
+              <div className="rounded-md bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 p-3 text-sm">
+                <div className="text-xs text-muted dark:text-slate-400 uppercase tracking-wide mb-2">
                   For a ${(feeCents / 100).toFixed(2)} deposit
                 </div>
                 <EconomicsRow label="Card processing (2.9% + 30¢)" amount={-stripeProcessingCents} />
                 <EconomicsRow label={`BookingBlues fee (${(takeBps / 100).toFixed(0)}%)`} amount={-platformCents} />
-                <div className="border-t border-slate-200 mt-2 pt-2">
+                <div className="border-t border-slate-200 dark:border-slate-700 mt-2 pt-2">
                   <EconomicsRow label="You get" amount={operatorTakeCents} bold />
                 </div>
               </div>
@@ -273,7 +273,7 @@ export function SettingsPanel({ operator }: { operator: Operator }): JSX.Element
                 type="button"
                 onClick={disconnectGoogle}
                 disabled={busy === 'disconnect-google'}
-                className="rounded-md border border-slate-300 px-3 py-1.5 text-xs hover:bg-slate-50 disabled:opacity-50"
+                className="rounded-md border border-slate-300 dark:border-slate-700 dark:text-slate-200 px-3 py-1.5 text-xs hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-50"
               >
                 {busy === 'disconnect-google' ? 'Disconnecting…' : 'Disconnect'}
               </button>
@@ -300,16 +300,16 @@ export function SettingsPanel({ operator }: { operator: Operator }): JSX.Element
             <span
               className={`font-medium ${
                 operator.subscription_status === 'active'
-                  ? 'text-emerald-700'
+                  ? 'text-emerald-700 dark:text-emerald-400'
                   : operator.subscription_status === 'trialing'
-                    ? 'text-amber-700'
-                    : 'text-red-700'
+                    ? 'text-amber-700 dark:text-amber-400'
+                    : 'text-red-700 dark:text-red-400'
               }`}
             >
               {operator.subscription_status ?? 'none'}
             </span>
             {operator.trial_ends_at && operator.subscription_status === 'trialing' && (
-              <span className="ml-2 text-xs text-muted">
+              <span className="ml-2 text-xs text-muted dark:text-slate-400">
                 ends {new Date(operator.trial_ends_at).toLocaleDateString()}
               </span>
             )}
@@ -318,7 +318,7 @@ export function SettingsPanel({ operator }: { operator: Operator }): JSX.Element
             type="button"
             onClick={openBillingPortal}
             disabled={busy === 'billing-portal'}
-            className="rounded-md border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-50 disabled:opacity-50"
+            className="rounded-md border border-slate-300 dark:border-slate-700 dark:text-slate-200 px-3 py-1.5 text-sm hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-50"
           >
             {busy === 'billing-portal' ? 'Opening…' : 'Open billing portal'}
           </button>
@@ -342,10 +342,10 @@ function Card({
   children: React.ReactNode;
 }): JSX.Element {
   return (
-    <section className="rounded-lg border border-slate-200 bg-white p-5 space-y-4">
+    <section className="rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 space-y-4">
       <header>
-        <h2 className="text-base font-semibold text-ink">{title}</h2>
-        {description ? <p className="text-xs text-muted mt-0.5">{description}</p> : null}
+        <h2 className="text-base font-semibold text-ink dark:text-slate-100">{title}</h2>
+        {description ? <p className="text-xs text-muted dark:text-slate-400 mt-0.5">{description}</p> : null}
       </header>
       {children}
     </section>
@@ -363,9 +363,9 @@ function Field({
 }): JSX.Element {
   return (
     <div>
-      <label className="block text-xs font-medium text-muted mb-1">{label}</label>
+      <label className="block text-xs font-medium text-muted dark:text-slate-400 mb-1">{label}</label>
       {children}
-      {hint ? <p className="mt-1 text-[11px] text-slate-500">{hint}</p> : null}
+      {hint ? <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">{hint}</p> : null}
     </div>
   );
 }
@@ -392,8 +392,8 @@ function Banner({
 }): JSX.Element {
   const cls =
     tone === 'error'
-      ? 'border-red-200 bg-red-50 text-red-700'
-      : 'border-emerald-200 bg-emerald-50 text-emerald-700';
+      ? 'border-red-200 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300'
+      : 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-300';
   return <div className={`rounded-md border p-3 text-sm ${cls}`}>{children}</div>;
 }
 
@@ -409,9 +409,9 @@ function EconomicsRow({
   const dollars = (amount / 100).toFixed(2);
   const positive = amount >= 0;
   return (
-    <div className={`flex justify-between ${bold ? 'font-semibold text-ink' : 'text-muted'}`}>
+    <div className={`flex justify-between ${bold ? 'font-semibold text-ink dark:text-slate-100' : 'text-muted dark:text-slate-400'}`}>
       <span>{label}</span>
-      <span className={`font-mono ${!positive ? 'text-red-600' : ''}`}>
+      <span className={`font-mono ${!positive ? 'text-red-600 dark:text-red-400' : ''}`}>
         {positive ? '$' : '-$'}{Math.abs(Number(dollars)).toFixed(2)}
       </span>
     </div>
@@ -421,7 +421,7 @@ function EconomicsRow({
 function ConnectStatusBadge({ status }: { status: ConnectStatus }): JSX.Element {
   if (status === 'active') {
     return (
-      <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 border border-emerald-200 px-2.5 py-1 text-xs font-medium text-emerald-700">
+      <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 border border-emerald-200 dark:bg-emerald-950/40 dark:border-emerald-900 px-2.5 py-1 text-xs font-medium text-emerald-700 dark:text-emerald-300">
         <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
         Active — charges + payouts enabled
       </span>
@@ -429,14 +429,14 @@ function ConnectStatusBadge({ status }: { status: ConnectStatus }): JSX.Element 
   }
   if (status === 'pending') {
     return (
-      <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 border border-amber-200 px-2.5 py-1 text-xs font-medium text-amber-700">
+      <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 border border-amber-200 dark:bg-amber-950/40 dark:border-amber-900 px-2.5 py-1 text-xs font-medium text-amber-700 dark:text-amber-300">
         <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
         Pending verification
       </span>
     );
   }
   return (
-    <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 border border-slate-200 px-2.5 py-1 text-xs font-medium text-slate-700">
+    <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 border border-slate-200 dark:bg-slate-800 dark:border-slate-700 px-2.5 py-1 text-xs font-medium text-slate-700 dark:text-slate-300">
       <span className="w-1.5 h-1.5 rounded-full bg-slate-400" />
       Not connected
     </span>
@@ -452,7 +452,7 @@ function ConnectStatusNotice({
 }): JSX.Element | null {
   if (chargeable) return null;
   return (
-    <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+    <div className="rounded-md border border-amber-200 bg-amber-50 dark:border-amber-900 dark:bg-amber-950/40 p-3 text-xs text-amber-800 dark:text-amber-300">
       <strong className="font-medium">Heads up:</strong> we won&apos;t actually charge fees yet —{' '}
       {status === 'not_started'
         ? 'finish Stripe payout setup below.'
@@ -476,16 +476,16 @@ function IntegrationRow({
   action?: React.ReactNode;
 }): JSX.Element {
   return (
-    <div className="flex items-center justify-between py-2 border-b border-slate-100 last:border-0">
+    <div className="flex items-center justify-between py-2 border-b border-slate-100 dark:border-slate-800 last:border-0">
       <div className="flex items-center gap-3">
         <span
           className={`w-2 h-2 rounded-full ${
-            state === 'connected' ? 'bg-emerald-500' : 'bg-slate-300'
+            state === 'connected' ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-600'
           }`}
         />
         <div>
-          <div className="text-sm font-medium text-ink">{name}</div>
-          <div className="text-xs text-muted font-mono">{detail}</div>
+          <div className="text-sm font-medium text-ink dark:text-slate-100">{name}</div>
+          <div className="text-xs text-muted dark:text-slate-400 font-mono">{detail}</div>
         </div>
       </div>
       {action}

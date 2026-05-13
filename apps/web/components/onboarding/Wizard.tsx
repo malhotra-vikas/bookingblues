@@ -332,12 +332,12 @@ export function Wizard({ initial }: { initial: Operator | null }): JSX.Element {
   return (
     <div className="space-y-4">
       {connectBanner ? (
-        <div className="rounded-md border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800">
+        <div className="rounded-md border border-blue-200 bg-blue-50 dark:border-blue-900 dark:bg-blue-950/40 p-3 text-sm text-blue-800 dark:text-blue-300">
           {connectBanner}
         </div>
       ) : null}
       {error ? (
-        <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+        <div className="rounded-md border border-red-200 bg-red-50 dark:border-red-900 dark:bg-red-950/40 p-3 text-sm text-red-700 dark:text-red-300">
           {error}
         </div>
       ) : null}
@@ -362,7 +362,7 @@ export function Wizard({ initial }: { initial: Operator | null }): JSX.Element {
               type="button"
               onClick={() => startBilling('pro')}
               disabled={isBusy('startBilling:starter') || isBusy('startBilling:pro')}
-              className="rounded-md border border-slate-300 px-4 py-2 text-sm disabled:opacity-50"
+              className="rounded-md border border-slate-300 dark:border-slate-700 dark:text-slate-200 px-4 py-2 text-sm disabled:opacity-50"
             >
               {isBusy('startBilling:pro') ? 'Opening checkout…' : 'Start trial — Pro'}
             </button>
@@ -380,7 +380,7 @@ export function Wizard({ initial }: { initial: Operator | null }): JSX.Element {
           <select
             value={pendingCategory}
             onChange={(e) => setPendingCategory(e.target.value)}
-            className="rounded-md border border-slate-300 px-3 py-2 text-sm"
+            className="rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 dark:text-slate-100 px-3 py-2 text-sm"
           >
             <option value="">— Select —</option>
             {CATEGORIES.map((c) => (
@@ -415,9 +415,9 @@ export function Wizard({ initial }: { initial: Operator | null }): JSX.Element {
               onChange={(e) => setPendingZipsText(e.target.value)}
               placeholder="e.g. 90210, 90211, 90212"
               rows={2}
-              className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm font-mono"
+              className="w-full rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 dark:text-slate-100 px-3 py-2 text-sm font-mono"
             />
-            <p className="mt-1 text-xs text-muted">
+            <p className="mt-1 text-xs text-muted dark:text-slate-400">
               Comma, space, or newline separated. Each must be a 5-digit US ZIP. We de-dupe + sort.
             </p>
           </div>
@@ -431,10 +431,10 @@ export function Wizard({ initial }: { initial: Operator | null }): JSX.Element {
               {pendingZones.map((zone, idx) => (
                 <div
                   key={`${zone.center_zip}-${idx}`}
-                  className="flex items-center gap-3 rounded-md border bg-slate-50 px-3 py-1.5 text-sm"
+                  className="flex items-center gap-3 rounded-md border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-3 py-1.5 text-sm"
                 >
                   <span className="font-mono">{zone.radius_miles} mi</span>
-                  <span className="text-muted">around</span>
+                  <span className="text-muted dark:text-slate-400">around</span>
                   <span className="font-mono">{zone.center_zip}</span>
                   <button
                     type="button"
@@ -451,24 +451,24 @@ export function Wizard({ initial }: { initial: Operator | null }): JSX.Element {
                 placeholder="Center ZIP"
                 value={zoneCenter}
                 onChange={(e) => setZoneCenter(e.target.value.replace(/\D/g, '').slice(0, 5))}
-                className="rounded-md border border-slate-300 px-3 py-1.5 text-sm font-mono w-32"
+                className="rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 dark:text-slate-100 px-3 py-1.5 text-sm font-mono w-32"
               />
               <input
                 placeholder="30"
                 value={zoneRadius}
                 onChange={(e) => setZoneRadius(e.target.value.replace(/\D/g, '').slice(0, 3))}
-                className="rounded-md border border-slate-300 px-3 py-1.5 text-sm w-20"
+                className="rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 dark:text-slate-100 px-3 py-1.5 text-sm w-20"
               />
-              <span className="text-xs text-muted">miles</span>
+              <span className="text-xs text-muted dark:text-slate-400">miles</span>
               <button
                 type="button"
                 onClick={addZone}
-                className="rounded-md border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-50"
+                className="rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 dark:text-slate-100 px-3 py-1.5 text-sm hover:bg-slate-50"
               >
                 + Add zone
               </button>
             </div>
-            <p className="mt-1 text-xs text-muted">
+            <p className="mt-1 text-xs text-muted dark:text-slate-400">
               Cities and towns by name will be supported once Google Maps geocoding is wired up
               (waiting on billing approval).
             </p>
@@ -484,7 +484,7 @@ export function Wizard({ initial }: { initial: Operator | null }): JSX.Element {
             >
               {isBusy('saveServiceArea') ? 'Saving…' : 'Save service area'}
             </button>
-            <span className="text-xs text-muted">
+            <span className="text-xs text-muted dark:text-slate-400">
               {(op?.service_zip_codes?.length ?? 0) + (op?.service_radius_zones?.length ?? 0) === 0
                 ? 'Currently accepting any address.'
                 : `Saved: ${op!.service_zip_codes.length} explicit ZIP${
@@ -512,7 +512,7 @@ export function Wizard({ initial }: { initial: Operator | null }): JSX.Element {
                 onChange={(e) =>
                   setPendingAreaCode(e.target.value.replace(/\D/g, '').slice(0, 3))
                 }
-                className="rounded-md border border-slate-300 px-3 py-2 text-sm w-48"
+                className="rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 dark:text-slate-100 px-3 py-2 text-sm w-48"
               />
               <button
                 type="button"
@@ -526,7 +526,7 @@ export function Wizard({ initial }: { initial: Operator | null }): JSX.Element {
                 type="button"
                 onClick={() => provisionTwilio()}
                 disabled={isBusy('provisionTwilio')}
-                className="rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-50"
+                className="rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 dark:text-slate-100 px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-50"
                 title="Skip the picker and grab the first vanity match we can find"
               >
                 {isBusy('provisionTwilio') ? 'Getting…' : 'Just pick one for me'}
@@ -541,7 +541,7 @@ export function Wizard({ initial }: { initial: Operator | null }): JSX.Element {
                       type="button"
                       onClick={() => provisionTwilio(c.phone_number_e164)}
                       disabled={isBusy(c.phone_number_e164)}
-                      className="w-full text-left rounded-md border border-slate-300 px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-50 flex items-center justify-between"
+                      className="w-full text-left rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 dark:text-slate-100 px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-50 flex items-center justify-between"
                     >
                       <span className="font-mono">{formatE164(c.phone_number_e164)}</span>
                       <span className="text-xs text-slate-500 flex items-center gap-2">
@@ -663,7 +663,7 @@ export function Wizard({ initial }: { initial: Operator | null }): JSX.Element {
             </label>
             {pendingFeeEnabled ? (
               <div>
-                <label className="block text-xs text-muted">Amount (USD)</label>
+                <label className="block text-xs text-muted dark:text-slate-400">Amount (USD)</label>
                 <input
                   type="number"
                   inputMode="decimal"
@@ -671,7 +671,7 @@ export function Wizard({ initial }: { initial: Operator | null }): JSX.Element {
                   min="0"
                   value={pendingFeeDollars}
                   onChange={(e) => setPendingFeeDollars(e.target.value)}
-                  className="rounded-md border border-slate-300 px-3 py-2 text-sm w-32"
+                  className="rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 dark:text-slate-100 px-3 py-2 text-sm w-32"
                 />
               </div>
             ) : null}
@@ -699,7 +699,7 @@ export function Wizard({ initial }: { initial: Operator | null }): JSX.Element {
         {twilioDone ? (
           <CarrierForwarding twilioNumber={op!.twilio_number_e164!} />
         ) : (
-          <p className="text-sm text-muted">
+          <p className="text-sm text-muted dark:text-slate-400">
             Get your BookingBlues number first (step 3) — once you have it we&apos;ll show you the
             short code to dial on your phone for your carrier.
           </p>
@@ -751,7 +751,7 @@ export function Wizard({ initial }: { initial: Operator | null }): JSX.Element {
               The AI won&apos;t be able to check your availability or add new appointments to your
               calendar until you reconnect.
             </p>
-            <p className="text-xs text-muted">
+            <p className="text-xs text-muted dark:text-slate-400">
               Appointments already on your calendar stay where they are — nothing gets deleted.
               You can reconnect anytime.
             </p>

@@ -5,10 +5,21 @@
 :root {
   color-scheme: light;
 }
+html.dark {
+  color-scheme: dark;
+}
 
+/* Light defaults — overridden when `html.dark` is set. The class-level
+   override is required because `@apply bg-paper` resolves at build time
+   to `background-color: white !important`-equivalent specificity that
+   wins over the body's utility classes. */
 html,
 body {
   @apply bg-paper text-ink antialiased;
+}
+html.dark,
+html.dark body {
+  @apply bg-slate-950 text-slate-100 antialiased;
 }
 
 a {
@@ -16,4 +27,7 @@ a {
 }
 a:hover {
   @apply underline;
+}
+html.dark a {
+  @apply text-blue-400;
 }
