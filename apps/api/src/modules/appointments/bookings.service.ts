@@ -3,6 +3,7 @@ import { PinoLogger } from 'nestjs-pino';
 import type { Tables } from '@bookingblues/db-types';
 
 import { AuditLogService } from '../../common/audit/audit-log.service';
+import { EmailService } from '../../common/email/email.service';
 import { ConflictError, ValidationError } from '../../common/errors/app-error';
 import { SupabaseService } from '../../common/supabase/supabase.service';
 import { TwilioService } from '../../common/twilio/twilio.service';
@@ -12,6 +13,7 @@ import { CalendarService } from '../calendar/calendar.service';
 import { ConversationsService } from '../conversations/conversations.service';
 import { isBookingFeeCollectible } from '../ai/prompts';
 import { PaymentsService } from '../payments/payments.service';
+import { renderBookingSummary } from '../summaries/email-templates';
 
 type OperatorRow = Tables<'operators'>;
 type Urgency = 'low' | 'normal' | 'high' | 'emergency';
@@ -42,6 +44,7 @@ export class BookingsService {
     private readonly conversations: ConversationsService,
     private readonly audit: AuditLogService,
     private readonly payments: PaymentsService,
+    private readonly email: EmailService,
     private readonly logger: PinoLogger,
     @Inject(ENV_TOKEN) private readonly env: Env,
   ) {
@@ -193,7 +196,92 @@ export class BookingsService {
       });
     }
 
+    // 5. Operator email — fire-and-forget summary with full transcript +
+    //    appointment details. Failure here MUST NOT fail the booking: the
+    //    SMS and calendar event already landed, so the operator can recover
+    //    from the dashboard if email is down.
+    void this.sendOperatorBookingEmail({
+      operator: args.operator,
+      appointmentId,
+      conversationId: args.conversationId,
+      callerName: args.callerName,
+      callerPhoneE164: args.callerPhoneE164,
+      callerEmail: args.callerEmail ?? null,
+      jobSummary: args.jobSummary,
+      startIso: args.startIso,
+      endIso: args.endIso,
+      operatorEventUrl,
+    }).catch((err) => {
+      this.logger.warn(
+        { appointmentId, err: (err as Error).message },
+        'booking summary email failed (non-fatal)',
+      );
+    });
+
     return { appointmentId, icsUrl, operatorEventUrl, feeCheckoutUrl };
+  }
+
+  private async sendOperatorBookingEmail(args: {
+    operator: OperatorRow;
+    appointmentId: string;
+    conversationId: string | null;
+    callerName: string;
+    callerPhoneE164: string;
+    callerEmail: string | null;
+    jobSummary: string;
+    startIso: string;
+    endIso: string;
+    operatorEventUrl: string | null;
+  }): Promise<void> {
+    if (!this.email.isConfigured()) return;
+
+    const { data: userResp } = await this.supabase
+      .db()
+      .auth.admin.getUserById(args.operator.user_id);
+    const toEmail = userResp?.user?.email;
+    if (!toEmail) return;
+
+    // Re-read the appointment so we get the current fee status (set by the
+    // payments path after the Stripe webhook lands, if applicable). For
+    // bookings without a fee, fee_cents stays null.
+    const { data: apptRow } = await this.supabase
+      .db()
+      .from('appointments')
+      .select('id, caller_name, caller_phone_e164, caller_email, job_summary, scheduled_for_start, scheduled_for_end, fee_cents, fee_status')
+      .eq('id', args.appointmentId)
+      .single();
+    if (!apptRow) return;
+
+    // Pull the full transcript so the operator has caller context before
+    // showing up. Capped at the most recent 100 messages — anything beyond
+    // that is almost certainly not useful and would bloat the email.
+    const transcript = args.conversationId
+      ? (
+          await this.supabase
+            .db()
+            .from('messages')
+            .select('role, body, created_at')
+            .eq('conversation_id', args.conversationId)
+            .order('created_at', { ascending: true })
+            .limit(100)
+        ).data ?? []
+      : [];
+
+    const template = renderBookingSummary({
+      operator: args.operator,
+      appointment: apptRow,
+      transcript,
+      googleEventUrl: args.operatorEventUrl,
+      platformAppUrl: this.env.APP_URL,
+    });
+
+    await this.email.send({
+      to: toEmail,
+      subject: template.subject,
+      html: template.html,
+      text: template.text,
+      ...(args.callerEmail ? { replyTo: args.callerEmail } : {}),
+    });
   }
 
   /** Public, unauthenticated deep-link the caller can tap to add to their calendar. */

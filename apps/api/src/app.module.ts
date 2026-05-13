@@ -6,6 +6,7 @@ import { PinoLogger } from 'nestjs-pino';
 import { AuditModule } from './common/audit/audit.module';
 import { AuthModule } from './common/auth/auth.module';
 import { EncryptionModule } from './common/crypto/encryption.module';
+import { EmailModule } from './common/email/email.module';
 import { ProblemDetailsFilter } from './common/filters/problem-details.filter';
 import { LoggerModule } from './common/logger/logger.module';
 import { OpenAIModule } from './common/openai/openai.module';
@@ -27,6 +28,7 @@ import { MeModule } from './modules/me/me.module';
 import { OperatorsModule } from './modules/operators/operators.module';
 import { PaymentsModule } from './modules/payments/payments.module';
 import { SlackModule } from './modules/slack/slack.module';
+import { SummariesModule } from './modules/summaries/summaries.module';
 import { TelephonyModule } from './modules/telephony/telephony.module';
 import { WebhooksModule } from './modules/webhooks/webhooks.module';
 
@@ -46,6 +48,7 @@ import { WebhooksModule } from './modules/webhooks/webhooks.module';
     EncryptionModule,
     SupabaseModule,
     AuditModule,
+    EmailModule,
     StripeModule,
     TwilioModule,
     OpenAIModule,
@@ -64,6 +67,7 @@ import { WebhooksModule } from './modules/webhooks/webhooks.module';
     AdminModule,
     SlackModule,
     LeadsModule,
+    SummariesModule,
     WebhooksModule,
   ],
   controllers: [HealthController],

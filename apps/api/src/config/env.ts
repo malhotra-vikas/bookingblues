@@ -73,6 +73,13 @@ const baseSchema = z.object({
 
   // Email
   RESEND_API_KEY: z.string().optional(),
+  // Verified sender. Format: `Display Name <addr@domain>` (Resend requires
+  // the domain to be verified in the Resend dashboard).
+  EMAIL_FROM: z.string().optional(),
+
+  // Shared secret guarding internal cron endpoints (daily summary etc.).
+  // External cron (Railway, EasyCron, etc.) sends `X-Cron-Secret: <value>`.
+  CRON_SHARED_SECRET: z.string().optional(),
 
   // Crypto — required-format-if-present in dev, required in prod (see refine below)
   ENCRYPTION_KEY: z.string().optional(),
