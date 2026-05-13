@@ -419,13 +419,33 @@ export class EscalationsService {
       body: args.text,
       twilioMessageSid: send.sid,
     });
-    // Stamp the slack ts for back-reference.
+    // Stamp (channel, ts) so the status webhook can swap the delivery
+    // reaction (⏳ → ✅/❌) on the agent's own Slack message.
     await this.supabase
       .db()
       .from('messages')
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      .update({ slack_message_ts: args.slackMessageTs } as any)
+      .update({ slack_channel_id: args.channelId, slack_message_ts: args.slackMessageTs } as any)
       .eq('twilio_message_sid', send.sid);
+
+    // ⏳ reaction at bridge time. The status webhook swaps this to ✅ on
+    // delivered or ❌ on failed/undelivered. We can't chat.update the
+    // agent's text (Slack only lets a bot edit its own posts), hence
+    // reactions. Best-effort — Slack errors don't fail the SMS send.
+    try {
+      if (this.slackApi.isConfigured()) {
+        await this.slackApi.addReaction({
+          channel: args.channelId,
+          timestamp: args.slackMessageTs,
+          name: 'hourglass_flowing_sand',
+        });
+      }
+    } catch (err) {
+      this.logger.warn(
+        { err: (err as Error).message, sid: send.sid },
+        'addReaction(hourglass) failed (non-fatal)',
+      );
+    }
 
     return { delivered: true };
   }
@@ -457,13 +477,17 @@ export class EscalationsService {
   async echoBotReplyToOpenEscalation(args: {
     conversationId: string;
     text: string;
+    twilioMessageSid?: string;
   }): Promise<void> {
     try {
       const body = args.text.length > 480 ? `${args.text.slice(0, 480)}…` : args.text;
-      const text = `🤖 Bot: ${body}`;
+      // ⏳ at post time — the Twilio status callback will chat.update this to
+      // ✅ on delivery or ❌ on failure. See TwilioStatusController.
+      const text = `⏳ 🤖 Bot: ${body}`;
 
       // 1) The conversation's monitoring thread (#convos) — every convo has one
-      //    if the bot is configured; runs pre-escalation too.
+      //    if the bot is configured; runs pre-escalation too. This is the
+      //    Slack message we mark with the delivery indicator (canonical echo).
       const { data: convo } = await this.supabase
         .db()
         .from('conversations')
@@ -474,16 +498,29 @@ export class EscalationsService {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const c = convo as any;
       if (c?.slack_channel_id && c?.slack_thread_ts) {
-        await this.slackApi.postMessage({
+        const post = await this.slackApi.postMessage({
           channel: c.slack_channel_id,
           threadTs: c.slack_thread_ts,
           text,
         });
+        // Stamp the (channel, ts) back-reference onto the message row so the
+        // status webhook can find this Slack message and swap the marker.
+        // Only stamp the canonical #convos echo — the #hitl mirror below is
+        // intentionally left un-marked (one source of truth per message).
+        if (post.ok && post.ts && args.twilioMessageSid) {
+          await this.supabase
+            .db()
+            .from('messages')
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            .update({ slack_channel_id: c.slack_channel_id, slack_message_ts: post.ts } as any)
+            .eq('twilio_message_sid', args.twilioMessageSid);
+        }
       }
 
       // 2) The escalation thread (#hitl) — only when an escalation is open and
       //    has its own thread. Skip if it's the same channel/ts as the convo
-      //    thread (defensive — shouldn't happen with split channels).
+      //    thread (defensive — shouldn't happen with split channels). Not
+      //    marker-tracked; agents read both threads anyway.
       const esc = await this.findOpenForConversation(args.conversationId);
       if (
         esc?.slack_channel_id &&

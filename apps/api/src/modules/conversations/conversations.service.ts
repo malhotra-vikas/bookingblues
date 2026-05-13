@@ -23,6 +23,13 @@ const TERMINAL_STATUSES: ReadonlyArray<Database['public']['Enums']['conversation
   'abandoned',
 ];
 
+// A caller who texts within this window of a `completed` conversation is
+// almost certainly following up ("how much?", "can I move my time?") — we
+// reopen the prior convo instead of starting fresh. Keeps Slack thread +
+// AI context continuous so the bot doesn't re-vet (CLAUDE.md §12 / QA
+// 2026-05-13). Outside the window, treat as a brand-new job request.
+const RESUME_COMPLETED_WINDOW_MS = 60 * 60 * 1000;
+
 @Injectable()
 export class ConversationsService {
   constructor(private readonly supabase: SupabaseService) {}
@@ -46,6 +53,35 @@ export class ConversationsService {
       .maybeSingle();
     if (lookupErr) throw lookupErr;
     if (existing) return existing;
+
+    // Resume-recent-completed window: a follow-up SMS shortly after a booking
+    // ("can I get an estimate?") used to spawn a fresh convo with a fresh
+    // #convos thread, and the bot would restart vetting from scratch. If the
+    // last terminal convo for this (operator, caller) ended within 60min,
+    // reopen it so transcript + Slack thread stay continuous.
+    const cutoffIso = new Date(Date.now() - RESUME_COMPLETED_WINDOW_MS).toISOString();
+    const { data: recent } = await this.supabase
+      .db()
+      .from('conversations')
+      .select('*')
+      .eq('operator_id', operatorId)
+      .eq('caller_phone_e164', callerPhoneE164)
+      .in('status', [...TERMINAL_STATUSES])
+      .gte('last_message_at', cutoffIso)
+      .order('last_message_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (recent) {
+      const { data: reopened, error: reopenErr } = await this.supabase
+        .db()
+        .from('conversations')
+        .update({ status: 'awaiting_bot', completed_at: null, outcome: null })
+        .eq('id', recent.id)
+        .select('*')
+        .single();
+      if (reopenErr) throw reopenErr;
+      return reopened;
+    }
 
     const { data: created, error: insertErr } = await this.supabase
       .db()

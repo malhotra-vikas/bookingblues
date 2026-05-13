@@ -11,6 +11,7 @@ import { SlackModule } from '../slack/slack.module';
 import { StripeConnectController } from './stripe-connect.controller';
 import { StripePlatformController } from './stripe-platform.controller';
 import { TwilioSmsController } from './twilio-sms.controller';
+import { TwilioStatusController } from './twilio-status.controller';
 import { TwilioVoiceController } from './twilio-voice.controller';
 
 @Module({
@@ -28,6 +29,7 @@ import { TwilioVoiceController } from './twilio-voice.controller';
     StripeConnectController,
     TwilioVoiceController,
     TwilioSmsController,
+    TwilioStatusController,
   ],
 })
 export class WebhooksModule {}

@@ -94,11 +94,17 @@ export class TwilioService {
         return { skipped: 'allowlist' };
       }
     }
+    // Tell Twilio to POST status transitions (queued → sent → delivered or
+    // → failed/undelivered) to our webhook. Omitted if API_URL isn't a public
+    // URL (dev without ngrok) — Twilio will reject localhost URLs anyway.
+    const statusCallback = this.buildStatusCallbackUrl();
+
     try {
       const msg = await this.client().messages.create({
         from: args.from,
         to: args.to,
         body: args.body,
+        ...(statusCallback ? { statusCallback } : {}),
       });
       return { sid: msg.sid };
     } catch (err) {
@@ -108,5 +114,16 @@ export class TwilioService {
         err,
       );
     }
+  }
+
+  private buildStatusCallbackUrl(): string | null {
+    const base = this.env.API_URL;
+    if (!base) return null;
+    // Twilio rejects localhost / private-IP callback URLs at message-create time.
+    // Skip the param in dev so sendSms doesn't 400.
+    if (/^https?:\/\/(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[01])\.)/i.test(base)) {
+      return null;
+    }
+    return `${base.replace(/\/$/, '')}/webhooks/twilio/status`;
   }
 }

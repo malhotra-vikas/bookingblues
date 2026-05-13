@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { PinoLogger } from 'nestjs-pino';
 import type OpenAI from 'openai';
+import { ZodError } from 'zod';
 import type { Tables } from '@bookingblues/db-types';
 
 import { ValidationError } from '../../common/errors/app-error';
@@ -132,6 +133,34 @@ export class AdvanceService {
     }
 
     try {
+    // Already-answered guard. The lock prevents PARALLEL advances; this guard
+    // closes the SEQUENTIAL race that produces duplicate bot replies:
+    //   t0: caller msg1 → debounce timer T1
+    //   t1: T1 fires → advance A reads [msg1], replies, releases lock
+    //   t2: caller msg2 arrives (after A's release) → timer T2
+    //   t3: T2 fires → advance B reads [msg1, msg2, bot_reply_1] — OpenAI sees
+    //       the convo ends with an assistant turn and generates a continuation,
+    //       producing a phantom second reply. (QA 2026-05-13)
+    // If the newest message isn't from the caller, there's nothing new for the
+    // bot to respond to — skip. New caller turns after this point will trigger
+    // a fresh advance via the SMS webhook → scheduler path.
+    const { data: latest, error: latestErr } = await this.supabase
+      .db()
+      .from('messages')
+      .select('role')
+      .eq('conversation_id', conversation.id)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (latestErr) throw latestErr;
+    if (latest && latest.role !== 'caller') {
+      this.logger.info(
+        { conversationId: conversation.id, latestRole: latest.role },
+        'advance skipped: latest message is not a caller turn',
+      );
+      return;
+    }
+
     // Caller-turn cap (CLAUDE.md §9.3) — count caller messages on this convo.
     const { count: callerTurns } = await this.supabase
       .db()
@@ -307,25 +336,60 @@ export class AdvanceService {
     try {
       parsed = JSON.parse(rawArgs);
     } catch {
-      throw new ValidationError(`Tool ${name} returned non-JSON arguments`);
+      return {
+        content: {
+          error: 'invalid_arguments',
+          message: `Tool ${name} arguments were not valid JSON. Re-emit the call with proper JSON.`,
+        },
+      };
     }
-    switch (name) {
-      case 'check_availability':
-        return checkAvailability(CheckAvailabilityArgs.parse(parsed), ctx);
-      case 'propose_slots':
-        return proposeSlots(ProposeSlotsArgs.parse(parsed));
-      case 'book_appointment':
-        return bookAppointment(BookAppointmentArgs.parse(parsed), ctx);
-      case 'request_payment_link':
-        return requestPaymentLink(RequestPaymentLinkArgs.parse(parsed), ctx);
-      case 'mark_out_of_scope':
-        return markOutOfScope(MarkOutOfScopeArgs.parse(parsed), ctx);
-      case 'mark_spam':
-        return markSpam(MarkSpamArgs.parse(parsed));
-      case 'escalate_to_human':
-        return await escalateToHuman(EscalateToHumanArgs.parse(parsed), ctx);
-      default:
-        throw new ValidationError(`Unknown tool: ${name}`);
+    // Each branch parses into its zod schema. Validation failures used to
+    // throw and crash the whole advance loop (caller got no reply, see
+    // logs 2026-05-13 book_appointment caller_name min(1)). Now we feed the
+    // error back to the model as a tool response so it can correct itself
+    // (e.g. re-ask the caller for their name) within the same advance turn.
+    try {
+      switch (name) {
+        case 'check_availability':
+          return await checkAvailability(CheckAvailabilityArgs.parse(parsed), ctx);
+        case 'propose_slots':
+          return proposeSlots(ProposeSlotsArgs.parse(parsed));
+        case 'book_appointment':
+          return await bookAppointment(BookAppointmentArgs.parse(parsed), ctx);
+        case 'request_payment_link':
+          return await requestPaymentLink(RequestPaymentLinkArgs.parse(parsed), ctx);
+        case 'mark_out_of_scope':
+          return await markOutOfScope(MarkOutOfScopeArgs.parse(parsed), ctx);
+        case 'mark_spam':
+          return markSpam(MarkSpamArgs.parse(parsed));
+        case 'escalate_to_human':
+          return await escalateToHuman(EscalateToHumanArgs.parse(parsed), ctx);
+        default:
+          return {
+            content: { error: 'unknown_tool', message: `Unknown tool: ${name}` },
+          };
+      }
+    } catch (err) {
+      if (err instanceof ZodError) {
+        const issues = err.issues.map((i) => ({
+          path: i.path.join('.'),
+          message: i.message,
+        }));
+        this.logger.warn(
+          { tool: name, issues },
+          'tool args failed zod validation; feeding error back to model',
+        );
+        return {
+          content: {
+            error: 'invalid_arguments',
+            tool: name,
+            issues,
+            message:
+              'Tool arguments failed validation. Inspect issues[] and either correct the call or ask the caller for the missing information.',
+          },
+        };
+      }
+      throw err;
     }
   }
 
@@ -362,7 +426,11 @@ export class AdvanceService {
     // Mirror into the Slack thread if a human resumed an open escalation.
     // No-op when there's no open escalation or no Slack thread.
     if ('sid' in send) {
-      await this.escalations.echoBotReplyToOpenEscalation({ conversationId, text: body });
+      await this.escalations.echoBotReplyToOpenEscalation({
+        conversationId,
+        text: body,
+        twilioMessageSid: send.sid,
+      });
     }
   }
 }

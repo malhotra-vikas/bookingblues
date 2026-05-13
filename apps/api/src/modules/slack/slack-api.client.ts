@@ -101,6 +101,51 @@ export class SlackApiClient {
     );
   }
 
+  /**
+   * chat.update — only works on messages this bot posted (used for bot-echo
+   * delivery markers). Caller is expected to swallow non-ok responses.
+   */
+  async updateMessage(args: {
+    channel: string;
+    ts: string;
+    text: string;
+  }): Promise<SlackCommonResponse> {
+    return this.callJson<SlackCommonResponse>('chat.update', {
+      channel: args.channel,
+      ts: args.ts,
+      text: args.text,
+    });
+  }
+
+  /**
+   * reactions.add — for marking messages we did NOT post (the agent's own
+   * Slack reply that got bridged to SMS). `name` is the emoji without colons,
+   * e.g. 'hourglass_flowing_sand', 'white_check_mark', 'x'.
+   */
+  async addReaction(args: {
+    channel: string;
+    timestamp: string;
+    name: string;
+  }): Promise<SlackCommonResponse> {
+    return this.callJson<SlackCommonResponse>('reactions.add', {
+      channel: args.channel,
+      timestamp: args.timestamp,
+      name: args.name,
+    });
+  }
+
+  async removeReaction(args: {
+    channel: string;
+    timestamp: string;
+    name: string;
+  }): Promise<SlackCommonResponse> {
+    return this.callJson<SlackCommonResponse>('reactions.remove', {
+      channel: args.channel,
+      timestamp: args.timestamp,
+      name: args.name,
+    });
+  }
+
   // ── internal ─────────────────────────────────────────────────────────────
 
   private requireBotToken(): string {
