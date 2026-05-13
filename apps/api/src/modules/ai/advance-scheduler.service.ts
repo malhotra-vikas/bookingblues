@@ -24,7 +24,13 @@ import { PinoLogger } from 'nestjs-pino';
  * to a pg-boss queue keyed on conversation_id (or a Postgres advisory lock).
  * CLAUDE.md §6 already plans pg-boss for v2.
  */
-const DEBOUNCE_MS = 2_000;
+// 3s instead of 2s. The 2s window was tight: real-world Twilio webhook
+// arrival jitter (carrier delays, multi-hop) plus the bot's own outbound
+// SMS round-trip occasionally put consecutive caller messages just outside
+// the window, causing two advances. 3s collapses ~all human bursts (typing
+// a follow-up after the first send is rarely <3s) while staying fast
+// enough that the bot still feels responsive.
+const DEBOUNCE_MS = 3_000;
 
 @Injectable()
 export class AdvanceSchedulerService {

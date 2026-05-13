@@ -103,6 +103,35 @@ export class AdvanceService {
       conversation = { ...conversation, status: 'awaiting_caller' };
     }
 
+    // Cross-replica mutex. The in-process debounce in AdvanceSchedulerService
+    // collapses bursts within a single API replica, but Railway autoscale
+    // and rolling deploys mean two Twilio webhooks for the same conversation
+    // can hit different replicas — each schedules its own timer, both fire,
+    // two OpenAI calls, two SMS replies. This atomic claim ensures only one
+    // wins. The TTL (30s) covers a normal advance (~5s); a crashed holder
+    // auto-unlocks after expiry. The second replica reads all caller turns
+    // from history anyway, so dropping its advance loses nothing.
+    const ADVANCE_LOCK_TTL_MS = 30_000;
+    const lockUntilIso = new Date(Date.now() + ADVANCE_LOCK_TTL_MS).toISOString();
+    const nowIso = new Date().toISOString();
+    const { data: claimed } = await this.supabase
+      .db()
+      .from('conversations')
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .update({ advance_locked_until: lockUntilIso } as any)
+      .eq('id', conversation.id)
+      .or(`advance_locked_until.is.null,advance_locked_until.lt.${nowIso}`)
+      .select('id')
+      .maybeSingle();
+    if (!claimed) {
+      this.logger.info(
+        { conversationId: conversation.id },
+        'advance skipped: lock held by another worker',
+      );
+      return;
+    }
+
+    try {
     // Caller-turn cap (CLAUDE.md §9.3) — count caller messages on this convo.
     const { count: callerTurns } = await this.supabase
       .db()
@@ -203,6 +232,16 @@ export class AdvanceService {
         .db()
         .from('conversations')
         .update({ status: 'awaiting_caller' })
+        .eq('id', conversation.id);
+    }
+    } finally {
+      // Release the cross-replica lock. Best-effort — if this fails the
+      // TTL (30s) will release it eventually.
+      await this.supabase
+        .db()
+        .from('conversations')
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        .update({ advance_locked_until: null } as any)
         .eq('id', conversation.id);
     }
   }
