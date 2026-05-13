@@ -54,7 +54,7 @@ export function LeadRowActions({
   }
 
   if (emailVerified) {
-    return <span className="text-xs text-muted">verified</span>;
+    return <span className="text-xs text-muted dark:text-slate-400">verified</span>;
   }
 
   return (
@@ -63,11 +63,11 @@ export function LeadRowActions({
         type="button"
         onClick={verifyEmail}
         disabled={busy}
-        className="text-xs rounded-md border border-slate-300 px-2.5 py-1 hover:border-emerald-600 hover:text-emerald-700 disabled:opacity-50"
+        className="text-xs rounded-md border border-slate-300 dark:border-slate-700 dark:text-slate-200 px-2.5 py-1 hover:border-emerald-600 hover:text-emerald-700 dark:hover:border-emerald-500 dark:hover:text-emerald-400 disabled:opacity-50"
       >
         {busy ? 'Verifying…' : 'Mark email verified'}
       </button>
-      {error ? <span className="text-[11px] text-red-600">{error}</span> : null}
+      {error ? <span className="text-[11px] text-red-600 dark:text-red-400">{error}</span> : null}
     </div>
   );
 }

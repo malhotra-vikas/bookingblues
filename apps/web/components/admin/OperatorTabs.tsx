@@ -83,7 +83,7 @@ export function OperatorTabs({ operatorId }: { operatorId: string }): JSX.Elemen
 
   return (
     <section className="space-y-3">
-      <div className="flex flex-wrap gap-1 border-b border-slate-200">
+      <div className="flex flex-wrap gap-1 border-b border-slate-200 dark:border-slate-800">
         <TabBtn id="conversations" active={tab} onClick={setTab} label="Conversations" />
         <TabBtn id="appointments" active={tab} onClick={setTab} label="Appointments" />
         <TabBtn id="payments" active={tab} onClick={setTab} label="Payments" />
@@ -113,7 +113,7 @@ function TabBtn({
     <button
       type="button"
       onClick={() => onClick(id)}
-      className={`-mb-px border-b-2 px-3 py-2 text-sm ${on ? 'border-accent font-medium text-accent' : 'border-transparent text-muted hover:text-ink'}`}
+      className={`-mb-px border-b-2 px-3 py-2 text-sm ${on ? 'border-accent font-medium text-accent dark:text-blue-400' : 'border-transparent text-muted dark:text-slate-400 hover:text-ink dark:hover:text-slate-100'}`}
     >
       {label}
     </button>
@@ -149,11 +149,11 @@ function ConversationsTab({ operatorId }: { operatorId: string }): JSX.Element {
   return (
     <div className="space-y-2">
       {error ? (
-        <p className="rounded-md bg-red-50 px-3 py-2 text-xs text-red-700">{error}</p>
+        <p className="rounded-md bg-red-50 dark:bg-red-950/40 px-3 py-2 text-xs text-red-700 dark:text-red-300">{error}</p>
       ) : null}
-      <div className="overflow-x-auto rounded-lg border border-slate-200">
+      <div className="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-800">
         <table className="w-full text-left text-sm">
-          <thead className="bg-slate-50 text-xs uppercase tracking-wide text-muted">
+          <thead className="bg-slate-50 dark:bg-slate-800 text-xs uppercase tracking-wide text-muted dark:text-slate-400">
             <tr>
               <th className="px-3 py-2">Caller</th>
               <th className="px-3 py-2">Status</th>
@@ -164,11 +164,11 @@ function ConversationsTab({ operatorId }: { operatorId: string }): JSX.Element {
           </thead>
           <tbody>
             {rows.map((c) => (
-              <tr key={c.id} className="border-t border-slate-100">
+              <tr key={c.id} className="border-t border-slate-100 dark:border-slate-800">
                 <td className="px-3 py-2 font-mono text-xs">{c.caller_phone_e164}</td>
                 <td className="px-3 py-2">{c.status}</td>
-                <td className="px-3 py-2 text-muted">{c.outcome ?? '—'}</td>
-                <td className="px-3 py-2 text-muted text-xs">
+                <td className="px-3 py-2 text-muted dark:text-slate-400">{c.outcome ?? '—'}</td>
+                <td className="px-3 py-2 text-muted dark:text-slate-400 text-xs">
                   {c.last_message_at ? new Date(c.last_message_at).toLocaleString() : '—'}
                 </td>
                 <td className="px-3 py-2 text-right">
@@ -180,7 +180,7 @@ function ConversationsTab({ operatorId }: { operatorId: string }): JSX.Element {
                         setConfirmFor(c.id);
                       }}
                       disabled={busyId === c.id}
-                      className="rounded border border-red-200 px-2 py-1 text-xs text-red-700 hover:bg-red-50 disabled:opacity-50"
+                      className="rounded border border-red-200 dark:border-red-900 px-2 py-1 text-xs text-red-700 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 disabled:opacity-50"
                     >
                       {busyId === c.id ? 'Working…' : 'Force end'}
                     </button>
@@ -190,7 +190,7 @@ function ConversationsTab({ operatorId }: { operatorId: string }): JSX.Element {
             ))}
             {rows.length === 0 ? (
               <tr>
-                <td colSpan={5} className="px-3 py-6 text-center text-muted">
+                <td colSpan={5} className="px-3 py-6 text-center text-muted dark:text-slate-400">
                   No conversations.
                 </td>
               </tr>
@@ -210,12 +210,12 @@ function ConversationsTab({ operatorId }: { operatorId: string }): JSX.Element {
               Marks the conversation as <code>completed</code> with outcome <code>rejected</code>.
               The bot will not reply to further caller messages on this conversation.
             </p>
-            <label className="block text-xs text-muted">
+            <label className="block text-xs text-muted dark:text-slate-400">
               Reason (required, recorded in audit log)
               <textarea
                 value={reason}
                 onChange={(e) => setReason(e.target.value)}
-                className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-accent focus:outline-none"
+                className="mt-1 w-full rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 dark:text-slate-100 px-3 py-2 text-sm focus:border-accent focus:outline-none"
                 rows={2}
                 required
               />
@@ -274,11 +274,11 @@ function AppointmentsTab({ operatorId }: { operatorId: string }): JSX.Element {
   return (
     <div className="space-y-2">
       {error ? (
-        <p className="rounded-md bg-red-50 px-3 py-2 text-xs text-red-700">{error}</p>
+        <p className="rounded-md bg-red-50 dark:bg-red-950/40 px-3 py-2 text-xs text-red-700 dark:text-red-300">{error}</p>
       ) : null}
-      <div className="overflow-x-auto rounded-lg border border-slate-200">
+      <div className="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-800">
         <table className="w-full text-left text-sm">
-          <thead className="bg-slate-50 text-xs uppercase tracking-wide text-muted">
+          <thead className="bg-slate-50 dark:bg-slate-800 text-xs uppercase tracking-wide text-muted dark:text-slate-400">
             <tr>
               <th className="px-3 py-2">Caller</th>
               <th className="px-3 py-2">When</th>
@@ -288,7 +288,7 @@ function AppointmentsTab({ operatorId }: { operatorId: string }): JSX.Element {
           </thead>
           <tbody>
             {rows.map((a) => (
-              <tr key={a.id} className="border-t border-slate-100">
+              <tr key={a.id} className="border-t border-slate-100 dark:border-slate-800">
                 <td className="px-3 py-2">{a.caller_name}</td>
                 <td className="px-3 py-2 text-xs">
                   {new Date(a.scheduled_for_start).toLocaleString()}
@@ -301,7 +301,7 @@ function AppointmentsTab({ operatorId }: { operatorId: string }): JSX.Element {
             ))}
             {rows.length === 0 ? (
               <tr>
-                <td colSpan={4} className="px-3 py-6 text-center text-muted">
+                <td colSpan={4} className="px-3 py-6 text-center text-muted dark:text-slate-400">
                   No appointments.
                 </td>
               </tr>
@@ -342,11 +342,11 @@ function PaymentsTab({ operatorId }: { operatorId: string }): JSX.Element {
   return (
     <div className="space-y-2">
       {error ? (
-        <p className="rounded-md bg-red-50 px-3 py-2 text-xs text-red-700">{error}</p>
+        <p className="rounded-md bg-red-50 dark:bg-red-950/40 px-3 py-2 text-xs text-red-700 dark:text-red-300">{error}</p>
       ) : null}
-      <div className="overflow-x-auto rounded-lg border border-slate-200">
+      <div className="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-800">
         <table className="w-full text-left text-sm">
-          <thead className="bg-slate-50 text-xs uppercase tracking-wide text-muted">
+          <thead className="bg-slate-50 dark:bg-slate-800 text-xs uppercase tracking-wide text-muted dark:text-slate-400">
             <tr>
               <th className="px-3 py-2">When</th>
               <th className="px-3 py-2">Amount</th>
@@ -357,7 +357,7 @@ function PaymentsTab({ operatorId }: { operatorId: string }): JSX.Element {
           </thead>
           <tbody>
             {rows.map((p) => (
-              <tr key={p.id} className="border-t border-slate-100">
+              <tr key={p.id} className="border-t border-slate-100 dark:border-slate-800">
                 <td className="px-3 py-2 text-xs">{new Date(p.created_at).toLocaleString()}</td>
                 <td className="px-3 py-2">${(p.amount_cents / 100).toFixed(2)} {p.currency.toUpperCase()}</td>
                 <td className="px-3 py-2">${(p.application_fee_cents / 100).toFixed(2)}</td>
@@ -371,7 +371,7 @@ function PaymentsTab({ operatorId }: { operatorId: string }): JSX.Element {
                         setConfirmFor(p.id);
                       }}
                       disabled={busyId === p.id}
-                      className="rounded border border-red-200 px-2 py-1 text-xs text-red-700 hover:bg-red-50 disabled:opacity-50"
+                      className="rounded border border-red-200 dark:border-red-900 px-2 py-1 text-xs text-red-700 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 disabled:opacity-50"
                     >
                       {busyId === p.id ? 'Refunding…' : 'Refund'}
                     </button>
@@ -381,7 +381,7 @@ function PaymentsTab({ operatorId }: { operatorId: string }): JSX.Element {
             ))}
             {rows.length === 0 ? (
               <tr>
-                <td colSpan={5} className="px-3 py-6 text-center text-muted">
+                <td colSpan={5} className="px-3 py-6 text-center text-muted dark:text-slate-400">
                   No payments.
                 </td>
               </tr>
@@ -401,12 +401,12 @@ function PaymentsTab({ operatorId }: { operatorId: string }): JSX.Element {
               Issues a full refund to the caller on the operator's Stripe Connect account, and
               reverses BookingBlues' application fee. Cannot be undone.
             </p>
-            <label className="block text-xs text-muted">
+            <label className="block text-xs text-muted dark:text-slate-400">
               Reason (required, recorded in audit log)
               <textarea
                 value={reason}
                 onChange={(e) => setReason(e.target.value)}
-                className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-accent focus:outline-none"
+                className="mt-1 w-full rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 dark:text-slate-100 px-3 py-2 text-sm focus:border-accent focus:outline-none"
                 rows={2}
                 required
               />
@@ -461,11 +461,11 @@ function AuditTab({ operatorId }: { operatorId: string }): JSX.Element {
   return (
     <div className="space-y-2">
       {error ? (
-        <p className="rounded-md bg-red-50 px-3 py-2 text-xs text-red-700">{error}</p>
+        <p className="rounded-md bg-red-50 dark:bg-red-950/40 px-3 py-2 text-xs text-red-700 dark:text-red-300">{error}</p>
       ) : null}
-      <div className="overflow-x-auto rounded-lg border border-slate-200">
+      <div className="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-800">
         <table className="w-full text-left text-sm">
-          <thead className="bg-slate-50 text-xs uppercase tracking-wide text-muted">
+          <thead className="bg-slate-50 dark:bg-slate-800 text-xs uppercase tracking-wide text-muted dark:text-slate-400">
             <tr>
               <th className="px-3 py-2">When</th>
               <th className="px-3 py-2">Actor</th>
@@ -476,7 +476,7 @@ function AuditTab({ operatorId }: { operatorId: string }): JSX.Element {
           </thead>
           <tbody>
             {rows.map((e) => (
-              <tr key={e.id} className="border-t border-slate-100">
+              <tr key={e.id} className="border-t border-slate-100 dark:border-slate-800">
                 <td className="px-3 py-2 text-xs">{new Date(e.created_at).toLocaleString()}</td>
                 <td className="px-3 py-2 font-mono text-xs">
                   {e.actor_user_id ? e.actor_user_id.slice(0, 8) : '—'}
@@ -495,7 +495,7 @@ function AuditTab({ operatorId }: { operatorId: string }): JSX.Element {
             ))}
             {rows.length === 0 ? (
               <tr>
-                <td colSpan={5} className="px-3 py-6 text-center text-muted">
+                <td colSpan={5} className="px-3 py-6 text-center text-muted dark:text-slate-400">
                   No audit entries.
                 </td>
               </tr>

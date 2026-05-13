@@ -42,8 +42,8 @@ export default async function OperatorsPage({
   return (
     <section className="space-y-4">
       <div className="flex items-baseline justify-between">
-        <h1 className="text-2xl font-semibold">Operators</h1>
-        <span className="text-xs text-muted">{resp?.items.length ?? 0} shown</span>
+        <h1 className="text-2xl font-semibold dark:text-slate-100">Operators</h1>
+        <span className="text-xs text-muted dark:text-slate-400">{resp?.items.length ?? 0} shown</span>
       </div>
 
       <form className="flex flex-wrap items-center gap-2" method="GET">
@@ -52,12 +52,12 @@ export default async function OperatorsPage({
           name="q"
           placeholder="Search business name…"
           defaultValue={sp.q ?? ''}
-          className="rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-accent focus:outline-none"
+          className="rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 dark:text-slate-100 px-3 py-2 text-sm focus:border-accent focus:outline-none"
         />
         <select
           name="status"
           defaultValue={sp.status ?? ''}
-          className="rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-accent focus:outline-none"
+          className="rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 dark:text-slate-100 px-3 py-2 text-sm focus:border-accent focus:outline-none"
         >
           <option value="">Any status</option>
           <option value="trialing">trialing</option>
@@ -75,9 +75,9 @@ export default async function OperatorsPage({
         </button>
       </form>
 
-      <div className="overflow-x-auto rounded-lg border border-slate-200">
+      <div className="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-800">
         <table className="w-full text-left text-sm">
-          <thead className="bg-slate-50 text-xs uppercase tracking-wide text-muted">
+          <thead className="bg-slate-50 dark:bg-slate-800 text-xs uppercase tracking-wide text-muted dark:text-slate-400">
             <tr>
               <th className="px-3 py-2">Business</th>
               <th className="px-3 py-2">Category</th>
@@ -88,15 +88,15 @@ export default async function OperatorsPage({
               <th className="px-3 py-2">Created</th>
             </tr>
           </thead>
-          <tbody>
+          <tbody className="dark:text-slate-200">
             {(resp?.items ?? []).map((op) => (
-              <tr key={op.id} className="border-t border-slate-100 hover:bg-slate-50">
+              <tr key={op.id} className="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/50">
                 <td className="px-3 py-2 font-medium">
-                  <Link href={`/admin/operators/${op.id}`} className="text-accent no-underline hover:underline">
+                  <Link href={`/admin/operators/${op.id}`} className="text-accent dark:text-blue-400 no-underline hover:underline">
                     {op.business_name}
                   </Link>
                 </td>
-                <td className="px-3 py-2 text-muted">{op.category ?? '—'}</td>
+                <td className="px-3 py-2 text-muted dark:text-slate-400">{op.category ?? '—'}</td>
                 <td className="px-3 py-2">{op.subscription_status ?? '—'}</td>
                 <td className="px-3 py-2 font-mono text-xs">{op.twilio_number_e164 ?? '—'}</td>
                 <td className="px-3 py-2">{op.google_calendar_connected ? '✓' : '—'}</td>
@@ -105,14 +105,14 @@ export default async function OperatorsPage({
                     ? '✓'
                     : '—'}
                 </td>
-                <td className="px-3 py-2 text-muted">
+                <td className="px-3 py-2 text-muted dark:text-slate-400">
                   {new Date(op.created_at).toLocaleDateString()}
                 </td>
               </tr>
             ))}
             {(resp?.items.length ?? 0) === 0 ? (
               <tr>
-                <td colSpan={7} className="px-3 py-6 text-center text-muted">
+                <td colSpan={7} className="px-3 py-6 text-center text-muted dark:text-slate-400">
                   No operators match.
                 </td>
               </tr>
@@ -125,7 +125,7 @@ export default async function OperatorsPage({
         <div className="flex justify-end">
           <Link
             href={{ pathname: '/admin/operators', query: { ...sp, cursor: resp.next_cursor } }}
-            className="text-sm text-accent no-underline hover:underline"
+            className="text-sm text-accent dark:text-blue-400 no-underline hover:underline"
           >
             Next →
           </Link>

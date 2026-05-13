@@ -65,13 +65,13 @@ export function OperatorActions(props: Props): JSX.Element {
   }
 
   return (
-    <div className="rounded-lg border border-amber-200 bg-amber-50 p-4">
+    <div className="rounded-lg border border-amber-200 bg-amber-50 dark:border-amber-900 dark:bg-amber-950/40 p-4">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="mr-3 text-sm font-semibold text-amber-800">Actions</span>
+        <span className="mr-3 text-sm font-semibold text-amber-800 dark:text-amber-300">Actions</span>
         <button
           type="button"
           onClick={() => openAction('impersonate')}
-          className="rounded-md border border-amber-300 bg-paper px-3 py-1.5 text-sm hover:bg-amber-100"
+          className="rounded-md border border-amber-300 dark:border-amber-700 bg-paper dark:bg-slate-900 dark:text-slate-100 px-3 py-1.5 text-sm hover:bg-amber-100 dark:hover:bg-amber-950"
         >
           Impersonate
         </button>
@@ -79,7 +79,7 @@ export function OperatorActions(props: Props): JSX.Element {
           <button
             type="button"
             onClick={() => openAction('cancelSub')}
-            className="rounded-md border border-amber-300 bg-paper px-3 py-1.5 text-sm hover:bg-amber-100"
+            className="rounded-md border border-amber-300 dark:border-amber-700 bg-paper dark:bg-slate-900 dark:text-slate-100 px-3 py-1.5 text-sm hover:bg-amber-100 dark:hover:bg-amber-950"
           >
             Cancel subscription
           </button>
@@ -88,7 +88,7 @@ export function OperatorActions(props: Props): JSX.Element {
           <button
             type="button"
             onClick={() => openAction('releaseTwilio')}
-            className="rounded-md border border-amber-300 bg-paper px-3 py-1.5 text-sm hover:bg-amber-100"
+            className="rounded-md border border-amber-300 dark:border-amber-700 bg-paper dark:bg-slate-900 dark:text-slate-100 px-3 py-1.5 text-sm hover:bg-amber-100 dark:hover:bg-amber-950"
           >
             Release Twilio number
           </button>
@@ -96,13 +96,13 @@ export function OperatorActions(props: Props): JSX.Element {
         <button
           type="button"
           onClick={() => openAction('deactivate')}
-          className="rounded-md border border-red-300 bg-paper px-3 py-1.5 text-sm text-red-700 hover:bg-red-50"
+          className="rounded-md border border-red-300 dark:border-red-700 bg-paper dark:bg-slate-900 px-3 py-1.5 text-sm text-red-700 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40"
         >
           Deactivate operator
         </button>
       </div>
       {error ? (
-        <p className="mt-2 rounded-md bg-red-50 px-3 py-2 text-xs text-red-700">{error}</p>
+        <p className="mt-2 rounded-md bg-red-50 dark:bg-red-950/40 px-3 py-2 text-xs text-red-700 dark:text-red-300">{error}</p>
       ) : null}
 
       <ConfirmModal
@@ -118,12 +118,12 @@ export function OperatorActions(props: Props): JSX.Element {
               account. The Twilio number is NOT released by this action — use the "Release Twilio
               number" button separately if you want to free it.
             </p>
-            <label className="block text-xs text-muted">
+            <label className="block text-xs text-muted dark:text-slate-400">
               Reason (required, recorded in audit log)
               <textarea
                 value={reason}
                 onChange={(e) => setReason(e.target.value)}
-                className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-accent focus:outline-none"
+                className="mt-1 w-full rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 dark:text-slate-100 px-3 py-2 text-sm focus:border-accent focus:outline-none"
                 rows={2}
                 required
               />
@@ -154,12 +154,12 @@ export function OperatorActions(props: Props): JSX.Element {
               end of the current billing period (the operator keeps access until then). Check the
               "immediate" box if you need to cancel right away.
             </p>
-            <label className="block text-xs text-muted">
+            <label className="block text-xs text-muted dark:text-slate-400">
               Reason (required, recorded in audit log)
               <textarea
                 value={reason}
                 onChange={(e) => setReason(e.target.value)}
-                className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-accent focus:outline-none"
+                className="mt-1 w-full rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 dark:text-slate-100 px-3 py-2 text-sm focus:border-accent focus:outline-none"
                 rows={2}
                 required
               />
@@ -220,12 +220,12 @@ export function OperatorActions(props: Props): JSX.Element {
               Generates a magic-link URL that logs you in as this operator. Open it in a private
               tab. Every impersonation is recorded in the audit log.
             </p>
-            <label className="block text-xs text-muted">
+            <label className="block text-xs text-muted dark:text-slate-400">
               Reason (required, recorded in audit log)
               <textarea
                 value={reason}
                 onChange={(e) => setReason(e.target.value)}
-                className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-accent focus:outline-none"
+                className="mt-1 w-full rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 dark:text-slate-100 px-3 py-2 text-sm focus:border-accent focus:outline-none"
                 rows={2}
                 required
               />

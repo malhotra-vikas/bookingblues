@@ -45,18 +45,18 @@ export default async function LeadsPage({
     <section className="space-y-4">
       <div className="flex items-baseline justify-between">
         <div>
-          <h1 className="text-2xl font-semibold">New leads</h1>
-          <p className="text-sm text-muted mt-0.5">
+          <h1 className="text-2xl font-semibold dark:text-slate-100">New leads</h1>
+          <p className="text-sm text-muted dark:text-slate-400 mt-0.5">
             Recent signups — follow up to close + onboard. Mark email verified once they confirm
             out-of-band (verbal, paperwork) so they can sign in.
           </p>
         </div>
-        <span className="text-xs text-muted">{resp?.items.length ?? 0} on this page</span>
+        <span className="text-xs text-muted dark:text-slate-400">{resp?.items.length ?? 0} on this page</span>
       </div>
 
-      <div className="overflow-x-auto rounded-lg border border-slate-200">
+      <div className="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-800">
         <table className="w-full text-left text-sm">
-          <thead className="bg-slate-50 text-xs uppercase tracking-wide text-muted">
+          <thead className="bg-slate-50 dark:bg-slate-800 text-xs uppercase tracking-wide text-muted dark:text-slate-400">
             <tr>
               <th className="px-3 py-2">Signed up</th>
               <th className="px-3 py-2">Business</th>
@@ -68,34 +68,34 @@ export default async function LeadsPage({
               <th className="px-3 py-2">Actions</th>
             </tr>
           </thead>
-          <tbody>
+          <tbody className="dark:text-slate-200">
             {(resp?.items ?? []).map((lead) => (
-              <tr key={lead.user_id} className="border-t border-slate-100 hover:bg-slate-50">
-                <td className="px-3 py-2 text-muted whitespace-nowrap">
+              <tr key={lead.user_id} className="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/50">
+                <td className="px-3 py-2 text-muted dark:text-slate-400 whitespace-nowrap">
                   {new Date(lead.signed_up_at).toLocaleDateString()}{' '}
-                  <span className="text-slate-400 text-xs">
+                  <span className="text-slate-400 dark:text-slate-500 text-xs">
                     {new Date(lead.signed_up_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
                   </span>
                 </td>
                 <td className="px-3 py-2 font-medium">
-                  {lead.business_name ?? <span className="text-muted italic">—</span>}
-                  {lead.category ? <div className="text-xs text-muted">{lead.category}</div> : null}
+                  {lead.business_name ?? <span className="text-muted dark:text-slate-500 italic">—</span>}
+                  {lead.category ? <div className="text-xs text-muted dark:text-slate-400">{lead.category}</div> : null}
                 </td>
                 <td className="px-3 py-2">
                   <div className="flex items-center gap-1.5">
-                    <a href={`mailto:${lead.email ?? ''}`} className="text-accent no-underline hover:underline">
+                    <a href={`mailto:${lead.email ?? ''}`} className="text-accent dark:text-blue-400 no-underline hover:underline">
                       {lead.email ?? '—'}
                     </a>
                     {lead.email_confirmed_at ? (
-                      <span title="Email verified" className="text-emerald-600 text-xs">✓</span>
+                      <span title="Email verified" className="text-emerald-600 dark:text-emerald-400 text-xs">✓</span>
                     ) : (
-                      <span title="Email not yet verified" className="text-amber-600 text-xs">●</span>
+                      <span title="Email not yet verified" className="text-amber-600 dark:text-amber-400 text-xs">●</span>
                     )}
                   </div>
                 </td>
                 <td className="px-3 py-2 font-mono text-xs">
                   {lead.personal_phone_e164 ? (
-                    <a href={`tel:${lead.personal_phone_e164}`} className="text-accent no-underline hover:underline">
+                    <a href={`tel:${lead.personal_phone_e164}`} className="text-accent dark:text-blue-400 no-underline hover:underline">
                       {formatE164(lead.personal_phone_e164)}
                     </a>
                   ) : (
@@ -108,21 +108,21 @@ export default async function LeadsPage({
                       @{lead.claimed_by_slack_username}
                     </span>
                   ) : (
-                    <span className="text-muted italic">Unclaimed</span>
+                    <span className="text-muted dark:text-slate-500 italic">Unclaimed</span>
                   )}
                 </td>
                 <td className="px-3 py-2">
                   {lead.subscription_status ?? (
-                    <span className="text-amber-700 text-xs">not subscribed</span>
+                    <span className="text-amber-700 dark:text-amber-400 text-xs">not subscribed</span>
                   )}
                 </td>
                 <td className="px-3 py-2 text-xs">
                   {lead.onboarding_completed_at ? (
-                    <span className="text-emerald-600">complete</span>
+                    <span className="text-emerald-600 dark:text-emerald-400">complete</span>
                   ) : lead.twilio_number_e164 ? (
-                    <span className="text-amber-700">in progress</span>
+                    <span className="text-amber-700 dark:text-amber-400">in progress</span>
                   ) : (
-                    <span className="text-slate-500">not started</span>
+                    <span className="text-slate-500 dark:text-slate-500">not started</span>
                   )}
                 </td>
                 <td className="px-3 py-2">
@@ -136,7 +136,7 @@ export default async function LeadsPage({
             ))}
             {(resp?.items.length ?? 0) === 0 ? (
               <tr>
-                <td colSpan={8} className="px-3 py-6 text-center text-muted">
+                <td colSpan={8} className="px-3 py-6 text-center text-muted dark:text-slate-400">
                   No leads yet — newest signups appear here.
                 </td>
               </tr>
@@ -149,7 +149,7 @@ export default async function LeadsPage({
         {Number(page) > 1 ? (
           <a
             href={`/admin/leads?page=${Number(page) - 1}`}
-            className="text-sm text-accent no-underline hover:underline"
+            className="text-sm text-accent dark:text-blue-400 no-underline hover:underline"
           >
             ← Previous
           </a>
@@ -157,7 +157,7 @@ export default async function LeadsPage({
         {resp?.next_page ? (
           <a
             href={`/admin/leads?page=${resp.next_page}`}
-            className="text-sm text-accent no-underline hover:underline"
+            className="text-sm text-accent dark:text-blue-400 no-underline hover:underline"
           >
             Next →
           </a>

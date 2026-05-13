@@ -52,15 +52,15 @@ export default async function DossierPage({
     <section className="space-y-6">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <Link href="/admin/operators" className="text-xs text-muted no-underline hover:underline">
+          <Link href="/admin/operators" className="text-xs text-muted dark:text-slate-400 no-underline hover:underline">
             ← Operators
           </Link>
-          <h1 className="mt-1 text-2xl font-semibold">{op.business_name}</h1>
-          <p className="text-sm text-muted">
+          <h1 className="mt-1 text-2xl font-semibold dark:text-slate-100">{op.business_name}</h1>
+          <p className="text-sm text-muted dark:text-slate-400">
             {dossier.user_email ?? '(no email)'} · {op.category ?? 'no category'} · {op.timezone}
           </p>
         </div>
-        <div className="text-right text-xs text-muted">
+        <div className="text-right text-xs text-muted dark:text-slate-400">
           <div>Created {new Date(op.created_at).toLocaleString()}</div>
           <div>
             Onboarding: {op.onboarding_completed_at ? '✓ complete' : 'in progress'}
@@ -100,14 +100,14 @@ export default async function DossierPage({
 
       <OperatorTabs operatorId={op.id} />
 
-      <details className="rounded-lg border border-slate-200 p-3 text-xs">
-        <summary className="cursor-pointer font-medium text-muted">Provider links</summary>
+      <details className="rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3 text-xs">
+        <summary className="cursor-pointer font-medium text-muted dark:text-slate-400">Provider links</summary>
         <ul className="mt-2 space-y-1 font-mono">
           {op.stripe_customer_id ? (
             <li>
               Stripe customer:{' '}
               <a
-                className="text-accent hover:underline"
+                className="text-accent dark:text-blue-400 hover:underline"
                 href={`https://dashboard.stripe.com/customers/${op.stripe_customer_id}`}
                 target="_blank"
                 rel="noreferrer"
@@ -120,7 +120,7 @@ export default async function DossierPage({
             <li>
               Subscription:{' '}
               <a
-                className="text-accent hover:underline"
+                className="text-accent dark:text-blue-400 hover:underline"
                 href={`https://dashboard.stripe.com/subscriptions/${op.stripe_subscription_id}`}
                 target="_blank"
                 rel="noreferrer"
@@ -133,7 +133,7 @@ export default async function DossierPage({
             <li>
               Connect account:{' '}
               <a
-                className="text-accent hover:underline"
+                className="text-accent dark:text-blue-400 hover:underline"
                 href={`https://dashboard.stripe.com/connect/accounts/${op.stripe_connect_account_id}`}
                 target="_blank"
                 rel="noreferrer"
@@ -146,7 +146,7 @@ export default async function DossierPage({
             <li>
               Twilio number:{' '}
               <a
-                className="text-accent hover:underline"
+                className="text-accent dark:text-blue-400 hover:underline"
                 href={`https://console.twilio.com/us1/develop/phone-numbers/manage/incoming/${op.twilio_number_sid}`}
                 target="_blank"
                 rel="noreferrer"
@@ -171,9 +171,9 @@ function Stat({
   mono?: boolean;
 }): JSX.Element {
   return (
-    <div className="rounded-lg border border-slate-200 bg-paper p-3">
-      <div className="text-xs uppercase tracking-wide text-muted">{label}</div>
-      <div className={`mt-1 text-base ${mono ? 'font-mono' : ''}`}>{value}</div>
+    <div className="rounded-lg border border-slate-200 dark:border-slate-800 bg-paper dark:bg-slate-900 p-3">
+      <div className="text-xs uppercase tracking-wide text-muted dark:text-slate-400">{label}</div>
+      <div className={`mt-1 text-base ${mono ? 'font-mono' : ''} dark:text-slate-100`}>{value}</div>
     </div>
   );
 }

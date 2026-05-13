@@ -18,15 +18,15 @@ export default async function AdminOverviewPage(): Promise<JSX.Element> {
   if (!metrics) {
     return (
       <section className="space-y-2">
-        <h1 className="text-2xl font-semibold">Overview</h1>
-        <p className="text-sm text-muted">Couldn't load metrics — try refreshing.</p>
+        <h1 className="text-2xl font-semibold dark:text-slate-100">Overview</h1>
+        <p className="text-sm text-muted dark:text-slate-400">Couldn't load metrics — try refreshing.</p>
       </section>
     );
   }
 
   return (
     <section className="space-y-6">
-      <h1 className="text-2xl font-semibold">Overview</h1>
+      <h1 className="text-2xl font-semibold dark:text-slate-100">Overview</h1>
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Card label="Operators (total)" value={metrics.operators.total} />
@@ -51,11 +51,14 @@ function Card({
   value: string | number;
   tone?: 'neutral' | 'warn';
 }): JSX.Element {
-  const accent = tone === 'warn' ? 'border-amber-400 bg-amber-50' : 'border-slate-200 bg-paper';
+  const accent =
+    tone === 'warn'
+      ? 'border-amber-400 bg-amber-50 dark:border-amber-700 dark:bg-amber-950/40'
+      : 'border-slate-200 bg-paper dark:border-slate-800 dark:bg-slate-900';
   return (
     <div className={`rounded-lg border ${accent} p-4`}>
-      <div className="text-xs uppercase tracking-wide text-muted">{label}</div>
-      <div className="mt-1 text-2xl font-semibold">{value}</div>
+      <div className="text-xs uppercase tracking-wide text-muted dark:text-slate-400">{label}</div>
+      <div className="mt-1 text-2xl font-semibold text-ink dark:text-slate-100">{value}</div>
     </div>
   );
 }
