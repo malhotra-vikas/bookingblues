@@ -61,7 +61,8 @@ export class AdvanceService {
     conversation: ConversationRow;
     callerPhoneE164: string;
   }): Promise<void> {
-    const { operator, conversation, callerPhoneE164 } = args;
+    const { operator, callerPhoneE164 } = args;
+    let conversation = args.conversation;
 
     if (!operator.twilio_number_e164) {
       this.logger.warn(
@@ -71,16 +72,35 @@ export class AdvanceService {
       return;
     }
 
-    // §12 + Slice 7.5: when a conversation is in `escalated`, the AI must not
-    // reply. Caller messages are routed to the Slack thread by the SMS webhook,
-    // not by this loop. The bridge here is just a safety net in case the
-    // webhook gates ever drift.
-    if (conversation.status === 'escalated') {
+    // §12 + Slice 7.5 — human-owns-it gating. We DON'T trust
+    // `conversation.status === 'escalated'` alone: old rows can drift into
+    // 'escalated' with no open escalation (resolve/spam paths that didn't
+    // flip status, or pre-fix data). The escalation row is the truth.
+    //
+    // The Twilio SMS webhook already gates on this same predicate before
+    // calling advance — this is a defense-in-depth check in case a future
+    // caller (manual replay, future queue) bypasses the controller.
+    const openEsc = await this.escalations.findOpenForConversation(conversation.id);
+    if (openEsc) {
       this.logger.info(
-        { conversationId: conversation.id, operatorId: operator.id },
-        'advance skipped: conversation is escalated',
+        { conversationId: conversation.id, operatorId: operator.id, escalationId: openEsc.id },
+        'advance skipped: open escalation owns this conversation',
       );
       return;
+    }
+    if (conversation.status === 'escalated') {
+      // Drifted state — heal it so the rest of the loop (and the dashboard)
+      // see the correct status. Next caller turn will resume normally.
+      this.logger.warn(
+        { conversationId: conversation.id },
+        'healing drifted escalated status (no open escalation row)',
+      );
+      await this.supabase
+        .db()
+        .from('conversations')
+        .update({ status: 'awaiting_caller' })
+        .eq('id', conversation.id);
+      conversation = { ...conversation, status: 'awaiting_caller' };
     }
 
     // Caller-turn cap (CLAUDE.md §9.3) — count caller messages on this convo.
