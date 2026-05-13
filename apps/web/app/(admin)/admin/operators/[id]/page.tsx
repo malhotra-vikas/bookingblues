@@ -77,7 +77,7 @@ export default async function DossierPage({
         />
         <Stat label="Calendar" value={op.google_calendar_id ? '✓ connected' : '—'} />
         <Stat
-          label="Connect (charges/payouts)"
+          label="Stripe Connect (charges/payouts)"
           value={`${op.stripe_connect_charges_enabled ? '✓' : '—'} / ${op.stripe_connect_payouts_enabled ? '✓' : '—'}`}
         />
         <Stat label="Conversations" value={dossier.totals.conversations.toString()} />
@@ -131,7 +131,7 @@ export default async function DossierPage({
           ) : null}
           {op.stripe_connect_account_id ? (
             <li>
-              Connect account:{' '}
+              Stripe Connect account:{' '}
               <a
                 className="text-accent dark:text-blue-400 hover:underline"
                 href={`https://dashboard.stripe.com/connect/accounts/${op.stripe_connect_account_id}`}

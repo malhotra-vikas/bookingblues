@@ -9,6 +9,7 @@ export type OperatorRow = Tables<'operators'>;
 export interface OperatorListItem {
   readonly id: string;
   readonly business_name: string;
+  readonly user_email: string | null;
   readonly category: string | null;
   readonly subscription_status: string | null;
   readonly trial_ends_at: string | null;
@@ -106,7 +107,7 @@ export class AdminReadService {
       .db()
       .from('operators')
       .select(
-        'id, business_name, category, subscription_status, trial_ends_at, twilio_number_e164, google_calendar_id, stripe_connect_charges_enabled, stripe_connect_payouts_enabled, created_at',
+        'id, user_id, business_name, category, subscription_status, trial_ends_at, twilio_number_e164, google_calendar_id, stripe_connect_charges_enabled, stripe_connect_payouts_enabled, created_at',
       )
       .order('created_at', { ascending: false })
       .order('id', { ascending: false })
@@ -132,10 +133,28 @@ export class AdminReadService {
     const { data, error } = await qb;
     if (error) throw error;
     const rows = data ?? [];
+    const pageRows = rows.slice(0, args.limit);
 
-    const items: OperatorListItem[] = rows.slice(0, args.limit).map((r) => ({
+    // Email lives on auth.users — batch-fetch in parallel by user_id, mirroring
+    // getOperatorDossier(). Failures fall back to null so a single missing
+    // auth user never breaks the list view.
+    const emailByUserId = new Map<string, string | null>();
+    await Promise.all(
+      pageRows.map(async (r) => {
+        const { data: userResp, error: userErr } = await this.supabase
+          .db()
+          .auth.admin.getUserById(r.user_id);
+        emailByUserId.set(
+          r.user_id,
+          userErr || !userResp ? null : userResp.user?.email ?? null,
+        );
+      }),
+    );
+
+    const items: OperatorListItem[] = pageRows.map((r) => ({
       id: r.id,
       business_name: r.business_name,
+      user_email: emailByUserId.get(r.user_id) ?? null,
       category: r.category,
       subscription_status: r.subscription_status,
       trial_ends_at: r.trial_ends_at,

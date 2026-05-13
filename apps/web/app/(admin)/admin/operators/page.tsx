@@ -5,6 +5,7 @@ import { apiAsUser } from '../../../../lib/api';
 interface OperatorListItem {
   id: string;
   business_name: string;
+  user_email: string | null;
   category: string | null;
   subscription_status: string | null;
   trial_ends_at: string | null;
@@ -82,9 +83,10 @@ export default async function OperatorsPage({
               <th className="px-3 py-2">Business</th>
               <th className="px-3 py-2">Category</th>
               <th className="px-3 py-2">Status</th>
-              <th className="px-3 py-2">Twilio</th>
-              <th className="px-3 py-2">Calendar</th>
-              <th className="px-3 py-2">Connect</th>
+              <th className="px-3 py-2">Twilio Number</th>
+              <th className="px-3 py-2">Email</th>
+              <th className="px-3 py-2">Calendar Connected</th>
+              <th className="px-3 py-2">Stripe Connect</th>
               <th className="px-3 py-2">Created</th>
             </tr>
           </thead>
@@ -99,6 +101,7 @@ export default async function OperatorsPage({
                 <td className="px-3 py-2 text-muted dark:text-slate-400">{op.category ?? '—'}</td>
                 <td className="px-3 py-2">{op.subscription_status ?? '—'}</td>
                 <td className="px-3 py-2 font-mono text-xs">{op.twilio_number_e164 ?? '—'}</td>
+                <td className="px-3 py-2 text-xs">{op.user_email ?? '—'}</td>
                 <td className="px-3 py-2">{op.google_calendar_connected ? '✓' : '—'}</td>
                 <td className="px-3 py-2">
                   {op.stripe_connect_charges_enabled && op.stripe_connect_payouts_enabled
@@ -112,7 +115,7 @@ export default async function OperatorsPage({
             ))}
             {(resp?.items.length ?? 0) === 0 ? (
               <tr>
-                <td colSpan={7} className="px-3 py-6 text-center text-muted dark:text-slate-400">
+                <td colSpan={8} className="px-3 py-6 text-center text-muted dark:text-slate-400">
                   No operators match.
                 </td>
               </tr>
