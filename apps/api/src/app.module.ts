@@ -22,6 +22,7 @@ import { CalendarModule } from './modules/calendar/calendar.module';
 import { ConversationsModule } from './modules/conversations/conversations.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
 import { HealthController } from './modules/health/health.controller';
+import { LeadsModule } from './modules/leads/leads.module';
 import { MeModule } from './modules/me/me.module';
 import { OperatorsModule } from './modules/operators/operators.module';
 import { PaymentsModule } from './modules/payments/payments.module';
@@ -62,6 +63,7 @@ import { WebhooksModule } from './modules/webhooks/webhooks.module';
     AiModule,
     AdminModule,
     SlackModule,
+    LeadsModule,
     WebhooksModule,
   ],
   controllers: [HealthController],

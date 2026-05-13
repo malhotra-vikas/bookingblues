@@ -3,6 +3,7 @@
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useState } from 'react';
 
+import { publicEnv } from '../lib/env';
 import { getSupabaseBrowserClient } from '../lib/supabase/browser';
 
 export function AuthForm({ mode }: { mode: 'login' | 'signup' }): JSX.Element {
@@ -41,6 +42,20 @@ export function AuthForm({ mode }: { mode: 'login' | 'signup' }): JSX.Element {
           },
         });
         if (signupErr) throw signupErr;
+        // Fire-and-forget Slack #bb-leads notification. Failure is silent —
+        // signup already succeeded; the lead is in `auth.users` regardless.
+        void fetch(`${publicEnv.NEXT_PUBLIC_API_URL}/v1/leads/notify`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            email,
+            business_name: trimmedName,
+            phone_e164: phoneE164,
+          }),
+          keepalive: true,
+        }).catch(() => {
+          // Intentionally swallowed.
+        });
         setInfo(
           "We sent a confirmation link to your email. Click it, then sign in to finish setup.",
         );

@@ -93,6 +93,7 @@ const baseSchema = z.object({
   SLACK_BOT_TOKEN: z.string().optional(),
   SLACK_DEFAULT_CHANNEL_ID: z.string().optional(),   // #hitl — escalation alarms + control buttons
   SLACK_CONVOS_CHANNEL_ID: z.string().optional(),    // #convos — per-conversation monitoring threads
+  SLACK_CHANNEL_LEADS_ID: z.string().optional(),     // #bb-leads — new-signup notifications
   SLACK_SIGNING_SECRET: z.string().optional(),
 });
 

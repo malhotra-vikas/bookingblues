@@ -51,6 +51,11 @@ export class SlackApiClient {
     return this.env.SLACK_CONVOS_CHANNEL_ID ?? null;
   }
 
+  /** Channel where new-signup notifications post (`#bb-leads`). */
+  leadsChannelId(): string | null {
+    return this.env.SLACK_CHANNEL_LEADS_ID ?? null;
+  }
+
   /**
    * chat.getPermalink is one of the few Slack methods that only accepts
    * GET with query-string params, not POST JSON — hence the direct fetch.
