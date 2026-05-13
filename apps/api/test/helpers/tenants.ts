@@ -48,9 +48,21 @@ export function readTestEnv(): TestEnv | null {
   return { url, anonKey, serviceRoleKey };
 }
 
+/**
+ * `describe` wrapper that registers the suite normally when a live Supabase
+ * is reachable, and `describe.skip`s otherwise. Two gates:
+ *   1) SUPABASE_* env vars are present (covers CI without an ephemeral DB).
+ *   2) `_SUPABASE_REACHABLE` was set by test/setup-env.ts after a sync probe
+ *      of $SUPABASE_URL/auth/v1/health (covers local dev where the env vars
+ *      point at 127.0.0.1:54321 but Docker isn't running).
+ *
+ * Skipping (vs. failing with AuthRetryableFetchError) keeps the VS Code
+ * Problems tab clean and signals to readers that these need infra, not code.
+ */
 export function describeIfSupabase(name: string, body: () => void): void {
   const env = readTestEnv();
-  const fn = env ? describe : describe.skip;
+  const reachable = process.env._SUPABASE_REACHABLE === '1';
+  const fn = env && reachable ? describe : describe.skip;
   fn(name, body);
 }
 
