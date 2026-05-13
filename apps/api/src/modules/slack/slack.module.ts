@@ -25,6 +25,6 @@ import { SlackWebhooksController } from './slack-webhooks.controller';
   ],
   controllers: [SlackWebhooksController],
   providers: [SlackApiClient, EscalationsService, SlackSignatureGuard],
-  exports: [EscalationsService],
+  exports: [EscalationsService, SlackApiClient],
 })
 export class SlackModule {}

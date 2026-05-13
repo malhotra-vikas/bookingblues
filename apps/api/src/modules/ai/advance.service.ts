@@ -4,7 +4,6 @@ import type OpenAI from 'openai';
 import { ZodError } from 'zod';
 import type { Tables } from '@bookingblues/db-types';
 
-import { ValidationError } from '../../common/errors/app-error';
 import { BOOKING_MODEL, OpenAIService } from '../../common/openai/openai.service';
 import { SupabaseService } from '../../common/supabase/supabase.service';
 import { TwilioService } from '../../common/twilio/twilio.service';
@@ -359,7 +358,7 @@ export class AdvanceService {
         case 'request_payment_link':
           return await requestPaymentLink(RequestPaymentLinkArgs.parse(parsed), ctx);
         case 'mark_out_of_scope':
-          return await markOutOfScope(MarkOutOfScopeArgs.parse(parsed), ctx);
+          return markOutOfScope(MarkOutOfScopeArgs.parse(parsed), ctx);
         case 'mark_spam':
           return markSpam(MarkSpamArgs.parse(parsed));
         case 'escalate_to_human':

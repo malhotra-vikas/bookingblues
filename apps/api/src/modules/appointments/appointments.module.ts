@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 
 import { AuditModule } from '../../common/audit/audit.module';
+import { EmailModule } from '../../common/email/email.module';
 import { SupabaseModule } from '../../common/supabase/supabase.module';
 import { TwilioModule } from '../../common/twilio/twilio.module';
 import { CalendarModule } from '../calendar/calendar.module';
@@ -11,7 +12,15 @@ import { BookingsService } from './bookings.service';
 import { IcsController } from './ics.controller';
 
 @Module({
-  imports: [SupabaseModule, CalendarModule, TwilioModule, ConversationsModule, AuditModule, PaymentsModule],
+  imports: [
+    SupabaseModule,
+    CalendarModule,
+    TwilioModule,
+    ConversationsModule,
+    AuditModule,
+    PaymentsModule,
+    EmailModule,
+  ],
   controllers: [IcsController],
   providers: [BookingsService],
   exports: [BookingsService],
