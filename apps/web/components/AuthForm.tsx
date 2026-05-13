@@ -103,12 +103,12 @@ export function AuthForm({ mode }: { mode: 'login' | 'signup' }): JSX.Element {
         required
       />
       {error ? (
-        <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+        <div className="rounded-md border border-red-200 dark:border-red-900 bg-red-50 dark:bg-red-950/40 px-3 py-2 text-sm text-red-700 dark:text-red-300">
           {error}
         </div>
       ) : null}
       {info ? (
-        <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+        <div className="rounded-md border border-emerald-200 dark:border-emerald-900 bg-emerald-50 dark:bg-emerald-950/40 px-3 py-2 text-sm text-emerald-700 dark:text-emerald-300">
           {info}
         </div>
       ) : null}
@@ -120,7 +120,7 @@ export function AuthForm({ mode }: { mode: 'login' | 'signup' }): JSX.Element {
         {busy ? 'Working…' : mode === 'signup' ? 'Create account' : 'Sign in'}
       </button>
       {mode === 'signup' ? (
-        <p className="text-[11px] text-slate-500 text-center">
+        <p className="text-[11px] text-slate-500 dark:text-slate-400 text-center">
           By creating an account you agree to our terms. We&apos;ll only charge after the 7-day trial.
         </p>
       ) : null}
@@ -144,7 +144,7 @@ function Field({
 }): JSX.Element {
   return (
     <div>
-      <label htmlFor={id} className="block text-sm font-medium">{label}</label>
+      <label htmlFor={id} className="block text-sm font-medium dark:text-slate-200">{label}</label>
       <input
         id={id}
         type={type}
@@ -154,9 +154,9 @@ function Field({
         {...(autoComplete ? { autoComplete } : {})}
         {...(required ? { required: true } : {})}
         {...(minLength ? { minLength } : {})}
-        className="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 outline-none focus:border-accent"
+        className="mt-1 block w-full rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 dark:text-slate-100 dark:placeholder:text-slate-500 px-3 py-2 outline-none focus:border-accent"
       />
-      {hint ? <p className="mt-1 text-xs text-muted">{hint}</p> : null}
+      {hint ? <p className="mt-1 text-xs text-muted dark:text-slate-400">{hint}</p> : null}
     </div>
   );
 }

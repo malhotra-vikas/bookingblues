@@ -88,8 +88,8 @@ export default async function DashboardPage(): Promise<JSX.Element> {
   if (noOperator) {
     return (
       <div className="space-y-4">
-        <h1 className="text-2xl font-semibold">Welcome to BookingBlues</h1>
-        <p className="text-muted">You haven&apos;t finished setup yet.</p>
+        <h1 className="text-2xl font-semibold dark:text-slate-100">Welcome to BookingBlues</h1>
+        <p className="text-muted dark:text-slate-400">You haven&apos;t finished setup yet.</p>
         <Link
           href="/onboarding"
           className="inline-block rounded-md bg-accent px-4 py-2 text-white no-underline"
@@ -106,9 +106,9 @@ export default async function DashboardPage(): Promise<JSX.Element> {
     <div className="space-y-8">
       <header className="flex items-end justify-between">
         <div>
-          <h1 className="text-2xl font-semibold">Dashboard</h1>
+          <h1 className="text-2xl font-semibold dark:text-slate-100">Dashboard</h1>
           {hasMetrics && (
-            <p className="text-xs text-muted mt-1">
+            <p className="text-xs text-muted dark:text-slate-400 mt-1">
               Stats for {new Date(metricsR.month_start_iso).toLocaleString('en-US', { month: 'long', year: 'numeric' })}
             </p>
           )}
@@ -156,9 +156,9 @@ export default async function DashboardPage(): Promise<JSX.Element> {
 
       <section>
         <div className="flex items-baseline justify-between mb-3">
-          <h2 className="text-lg font-semibold">Recent conversations</h2>
+          <h2 className="text-lg font-semibold dark:text-slate-100">Recent conversations</h2>
           {hasMetrics && metricsR.conversations.escalated > 0 && (
-            <span className="text-xs text-red-700">
+            <span className="text-xs text-red-700 dark:text-red-400">
               {metricsR.conversations.escalated} need human attention
             </span>
           )}
@@ -172,9 +172,9 @@ export default async function DashboardPage(): Promise<JSX.Element> {
             cta={{ href: '/onboarding', label: 'Finish onboarding →' }}
           />
         ) : (
-          <div className="overflow-x-auto rounded-lg border border-slate-200">
+          <div className="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-700">
             <table className="min-w-full text-sm">
-              <thead className="bg-slate-50 text-xs uppercase tracking-wide text-muted">
+              <thead className="bg-slate-50 dark:bg-slate-800 text-xs uppercase tracking-wide text-muted dark:text-slate-400">
                 <tr>
                   <th className="px-3 py-2 text-left">Caller</th>
                   <th className="px-3 py-2 text-left">Status</th>
@@ -182,13 +182,13 @@ export default async function DashboardPage(): Promise<JSX.Element> {
                   <th className="px-3 py-2 text-left">Last message</th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody className="dark:text-slate-200">
                 {conversationsR.data.map((c) => (
-                  <tr key={c.id} className="border-t border-slate-100 hover:bg-slate-50">
+                  <tr key={c.id} className="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/50">
                     <td className="px-3 py-2 font-mono">{maskPhone(c.caller_phone_e164)}</td>
                     <td className="px-3 py-2"><StatusBadge status={c.status} /></td>
-                    <td className="px-3 py-2 text-muted">{c.outcome ?? '—'}</td>
-                    <td className="px-3 py-2 text-muted whitespace-nowrap">
+                    <td className="px-3 py-2 text-muted dark:text-slate-400">{c.outcome ?? '—'}</td>
+                    <td className="px-3 py-2 text-muted dark:text-slate-400 whitespace-nowrap">
                       {relativeTime(c.last_message_at)}
                     </td>
                   </tr>
@@ -200,7 +200,7 @@ export default async function DashboardPage(): Promise<JSX.Element> {
       </section>
 
       <section>
-        <h2 className="text-lg font-semibold mb-3">Upcoming appointments</h2>
+        <h2 className="text-lg font-semibold dark:text-slate-100 mb-3">Upcoming appointments</h2>
         {'error' in appointmentsR ? (
           <p className="text-sm text-red-600">Couldn&apos;t load: {appointmentsR.error}</p>
         ) : appointmentsR.data.length === 0 ? (
@@ -209,9 +209,9 @@ export default async function DashboardPage(): Promise<JSX.Element> {
             body="Once the AI books a job for you, it will show up here with caller details and a one-tap call link."
           />
         ) : (
-          <div className="overflow-x-auto rounded-lg border border-slate-200">
+          <div className="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-700">
             <table className="min-w-full text-sm">
-              <thead className="bg-slate-50 text-xs uppercase tracking-wide text-muted">
+              <thead className="bg-slate-50 dark:bg-slate-800 text-xs uppercase tracking-wide text-muted dark:text-slate-400">
                 <tr>
                   <th className="px-3 py-2 text-left">When</th>
                   <th className="px-3 py-2 text-left">Caller</th>
@@ -220,18 +220,18 @@ export default async function DashboardPage(): Promise<JSX.Element> {
                   <th className="px-3 py-2 text-left">Fee</th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody className="dark:text-slate-200">
                 {appointmentsR.data.map((a) => (
-                  <tr key={a.id} className="border-t border-slate-100 hover:bg-slate-50">
+                  <tr key={a.id} className="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/50">
                     <td className="px-3 py-2 whitespace-nowrap">{formatAppointmentTime(a.scheduled_for_start)}</td>
                     <td className="px-3 py-2">
                       <div className="font-medium">{a.caller_name}</div>
-                      <div className="flex items-center gap-2 text-xs text-muted">
-                        <a href={`tel:${a.caller_phone_e164}`} className="text-accent font-mono no-underline hover:underline">
+                      <div className="flex items-center gap-2 text-xs text-muted dark:text-slate-400">
+                        <a href={`tel:${a.caller_phone_e164}`} className="text-accent dark:text-blue-400 font-mono no-underline hover:underline">
                           {formatE164(a.caller_phone_e164)}
                         </a>
                         {a.caller_email && (
-                          <a href={`mailto:${a.caller_email}`} className="text-accent no-underline hover:underline">
+                          <a href={`mailto:${a.caller_email}`} className="text-accent dark:text-blue-400 no-underline hover:underline">
                             email
                           </a>
                         )}
@@ -271,27 +271,27 @@ function Stat({
     accent: 'bg-accent',
   }[tone];
   return (
-    <div className="relative rounded-lg border border-slate-200 bg-white p-4 overflow-hidden">
+    <div className="relative rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-4 overflow-hidden">
       <span className={`absolute top-0 left-0 right-0 h-0.5 ${bar}`} />
-      <div className="text-[11px] text-muted uppercase tracking-wide font-medium">{label}</div>
-      <div className="text-3xl font-semibold text-ink tracking-tight mt-1">{value}</div>
-      {sublabel ? <div className="text-[11px] text-muted mt-1">{sublabel}</div> : null}
+      <div className="text-[11px] text-muted dark:text-slate-400 uppercase tracking-wide font-medium">{label}</div>
+      <div className="text-3xl font-semibold text-ink dark:text-slate-100 tracking-tight mt-1">{value}</div>
+      {sublabel ? <div className="text-[11px] text-muted dark:text-slate-400 mt-1">{sublabel}</div> : null}
     </div>
   );
 }
 
 function StatusBadge({ status }: { status: string }): JSX.Element {
   const cls: Record<string, string> = {
-    completed: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-    escalated: 'bg-red-50 text-red-700 border-red-200',
-    confirmed: 'bg-blue-50 text-blue-700 border-blue-200',
-    cancelled: 'bg-slate-100 text-slate-600 border-slate-200',
-    awaiting_bot: 'bg-amber-50 text-amber-700 border-amber-200',
-    awaiting_caller: 'bg-amber-50 text-amber-700 border-amber-200',
-    active: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-    abandoned: 'bg-slate-100 text-slate-600 border-slate-200',
+    completed: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-900',
+    escalated: 'bg-red-50 text-red-700 border-red-200 dark:bg-red-950/40 dark:text-red-300 dark:border-red-900',
+    confirmed: 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/40 dark:text-blue-300 dark:border-blue-900',
+    cancelled: 'bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700',
+    awaiting_bot: 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-900',
+    awaiting_caller: 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-900',
+    active: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-900',
+    abandoned: 'bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700',
   };
-  const c = cls[status] ?? 'bg-slate-100 text-slate-700 border-slate-200';
+  const c = cls[status] ?? 'bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700';
   return (
     <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${c}`}>
       {status}
@@ -300,14 +300,14 @@ function StatusBadge({ status }: { status: string }): JSX.Element {
 }
 
 function FeeBadge({ status }: { status: string }): JSX.Element {
-  if (status === 'none') return <span className="text-xs text-muted">—</span>;
+  if (status === 'none') return <span className="text-xs text-muted dark:text-slate-500">—</span>;
   const cls: Record<string, string> = {
-    paid: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-    pending: 'bg-amber-50 text-amber-700 border-amber-200',
-    refunded: 'bg-slate-100 text-slate-600 border-slate-200',
-    expired: 'bg-red-50 text-red-700 border-red-200',
+    paid: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-900',
+    pending: 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-900',
+    refunded: 'bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700',
+    expired: 'bg-red-50 text-red-700 border-red-200 dark:bg-red-950/40 dark:text-red-300 dark:border-red-900',
   };
-  const c = cls[status] ?? 'bg-slate-100 text-slate-700 border-slate-200';
+  const c = cls[status] ?? 'bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700';
   return (
     <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${c}`}>
       {status}
@@ -325,11 +325,11 @@ function EmptyState({
   cta?: { href: string; label: string };
 }): JSX.Element {
   return (
-    <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-8 text-center">
-      <p className="text-sm font-medium text-ink">{title}</p>
-      <p className="text-sm text-muted mt-1 max-w-md mx-auto">{body}</p>
+    <div className="rounded-lg border border-dashed border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 p-8 text-center">
+      <p className="text-sm font-medium text-ink dark:text-slate-100">{title}</p>
+      <p className="text-sm text-muted dark:text-slate-400 mt-1 max-w-md mx-auto">{body}</p>
       {cta && (
-        <Link href={cta.href} className="inline-block mt-4 text-sm text-accent no-underline hover:underline">
+        <Link href={cta.href} className="inline-block mt-4 text-sm text-accent dark:text-blue-400 no-underline hover:underline">
           {cta.label}
         </Link>
       )}

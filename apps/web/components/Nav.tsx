@@ -1,6 +1,7 @@
 import Link from 'next/link';
 
 import { SignOutButton } from './SignOutButton';
+import { ThemeToggle } from './ThemeToggle';
 
 export function Nav({
   activeUser,
@@ -10,8 +11,8 @@ export function Nav({
   isAdmin?: boolean;
 }): JSX.Element {
   return (
-    <header className="px-6 py-3 border-b flex items-center gap-6">
-      <Link href="/dashboard" className="font-semibold no-underline text-ink">
+    <header className="px-6 py-3 border-b border-slate-200 dark:border-slate-800 bg-paper dark:bg-slate-900 flex items-center gap-6">
+      <Link href="/dashboard" className="font-semibold no-underline text-ink dark:text-slate-100">
         BookingBlues
       </Link>
       <nav className="flex items-center gap-4 text-sm">
@@ -25,13 +26,14 @@ export function Nav({
           Settings
         </Link>
         {isAdmin && (
-          <Link href="/admin" className="no-underline font-semibold text-red-700">
+          <Link href="/admin" className="no-underline font-semibold text-red-700 dark:text-red-400">
             Admin
           </Link>
         )}
       </nav>
-      <div className="ml-auto flex items-center gap-4 text-sm text-muted">
-        <span className="hidden sm:inline">{activeUser.email}</span>
+      <div className="ml-auto flex items-center gap-3 text-sm text-muted">
+        <span className="hidden sm:inline dark:text-slate-400">{activeUser.email}</span>
+        <ThemeToggle />
         <SignOutButton />
       </div>
     </header>

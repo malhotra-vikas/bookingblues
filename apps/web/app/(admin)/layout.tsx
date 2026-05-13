@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation';
 import type { ReactNode } from 'react';
 
 import { SignOutButton } from '../../components/SignOutButton';
+import { ThemeToggle } from '../../components/ThemeToggle';
 import { getSupabaseServerClient } from '../../lib/supabase/server';
 
 /**
@@ -21,12 +22,12 @@ export default async function AdminLayout({ children }: { children: ReactNode })
   if (role !== 'admin') redirect('/dashboard');
 
   return (
-    <div className="min-h-screen flex flex-col bg-paper">
-      <div className="bg-red-700 px-6 py-1.5 text-center text-xs font-semibold uppercase tracking-wide text-white">
+    <div className="min-h-screen flex flex-col bg-paper dark:bg-slate-950">
+      <div className="bg-red-700 dark:bg-red-900 px-6 py-1.5 text-center text-xs font-semibold uppercase tracking-wide text-white">
         BookingBlues Admin · Internal use only · Every action is logged
       </div>
-      <header className="border-b border-red-100 bg-paper px-6 py-3 flex items-center gap-6">
-        <Link href="/admin" className="font-semibold text-red-700 no-underline">
+      <header className="border-b border-red-100 dark:border-red-900/50 bg-paper dark:bg-slate-900 px-6 py-3 flex items-center gap-6">
+        <Link href="/admin" className="font-semibold text-red-700 dark:text-red-400 no-underline">
           BB · Admin
         </Link>
         <nav className="flex items-center gap-4 text-sm">
@@ -43,11 +44,12 @@ export default async function AdminLayout({ children }: { children: ReactNode })
             Sales Calculator
           </Link>
         </nav>
-        <div className="ml-auto flex items-center gap-4 text-sm text-muted">
-          <Link href="/dashboard" className="no-underline text-ink">
+        <div className="ml-auto flex items-center gap-3 text-sm text-muted">
+          <Link href="/dashboard" className="no-underline text-ink dark:text-slate-200">
             ← Exit admin
           </Link>
-          <span className="hidden sm:inline">{data.user.email}</span>
+          <span className="hidden sm:inline dark:text-slate-400">{data.user.email}</span>
+          <ThemeToggle />
           <SignOutButton />
         </div>
       </header>
