@@ -6,105 +6,135 @@ Quick-start brief for the next session. Read this first, then `docs/PROGRESS.md`
 
 ---
 
-## Resume brief — 2026-05-13 (start-of-day after 2026-05-12 session)
+## Resume brief — 2026-05-14 (start-of-day after 2026-05-13 session)
 
-Pick up tomorrow from here. Today's session left several features shipped but
-not yet end-to-end verified.
+**Big shift today: product is pivoting to plumbing-only MVP.** All non-plumbing
+trades feature-flagged off, plumber-specific landing + emergency flow + activation
+rebuild. Slices 16–22 of `docs/PROGRESS.md` capture the full roadmap.
 
-### Verify tomorrow
+### What shipped today (all pushed to main)
 
-1. **Conversations (advance lock + heal fix)**
-   - Migrations: `pnpm supabase db push` (incl.
-     `20260512000005_heal_drifted_escalated_conversations.sql` +
-     `20260512000006_advance_lock.sql`).
-   - Send 2 SMS quickly to a BookingBlues number. Expect ONE bot reply
-     batching both messages. The new `advance_locked_until` column + 3s
-     scheduler debounce should prevent the double-reply we saw before.
-   - Any older conversations still showing `escalated` on the dashboard
-     should be auto-healed back to `awaiting_caller` by the backfill.
+- **Issue 1 — duplicate bot replies on rapid-fire caller SMS** — fixed via
+  "latest message must be caller" guard at the top of
+  `apps/api/src/modules/ai/advance.service.ts:advance()`. Closes the sequential
+  race the cross-replica lock didn't cover.
+- **Issue 2 — new conversation thread after `book_appointment`** — fixed via
+  60-min resume window in
+  `apps/api/src/modules/conversations/conversations.service.ts:getOrCreate`.
+  Follow-up caller SMS within 60 min of a `completed` convo reopens that row
+  so the Slack thread + AI context stay continuous.
+- **SMS delivery markers in #convos** — Twilio `statusCallback` →
+  `POST /webhooks/twilio/status` (new `TwilioStatusController`). Bot echoes
+  post with ⏳ prefix and edit to ✅ / ❌ on delivery / failure via
+  `chat.update`. Agent-bridged messages get reactions (`:hourglass:` →
+  `:white_check_mark:` / `:x:`). Slack can't `chat.update` someone else's
+  message, hence reactions for the agent case.
+- **Zod-recovery in tool dispatch** — `BookAppointmentArgs.parse` used to
+  throw on empty `caller_name` and crash the entire advance. Now the error
+  is fed back to the model as a tool response so it self-corrects (re-asks
+  the caller for their name). Same pattern for every tool.
+- **Test DI + skip-on-Supabase-down** — `EmailModule` added to
+  `AppointmentsModule`, `SlackApiClient` exported from `SlackModule`.
+  Integration specs (cross-tenant / rls / stripe-webhook / twilio-webhook)
+  now skip cleanly when local Supabase isn't running instead of flooding
+  VS Code Problems with 25 reds.
+- **Admin operators table** — new "Email" column next to Twilio Number.
+  "Connect" labels renamed to "Stripe Connect" throughout admin views.
+- **Plumbing pivot roadmap** — 21 items captured as Slices 16–22 in
+  `docs/PROGRESS.md`. Themes: plumbing-only collapse · scheduling/emergency
+  triage · activation rebuild · business intelligence · caller polish ·
+  Jobber/HCP integration · network effects + AI quality investment.
 
-2. **Summary emails (NEW today — needs verification)**
-   - Per-booking email fires from `BookingsService.book()` (fire-and-forget;
-     non-fatal on failure). Includes caller details, time, fee, full
-     transcript, Google Calendar deep link.
-   - Daily summary endpoint: `POST /v1/internal/daily-summaries/run` with
-     header `X-Cron-Secret: <CRON_SHARED_SECRET>`. Idempotent via
-     `daily_summary_sends` table.
-   - **Required env on Railway api:** `RESEND_API_KEY`, `EMAIL_FROM`,
-     `CRON_SHARED_SECRET` (`openssl rand -hex 32`).
-   - **Current sender setup (TEMPORARY):** using Resend's shared test sender
-     `onboarding@resend.dev`. Works with any Resend API key but Resend will
-     only deliver to the email address registered on the Resend account.
-     Sufficient for verifying the booking-email + daily-summary plumbing to
-     your own inbox.
-   - **TODO — production sender:** sign up for Resend with a domain we
-     control, verify DKIM/SPF/DMARC in the Resend dashboard, then switch
-     `EMAIL_FROM` to `BookingBlues <bookings@<domain>>`. Until then any
-     operator/caller email address other than the Resend-account email will
-     bounce silently (logged warn; booking still succeeds).
-   - **Daily cron wiring:** set up Railway cron OR an external scheduler to
-     POST `/v1/internal/daily-summaries/run` once a day (recommended ~09:00
-     UTC). Each operator's metrics are bucketed in their own timezone.
-   - Migration: `20260512000007_daily_summary_sends.sql`.
+### Critical-path focus for tomorrow
 
-3. **Lead claim flow**
-   - Sign up a fake account from the web app → `#bb-leads` Slack channel
-     should get a post with full email + business name + `[Claim this lead]`
-     + `[View in admin]` buttons.
-   - Click "Claim this lead" → message should swap to show
-     `🔒 Claimed by @you`; buttons vanish to prevent race-claims.
-   - `/admin/leads` should show the Slack username in the new "Owner" column.
-   - **Required env on Railway api:** `SLACK_CHANNEL_LEADS_ID` (user already
-     added `C0B3JB7QJ9J`).
-   - **Required Slack setup:** `/invite @bookingblues` in `#bb-leads`
-     — otherwise the post fails with `channel_not_found`.
-   - Migration: `20260512000004_lead_claims.sql`.
+Sequence below targets **first paying plumber ~30–35 days from today**, with
+A2P 10DLC carrier review as the long-pole external clock.
 
-4. **Dark mode**
-   - Toggle works site-wide. Admin pages, dashboard, settings, onboarding,
-     auth pages, leads, operators table, operator dossier — all polished.
-   - Landing page sections + a few inner wizard fragments (booking-fee
-     economics box) still render light-styled but readable.
+1. **File A2P 10DLC brand + campaign registration with Twilio** — DO THIS
+   FIRST. Day-1 task because 1–3 week review window defines the timeline.
+   Twilio Console → Messaging → Regulatory Compliance → A2P 10DLC.
+   - Need: brand info (legal name, EIN, address, website), campaign use case
+     "Mixed", sample messages (paste from current `🤖 Bot:` echo text),
+     opt-in evidence (caller-initiated forwarding flow + STOP copy).
 
-5. **Stripe Connect — still inoperational**
-   - Outstanding from earlier sessions. `accounts.create` returns "You can
-     only create new accounts if you've signed up for Connect". User-side
-     blocker — either complete the Stripe platform setup in Sandbox mode
-     or switch to classic Test mode in the Stripe dashboard.
-   - Not a code issue. The eligibility gating in `PaymentsService` and
-     `isBookingFeeCollectible` will silently route around Connect being
-     down (bookings still happen, just without a fee).
+2. **Slice 16 — Plumbing-only collapse** (`docs/PROGRESS.md`):
+   - **(1)** Feature-flag non-plumbing categories everywhere (signup,
+     landing, dashboard, onboarding wizard). Don't delete — env-gate via
+     `ENABLED_CATEGORIES=plumbing` or `categories.enabled` column.
+   - **(4)** Plumber-specific landing + signup. Hero: photo of plumber on
+     a job. Headline "Plumbers: Never miss another emergency call."
+     Subhead "AI books your jobs by text while you're on the wrench."
+     Single CTA "Start free 7-day trial." Plumber-tuned FAQ.
+   - **(15)** A2P 10DLC opt-in compliance copy on first AI message:
+     "Reply STOP to opt out. Msg & data rates may apply." Track opt-outs
+     in DB; honor STOP via Twilio + our own gate.
 
-### TODO for tomorrow
+3. **Resend domain verification** — sign up Resend with a domain we
+   control, verify DKIM/SPF/DMARC. Until then, per-booking email + daily
+   summary only deliver to `malhotra.vikas@gmail.com` (Resend test sender
+   restriction). Currently using `onboarding@resend.dev` as a placeholder.
 
-- **Lowercase emails at signup** (task #45). Customers may type uppercase
-  in the email field at signup. Today the Supabase Auth row stores whatever
-  was typed, which can break login if they enter the email differently
-  later. Fix path: normalize via `.trim().toLowerCase()` in `AuthForm.tsx`
-  before both `supabase.auth.signUp({ email })` and
-  `signInWithPassword({ email })`. Add a DB migration to lowercase existing
-  `auth.users.email` rows. Supabase Auth is case-sensitive — confirm
-  whether an Auth Hook is needed to enforce it server-side as well.
+4. **Slice 17 partial — emergency keyword detection (item 17)** — ship just
+   the keyword classifier and immediate-SMS-to-plumber on burst pipe / gas
+   smell / sewage backup / etc. AI takes over only if plumber doesn't
+   respond in 60s. Cheap to ship; the single most visible win.
 
-- **Verify per-booking email + daily summary deliverability.** First send
-  should go to your own address to confirm DKIM/SPF + the Resend domain
-  is verified.
+5. **Slice 18 minimum viable activation**:
+   - Carrier-forwarding screenshots for Verizon, AT&T, T-Mobile, US
+     Cellular — tested on a real phone for each.
+   - "Schedule a setup call with our team" button at every step of the
+     onboarding wizard. For customer #1 you'll do this onboarding personally
+     over Zoom anyway.
+   - SKIP for now: Google Workspace provisioning, iPhone walkthrough
+     video, mobile dashboard PWA.
 
-- **Wire the daily-summary cron.** Once verified, configure Railway cron
-  (or an external scheduler) to hit `/v1/internal/daily-summaries/run`
-  daily with the `X-Cron-Secret` header.
+### Still-open carry-overs from previous days
 
-- **Migrations to apply** (forward-only, in order):
-  - `20260512000004_lead_claims.sql`
-  - `20260512000005_heal_drifted_escalated_conversations.sql`
-  - `20260512000006_advance_lock.sql`
-  - `20260512000007_daily_summary_sends.sql`
+- **Stripe Connect setup** — user-side blocker, NOT a code issue.
+  `accounts.create` returns "You can only create new accounts if you've
+  signed up for Connect". Either complete Stripe platform setup in
+  Sandbox mode or switch to classic Test mode. The eligibility gating
+  in `PaymentsService.ensureFeeEligible` silently routes around Connect
+  being down — bookings still happen, just without a fee. **Not a launch
+  blocker — plumbers can pay $49/mo subscription with zero fee
+  involvement. Defer until first 1–2 plumbers signed up.**
 
-- **Slack token rotation.** The bot token + signing secret were pasted into
-  chat during debugging earlier. Rotate before broader use.
+- **Lowercase emails at signup** — normalize via `.trim().toLowerCase()`
+  in `apps/web/components/AuthForm.tsx` before both `signUp` and
+  `signInWithPassword`. DB migration to lowercase existing
+  `auth.users.email` rows. Confirm whether an Auth Hook is needed
+  server-side too (Supabase Auth is case-sensitive).
+
+- **Verify per-booking + daily summary email deliverability** — first send
+  must go to `malhotra.vikas@gmail.com` (the Resend account email) since
+  we're on `onboarding@resend.dev` until domain verification.
+
+- **Wire daily-summary cron** — once Resend is verified, configure Railway
+  cron (or external scheduler) to POST
+  `/v1/internal/daily-summaries/run` daily with `X-Cron-Secret`.
+  Recommended ~09:00 UTC; each operator's metrics are bucketed in their
+  own timezone.
+
+- **Slack token rotation** — bot token + signing secret were pasted into
+  chat during earlier debugging. Rotate before broader use.
+
+### Sales — parallel track (don't wait for engineering)
+
+- Build target list: 5–10 named plumbers reachable via warm intros, local
+  trade groups, Facebook plumber groups, blue-collar subreddits,
+  supply-house contacts. Skip cold outbound — product is too new for cold
+  to convert.
+- Offer: 30-day free trial (vs default 7), personal Zoom onboarding, your
+  direct number for issues, $0/mo for first 60 days of paid use in
+  exchange for testimonial + feedback.
+- Be ready to babysit Slack threads in real time during customer #1's
+  first week. Slice 7.5 HITL exists exactly for this — use it.
 
 ### Reference
 
-- Source of truth for what's built / pending: `docs/PROGRESS.md`.
+- **Critical path doc** (Day → first paying plumber): see end of this
+  session's chat for the day-by-day breakdown.
+- Source of truth for what's built / pending: `docs/PROGRESS.md`
+  (Slices 16–22 are the plumbing pivot roadmap).
 - Architecture + non-negotiables: `CLAUDE.md`.
 - Slack setup: `docs/SLACK_SETUP.md`.
