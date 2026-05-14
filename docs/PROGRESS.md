@@ -431,6 +431,180 @@ Migration target when we're ready to leave Railway and serve real traffic.
 
 ---
 
+## 🪠 Plumbing-vertical pivot (2026-05-13 — captured from user roadmap)
+
+Strategic narrowing: every signup from a non-plumbing trade is a wasted lead until
+the product is dialed in. **Hide all non-plumbing categories, double down on the
+plumber wedge, then expand.** No code is being deleted — non-plumbing trades come
+back behind a feature flag once plumbing converts well.
+
+The work splits cleanly into six themes. Each theme is roughly one slice of
+build, but inside a theme items can ship independently.
+
+### Slice 16 — Plumbing-only collapse (foundation)
+
+The unblocker. Until this ships, every other plumbing item competes with
+generic-trade copy + signup flow.
+
+- [ ] **(1) Hide non-plumbing categories** — signup, landing, dashboard,
+      onboarding wizard show only "Plumbing". Feature-flag the others (env var
+      `ENABLED_CATEGORIES=plumbing` or DB `categories.enabled`). Don't delete the
+      seed rows or system prompts; just gate visibility.
+- [ ] **(4) Plumbing-specific landing page & signup flow** — hero photo of a
+      plumber on a job. Headline "Plumbers: Never miss another emergency call."
+      Subhead "AI books your jobs by text while you're on the wrench." Single
+      CTA. 3-step how-it-works + plumber imagery, testimonials placeholder,
+      pricing teaser, FAQ tuned to plumber objections ("what if it tries to
+      book a job I can't take?", "what about commercial calls?", "does it work
+      with Jobber?").
+- [ ] **(15) A2P 10DLC opt-in compliance layer** — first AI message ALWAYS
+      includes "Reply STOP to opt out. Msg & data rates may apply." Track
+      opt-outs in DB; honor STOP/UNSTOP via Twilio's built-in handler + our own
+      gate.
+
+### Slice 17 — Smarter scheduling & emergency triage
+
+The #1 ask from plumber interviews. A burst pipe at 11pm is a different flow
+than "leaky faucet, can wait."
+
+- [ ] **(2) Drive-time aware booking + 90-min default slots** — every
+      appointment is 90 min. Compute drive time between consecutive jobs on
+      the operator's calendar (Google Distance Matrix API) and pad slot
+      offerings accordingly so back-to-back jobs don't overrun.
+- [ ] **(3) Emergency vs urgent vs scheduled routing** — AI classifies each
+      call into one of three buckets:
+      - *Emergency*: next available 90-min slot today, override standard
+        business hours, push a mobile notification to the plumber.
+      - *Urgent*: next available slot within 48 hours.
+      - *Scheduled*: normal calendar logic.
+- [ ] **(17) Emergency keyword pre-flag** — "burst pipe", "no water", "sewage
+      backup", "gas smell", "carbon monoxide", "flooding" trigger instant
+      human-takeover route, not standard AI flow. SMS plumber's mobile:
+      `EMERGENCY CALL — [name] reports [issue]. Reply CALL to dial them back
+      in 30 seconds.` AI takes over only if plumber doesn't respond in 60s.
+- [ ] **(19) Repeat caller recognition** — if a number has called before, AI
+      greets by name and references previous job: `Hi [name], welcome back.
+      Last time we helped you with [job]. What's going on today?`
+
+### Slice 18 — Activation & onboarding rebuild
+
+The current funnel has a "calendar trap" — plumbers without Google Calendar
+drop at step 4. Activation is the highest-leverage conversion knob.
+
+- [ ] **(7) Onboarding wizard rebuild for plumber-specific friction**:
+      - No Google Calendar? Offer to provision Google Workspace ($6/mo;
+        BookingBlues covers it on Starter, plumber covers on Pro; 4-min
+        guided flow).
+      - Have Google but never use it? Short video walkthrough of adding it
+        to iPhone.
+      - Carrier-forwarding instructions rebuilt with **screenshots for all
+        four major carriers** (Verizon, AT&T, T-Mobile, US Cellular). Test
+        each on a real phone.
+      - **"Schedule a setup call with our team"** button at EVERY step. 10
+        minutes of human help triples activation completion.
+- [ ] **(8) Demo mode toggle** — dashboard button "Demo my product" simulates
+      an incoming call to the plumber's Twilio number, runs a fake plumbing
+      conversation, books a fake appointment on their calendar marked
+      `[DEMO]`. The activation moment that makes them believe. Show on sales
+      calls.
+- [ ] **(14) Plumber mobile dashboard (PWA)** — mobile-optimized: today's
+      bookings, this week's revenue, unread notifications, quick-action
+      "mark job done" + "contact customer". PWA only; native app is post-MVP.
+
+### Slice 19 — Plumber business intelligence
+
+Plumbers run their business on intuition. Showing them their numbers — clearly
+formatted enough to forward to a spouse who handles bookkeeping — is sticky.
+
+- [ ] **(9) Job-type pricing intelligence** — onboarding captures the
+      plumber's pricing for the 15 most common job types ("basic kitchen
+      faucet replacement", "water heater swap", etc.). AI quotes price
+      ranges to callers, who self-select on price before the plumber
+      arrives. Huge for caller-side conversion.
+- [ ] **(10) Parts pre-pull / job summary email** — on booking, plumber gets
+      a SMS/email: `Job booked for [time] at [address]. Customer reports:
+      [diagnostic summary]. Likely parts: [list]. Estimated price quoted:
+      $X-Y.` Lets plumber load the truck before driving. "The feature that
+      gets posted about on Reddit."
+- [ ] **(11) Daily summary email upgrade** — current daily summary is
+      basic. Rebuild as a business report: `Yesterday: 4 calls received, 3
+      booked, 1 marked spam, $1,200 in estimated revenue. This week: 18
+      bookings, $5,400. Last week: $4,800. You're up 12%.` Forwardable to
+      spouse / bookkeeper.
+- [ ] **(21) Bookings analytics dashboard** — bookings by day of week,
+      average job value over time, call-to-booked conversion rate, no-show
+      rate, deposit collection rate. Data the plumber has never had access
+      to.
+
+### Slice 20 — Caller-side polish & reviews flywheel
+
+- [ ] **(13) Caller-facing booking confirmation page** — one-page web view:
+      `You're booked with [Plumber] on [date/time]. Address: [if needed]. To
+      reschedule, text RESCHEDULE to this number.` Looks professional;
+      increases show-up commitment.
+- [ ] **(18) Review request automation** — 24h after job completion (known
+      via Jobber/HCP integration when shipped — see Slice 21), SMS the
+      customer: `Hi [name], hope [Plumber] took care of [issue]. If you
+      have 30 seconds, a Google review really helps a small business:
+      [direct link to their GMB review form].` More Google reviews →
+      more inbound calls for the plumber. This is the feature that wins
+      plumbers over.
+
+### Slice 21 — Field-service integrations (Jobber, HCP)
+
+This is what justifies Pro pricing and crushes churn at the 3–5-truck size.
+Order matters: Jobber first (biggest market segment in our ICP), HCP second,
+ServiceTitan deferred until we have 50+ paying customers (bigger ops are not
+our immediate ICP).
+
+- [ ] **(12) Jobber integration** — OAuth flow, then on AI-confirmed
+      booking, also create the Jobber job with customer details, diagnostic
+      notes, estimated price. 2–3 weeks build + test. Goal: listed in
+      Jobber Marketplace.
+- [ ] **(16) Housecall Pro integration** — same playbook as Jobber, ship
+      AFTER Jobber is live + producing happy customers.
+- [ ] (deferred) ServiceTitan — bigger segment, not immediate ICP; revisit
+      after 50+ customers on the platform.
+
+### Slice 22 — Network effects & AI quality
+
+The investments that compound.
+
+- [ ] **(20) Plumber-to-plumber referral hand-off** — when AI detects a job
+      is out of scope for the current plumber (commercial when plumber is
+      residential-only, out of service area, specialty work like septic),
+      offer to refer to another BookingBlues plumber who covers it. Every
+      BB plumber becomes a referral source for every other BB plumber.
+      Revenue: $5 referral fee per accepted referral, split between
+      platform + referring plumber.
+- [ ] **(22) Rebuild the plumbing intake AI with a real plumber
+      consultant** — the biggest single product investment. Hire a
+      journeyman plumber for 20h at $100/h ($2k total). Elicit:
+      - Every diagnostic question they ask on the phone before booking.
+      - The 15–20 most common job types + typical pricing ranges.
+      - Emergency vs scheduled triage logic ("what makes something a
+        drop-everything emergency").
+      - Red flags that trigger human handoff (insurance disputes, code
+        violations, customers asking for unlicensed work).
+      
+      Rewrite the GPT-4.1 system prompt to encode this domain knowledge.
+      Build a few-shot example library of 30–50 conversations. Test against
+      100 simulated calls before going live.
+
+### Sequencing notes
+
+- **Slice 16** is the unblocker — runs first. Cheapest, highest leverage.
+- **Slice 17 + 18 + 19** can run in parallel after 16. Different files,
+  different surface areas.
+- **Slice 21 (Jobber)** is gated on having a real plumber on the platform to
+  validate the integration round-trip with. Don't start until 1–2 paying
+  plumbers exist.
+- **Slice 22 (AI rebuild)** is gated on having interview material from the
+  consultant — schedule the 20h block when the plumbing-only landing page
+  starts driving signups.
+
+---
+
 ## 🚫 Out of scope (post-MVP) — per CLAUDE.md §16
 
 Multi-user/teams per Operator · Operator-editable AI prompts · Voice AI (call handling) · Mobile app · Analytics beyond simple counts · Number porting · White-labeling · Multiple calendars per Operator · Outbound campaigns
