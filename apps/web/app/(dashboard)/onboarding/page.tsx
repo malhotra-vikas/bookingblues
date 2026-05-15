@@ -20,6 +20,11 @@ interface Operator {
   onboarding_completed_at: string | null;
 }
 
+// Force dynamic rendering so process.env is read fresh on every request,
+// not frozen at build time. Without this, Next would attempt static
+// optimization and we'd be back to inlining problems.
+export const dynamic = 'force-dynamic';
+
 export default async function OnboardingPage(): Promise<JSX.Element> {
   let operator: Operator | null = null;
   let notFound = false;
@@ -29,6 +34,23 @@ export default async function OnboardingPage(): Promise<JSX.Element> {
     if (err instanceof ApiError && err.status === 404) notFound = true;
     else throw err;
   }
+
+  // Read env on the SERVER and pass to the client wizard as props. Bypasses
+  // Turbopack's NEXT_PUBLIC_* inlining bug — server-side process.env is
+  // always real. Falls back to all-enabled / no-banner if missing.
+  const ALL_SLUGS = ['plumbing', 'hvac', 'electrical', 'roofing', 'garage_door'];
+  const rawEnabled =
+    process.env.NEXT_PUBLIC_ENABLED_CATEGORIES ||
+    process.env.ENABLED_CATEGORIES ||
+    ALL_SLUGS.join(',');
+  const enabledCategorySlugs = rawEnabled
+    .split(',')
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
+  const setupCallUrl =
+    process.env.NEXT_PUBLIC_SETUP_CALL_BOOKING_URL ||
+    process.env.SETUP_CALL_BOOKING_URL ||
+    '';
 
   return (
     <div className="space-y-6">
@@ -46,7 +68,11 @@ export default async function OnboardingPage(): Promise<JSX.Element> {
         </p>
       ) : null}
 
-      <Wizard initial={operator} />
+      <Wizard
+        initial={operator}
+        enabledCategorySlugs={enabledCategorySlugs}
+        setupCallUrl={setupCallUrl}
+      />
 
       <p className="text-sm text-muted dark:text-slate-400">
         Done?{' '}
