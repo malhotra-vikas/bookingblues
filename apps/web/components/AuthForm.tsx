@@ -25,6 +25,12 @@ export function AuthForm({ mode }: { mode: 'login' | 'signup' }): JSX.Element {
     setError(null);
     setInfo(null);
     const supabase = getSupabaseBrowserClient();
+    // Normalize email at the boundary. Supabase Auth treats `Foo@x.com` and
+    // `foo@x.com` as DIFFERENT users — a customer who signs up with caps
+    // and later types lowercase gets "Invalid login credentials." Fixing
+    // this once here, plus the existing-row migration below, removes a real
+    // support pothole. Task #45 / PROGRESS.md.
+    const normalizedEmail = email.trim().toLowerCase();
     try {
       if (mode === 'signup') {
         const trimmedName = businessName.trim();
@@ -32,7 +38,7 @@ export function AuthForm({ mode }: { mode: 'login' | 'signup' }): JSX.Element {
         const phoneE164 = normalizeUsPhone(phone);
         if (!phoneE164) throw new Error('Enter a valid US phone number');
         const { data: signupData, error: signupErr } = await supabase.auth.signUp({
-          email,
+          email: normalizedEmail,
           password,
           options: {
             data: {
@@ -52,7 +58,7 @@ export function AuthForm({ mode }: { mode: 'login' | 'signup' }): JSX.Element {
             headers: { 'content-type': 'application/json' },
             body: JSON.stringify({
               user_id: newUserId,
-              email,
+              email: normalizedEmail,
               business_name: trimmedName,
               phone_e164: phoneE164,
             }),
@@ -66,7 +72,10 @@ export function AuthForm({ mode }: { mode: 'login' | 'signup' }): JSX.Element {
         );
         return;
       }
-      const { error: loginErr } = await supabase.auth.signInWithPassword({ email, password });
+      const { error: loginErr } = await supabase.auth.signInWithPassword({
+        email: normalizedEmail,
+        password,
+      });
       if (loginErr) throw loginErr;
       router.replace(next);
       router.refresh();

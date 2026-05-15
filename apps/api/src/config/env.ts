@@ -102,11 +102,41 @@ const baseSchema = z.object({
   SLACK_CONVOS_CHANNEL_ID: z.string().optional(),    // #convos — per-conversation monitoring threads
   SLACK_CHANNEL_LEADS_ID: z.string().optional(),     // #bb-leads — new-signup notifications
   SLACK_SIGNING_SECRET: z.string().optional(),
+
+  // Plumbing-vertical pivot (PROGRESS.md Slice 16). Comma-separated category
+  // slugs allowed to be picked at signup / shown in UI. Unset = all 5 seed
+  // trades enabled (legacy). For the plumbing-only MVP launch:
+  // `ENABLED_CATEGORIES=plumbing`. No DB change — flip env to bring trades
+  // back. Operators already on disabled categories are NOT migrated;
+  // they keep their existing category and prompt.
+  ENABLED_CATEGORIES: z.string().optional(),
+
+  // Public Calendly (or similar) URL surfaced as "Schedule a setup call with
+  // our team" CTA on every step of the onboarding wizard. Per yesterday's
+  // critical-path doc this is the single highest-conversion activation
+  // lever. Empty = button hidden.
+  SETUP_CALL_BOOKING_URL: z.string().url().or(z.literal('')).optional(),
 });
+
+/**
+ * The full list of seeded category slugs (categories DB table). Mirrors the
+ * 5 trades in `supabase/migrations/20260505000003_seed_categories.sql`.
+ * When `ENABLED_CATEGORIES` env is unset we fall back to this set so existing
+ * deployments don't quietly disable everything. Plumbing-only MVP sets the
+ * env to just `plumbing`.
+ */
+export const ALL_SEEDED_CATEGORIES = [
+  'plumbing',
+  'hvac',
+  'electrical',
+  'roofing',
+  'garage_door',
+] as const satisfies ReadonlyArray<string>;
 
 export type Env = Readonly<
   z.infer<typeof baseSchema> & {
     ENCRYPTION_KEYS: ReadonlyArray<{ version: string; key: Buffer }>;
+    ENABLED_CATEGORY_SET: ReadonlySet<string>;
   }
 >;
 
@@ -179,7 +209,27 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
     throw new Error('ENCRYPTION_KEY is required in production.');
   }
 
-  return Object.freeze({ ...env, ENCRYPTION_KEYS });
+  // Parse ENABLED_CATEGORIES into a Set. Default to all 5 if unset (legacy
+  // deployments). Unknown slugs are silently dropped — if someone fat-fingers
+  // `pluming` we don't want to enable everything by accident.
+  const rawCategories = (env.ENABLED_CATEGORIES ?? '').trim();
+  const enabledList =
+    rawCategories === ''
+      ? [...ALL_SEEDED_CATEGORIES]
+      : rawCategories
+          .split(',')
+          .map((s) => s.trim().toLowerCase())
+          .filter((s): s is (typeof ALL_SEEDED_CATEGORIES)[number] =>
+            (ALL_SEEDED_CATEGORIES as ReadonlyArray<string>).includes(s),
+          );
+  const ENABLED_CATEGORY_SET: ReadonlySet<string> = new Set(enabledList);
+  if (ENABLED_CATEGORY_SET.size === 0) {
+    throw new Error(
+      `ENABLED_CATEGORIES yielded an empty set after filtering. Got: "${rawCategories}". Valid slugs: ${ALL_SEEDED_CATEGORIES.join(', ')}.`,
+    );
+  }
+
+  return Object.freeze({ ...env, ENCRYPTION_KEYS, ENABLED_CATEGORY_SET });
 }
 
 function formatZodError(error: z.ZodError): string {

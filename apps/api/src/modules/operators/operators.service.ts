@@ -1,8 +1,10 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import type { Tables, TablesUpdate } from '@bookingblues/db-types';
 import parsePhoneNumber from 'libphonenumber-js';
 import { PinoLogger } from 'nestjs-pino';
 
+import { ENV_TOKEN } from '../../config/config.module';
+import type { Env } from '../../config/env';
 import { SupabaseService } from '../../common/supabase/supabase.service';
 import { ConflictError, NotFoundError, ValidationError } from '../../common/errors/app-error';
 import type { UpdateOperator } from './operators.dto';
@@ -25,6 +27,7 @@ export class OperatorsService {
   constructor(
     private readonly supabase: SupabaseService,
     private readonly logger: PinoLogger,
+    @Inject(ENV_TOKEN) private readonly env: Env,
   ) {
     this.logger.setContext(OperatorsService.name);
   }
@@ -101,6 +104,17 @@ export class OperatorsService {
 
   async update(userId: string, patch: UpdateOperator): Promise<OperatorRow> {
     const existing = await this.getByUserIdRequired(userId);
+
+    // Plumbing-only MVP gate (PROGRESS.md Slice 16). Reject categories the
+    // current deployment has feature-flagged off, even if the DB still seeds
+    // them. The FK check below catches *unknown* slugs; this catches
+    // *disabled* ones with a clearer error.
+    if (patch.category !== undefined && !this.env.ENABLED_CATEGORY_SET.has(patch.category)) {
+      throw new ValidationError(
+        `Category "${patch.category}" is not currently enabled. Available: ${[...this.env.ENABLED_CATEGORY_SET].join(', ')}.`,
+        { path: ['category'] },
+      );
+    }
 
     const update: TablesUpdate<'operators'> = {};
     if (patch.business_name !== undefined) update.business_name = patch.business_name;

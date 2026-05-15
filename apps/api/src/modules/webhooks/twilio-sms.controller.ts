@@ -21,6 +21,8 @@ import type { Env } from '../../config/env';
 import { AdvanceSchedulerService } from '../ai/advance-scheduler.service';
 import { AdvanceService } from '../ai/advance.service';
 import { ConversationsService } from '../conversations/conversations.service';
+import { detectEmergencyKeyword } from '../conversations/emergency-detection';
+import { EmergencyClassifierService } from '../conversations/emergency-classifier.service';
 import { EscalationsService } from '../slack/escalations.service';
 import { resolveOperatorForWebhook, verifyTwilioSignature } from './twilio-helpers';
 
@@ -39,6 +41,7 @@ export class TwilioSmsController {
     private readonly supabase: SupabaseService,
     private readonly twilio: TwilioService,
     private readonly conversations: ConversationsService,
+    private readonly emergencyClassifier: EmergencyClassifierService,
     private readonly advance: AdvanceService,
     private readonly advanceScheduler: AdvanceSchedulerService,
     private readonly escalations: EscalationsService,
@@ -144,6 +147,85 @@ export class TwilioSmsController {
             conversation: convoFull,
             body: form.Body,
           });
+
+          // Emergency detection — hybrid (PROGRESS.md Slice 17 item 17).
+          //   1) Keyword pre-filter: zero-cost / zero-latency. Catches the
+          //      obvious cases ("burst pipe", "gas smell").
+          //   2) AI fallback (gpt-4.1-mini): catches non-obvious phrasings
+          //      that keyword lists miss ("water everywhere in the
+          //      basement"). ~1s, ~$0.0005 per call. Skipped when the
+          //      keyword path already triggered (no point paying twice).
+          // Both paths fire-and-forget — the AI advance loop continues in
+          // parallel, so neither path delays the caller's reply. V1 has no
+          // in-conversation dedup; rare in practice.
+          if (operatorRow.personal_phone_e164 && operatorRow.twilio_number_e164) {
+            const operatorPhone = operatorRow.personal_phone_e164;
+            const twilioFrom = operatorRow.twilio_number_e164;
+            const callerLast4 = form.From.slice(-4);
+            const callerFrom = form.From;
+            const businessName = operatorRow.business_name;
+            const operatorId = operatorRow.id;
+            const conversationId = convoFull.id;
+
+            const sendAlert = (reason: string, source: 'keyword' | 'ai'): void => {
+              const alert =
+                `🚨 EMERGENCY CALL — ${businessName}\n` +
+                `Caller •••${callerLast4} reports: ${reason}.\n` +
+                `Call them back: ${callerFrom}\n` +
+                `(BookingBlues AI is also responding to keep them engaged until you do.)`;
+              this.twilio
+                .sendSms({ from: twilioFrom, to: operatorPhone, body: alert })
+                .then((res) => {
+                  if ('skipped' in res) {
+                    this.logger.warn(
+                      { operatorId, conversationId, source, reason, allowlist_skip: res.skipped },
+                      'emergency alert SMS skipped (allowlist)',
+                    );
+                  } else {
+                    this.logger.info(
+                      { operatorId, conversationId, source, reason, alertSid: res.sid },
+                      'emergency alert SMS sent to plumber',
+                    );
+                  }
+                })
+                .catch((err) => {
+                  this.logger.error(
+                    {
+                      err: err instanceof Error ? err.message : String(err),
+                      operatorId,
+                      conversationId,
+                      source,
+                      reason,
+                    },
+                    'emergency alert SMS failed (non-fatal — AI advance continues)',
+                  );
+                });
+            };
+
+            const keywordHit = detectEmergencyKeyword(form.Body);
+            if (keywordHit) {
+              sendAlert(`"${keywordHit}"`, 'keyword');
+            } else {
+              // Fire-and-forget AI classification — don't await.
+              this.emergencyClassifier
+                .classify(form.Body)
+                .then((cls) => {
+                  if (cls?.is_emergency && cls.reason) {
+                    sendAlert(cls.reason, 'ai');
+                  }
+                })
+                .catch((err) => {
+                  this.logger.warn(
+                    {
+                      err: err instanceof Error ? err.message : String(err),
+                      operatorId,
+                      conversationId,
+                    },
+                    'emergency classifier threw unexpectedly (already swallowed inside service)',
+                  );
+                });
+            }
+          }
 
           // Suppress the AI advance loop only when a human currently owns
           // the conversation — i.e. there's an OPEN escalation row. Keying

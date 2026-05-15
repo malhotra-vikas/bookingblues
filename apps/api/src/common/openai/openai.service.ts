@@ -7,6 +7,12 @@ import { AppError } from '../errors/app-error';
 
 export const BOOKING_MODEL = 'gpt-4.1';
 
+// Lightweight classifier for emergency-detection (PROGRESS.md Slice 17).
+// Same tool-calling support but faster + cheaper than BOOKING_MODEL. Used
+// for one-off classification calls where latency directly impacts the
+// plumber's response window.
+export const CLASSIFIER_MODEL = 'gpt-4.1-mini';
+
 @Injectable()
 export class OpenAIService {
   private readonly client: OpenAI | null;

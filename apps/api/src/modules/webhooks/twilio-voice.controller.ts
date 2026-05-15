@@ -109,7 +109,12 @@ export class TwilioVoiceController {
   ): Promise<void> {
     if (!callerPhone || !operator.twilio_number_e164) return;
     const convo = await this.conversations.getOrCreate(operator.id, callerPhone);
-    const opening = `Hi! Thanks for calling ${operator.business_name}. What can we help with today? Reply here and we'll get you on the schedule.`;
+    // A2P 10DLC requires the first message in any conversation to disclose
+    // opt-out + message-rate language (CTIA + carrier guidelines). Twilio
+    // enforces STOP/UNSTOP automatically once a recipient sends those words;
+    // we just need the human-readable disclosure on the first turn.
+    // PROGRESS.md Slice 16(15).
+    const opening = `Hi! Thanks for calling ${operator.business_name}. What can we help with today? Reply here and we'll get you on the schedule. Reply STOP to opt out. Msg & data rates may apply.`;
 
     const send = await this.twilio.sendSms({
       from: operator.twilio_number_e164,

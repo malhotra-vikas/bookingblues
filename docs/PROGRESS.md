@@ -441,26 +441,27 @@ back behind a feature flag once plumbing converts well.
 The work splits cleanly into six themes. Each theme is roughly one slice of
 build, but inside a theme items can ship independently.
 
-### Slice 16 — Plumbing-only collapse (foundation)
+### Slice 16 — Plumbing-only collapse (foundation) — ✅ **shipped 2026-05-14**
 
-The unblocker. Until this ships, every other plumbing item competes with
-generic-trade copy + signup flow.
+The unblocker. Shipped all three sub-items in the plumbing-MVP cut.
 
-- [ ] **(1) Hide non-plumbing categories** — signup, landing, dashboard,
-      onboarding wizard show only "Plumbing". Feature-flag the others (env var
-      `ENABLED_CATEGORIES=plumbing` or DB `categories.enabled`). Don't delete the
-      seed rows or system prompts; just gate visibility.
-- [ ] **(4) Plumbing-specific landing page & signup flow** — hero photo of a
-      plumber on a job. Headline "Plumbers: Never miss another emergency call."
-      Subhead "AI books your jobs by text while you're on the wrench." Single
-      CTA. 3-step how-it-works + plumber imagery, testimonials placeholder,
-      pricing teaser, FAQ tuned to plumber objections ("what if it tries to
-      book a job I can't take?", "what about commercial calls?", "does it work
-      with Jobber?").
-- [ ] **(15) A2P 10DLC opt-in compliance layer** — first AI message ALWAYS
-      includes "Reply STOP to opt out. Msg & data rates may apply." Track
-      opt-outs in DB; honor STOP/UNSTOP via Twilio's built-in handler + our own
-      gate.
+- [x] **(1) Hide non-plumbing categories** — `ENABLED_CATEGORIES` env (api)
+      + `NEXT_PUBLIC_ENABLED_CATEGORIES` (web) feature-flag the 4 non-plumber
+      categories. Wizard filter is client-side; `OperatorsService.update`
+      enforces server-side rejection so a stale frontend can't bypass.
+      DB seeds untouched — flip env to re-enable.
+- [x] **(4) Plumbing-specific landing + FAQ + pricing teaser** — new hero
+      ("Plumbers: never miss another emergency call."), plumber-tuned
+      feature cards (emergency alerts, plumbing-tuned vetting, calendar +
+      deposit), plumber testimonial placeholder, SMS mockup rewritten to a
+      burst-pipe conversation. FAQ rewritten with 8 plumber-objection
+      entries ("what if it tries to book a job I can't take?", "what
+      about commercial calls?", "does it work with Jobber?").
+- [x] **(15) STOP opt-out compliance copy** — opening SMS now ends with
+      `Reply STOP to opt out. Msg & data rates may apply.` (Twilio
+      enforces STOP/UNSTOP automatically — the disclosure is the only
+      code change needed for 10DLC approval.) DB-level opt-out tracking
+      deferred — not blocking 10DLC review.
 
 ### Slice 17 — Smarter scheduling & emergency triage
 
@@ -477,11 +478,17 @@ than "leaky faucet, can wait."
         business hours, push a mobile notification to the plumber.
       - *Urgent*: next available slot within 48 hours.
       - *Scheduled*: normal calendar logic.
-- [ ] **(17) Emergency keyword pre-flag** — "burst pipe", "no water", "sewage
-      backup", "gas smell", "carbon monoxide", "flooding" trigger instant
-      human-takeover route, not standard AI flow. SMS plumber's mobile:
-      `EMERGENCY CALL — [name] reports [issue]. Reply CALL to dial them back
-      in 30 seconds.` AI takes over only if plumber doesn't respond in 60s.
+- [x] **(17) Emergency detection — hybrid keyword + AI** — ✅ **shipped
+      2026-05-14**. Keyword pre-filter (`emergency-detection.ts`) catches
+      obvious phrases in 0 ms / $0. When the keyword path misses, an AI
+      classifier (`emergency-classifier.service.ts`, `gpt-4.1-mini`) runs
+      fire-and-forget against the inbound SMS — strict prompt distinguishes
+      "leaky faucet" (no) from "basement filling up" (yes). On match, an
+      alert SMS goes to the plumber's `personal_phone_e164` with the
+      caller's number + AI-extracted reason. AI advance loop continues in
+      parallel — no 60s timeout / fallback. Cost ~$0.0005 per
+      AI-classified non-emergency call; $0 when the keyword path
+      triggers.
 - [ ] **(19) Repeat caller recognition** — if a number has called before, AI
       greets by name and references previous job: `Hi [name], welcome back.
       Last time we helped you with [job]. What's going on today?`
@@ -492,16 +499,19 @@ The current funnel has a "calendar trap" — plumbers without Google Calendar
 drop at step 4. Activation is the highest-leverage conversion knob.
 
 - [ ] **(7) Onboarding wizard rebuild for plumber-specific friction**:
-      - No Google Calendar? Offer to provision Google Workspace ($6/mo;
+      - [ ] No Google Calendar? Offer to provision Google Workspace ($6/mo;
         BookingBlues covers it on Starter, plumber covers on Pro; 4-min
         guided flow).
-      - Have Google but never use it? Short video walkthrough of adding it
+      - [ ] Have Google but never use it? Short video walkthrough of adding it
         to iPhone.
-      - Carrier-forwarding instructions rebuilt with **screenshots for all
+      - [ ] Carrier-forwarding instructions rebuilt with **screenshots for all
         four major carriers** (Verizon, AT&T, T-Mobile, US Cellular). Test
         each on a real phone.
-      - **"Schedule a setup call with our team"** button at EVERY step. 10
-        minutes of human help triples activation completion.
+      - [x] **"Schedule a setup call with our team"** button at EVERY step
+        — ✅ **shipped 2026-05-14**. Persistent banner above every onboarding
+        step driven by `SETUP_CALL_BOOKING_URL` env (api) +
+        `NEXT_PUBLIC_SETUP_CALL_BOOKING_URL` (web). Hidden when unset.
+        Current target: `cal.com/malhotra-vikas/intro-session-30-minutes`.
 - [ ] **(8) Demo mode toggle** — dashboard button "Demo my product" simulates
       an incoming call to the plumber's Twilio number, runs a fake plumbing
       conversation, books a fake appointment on their calendar marked

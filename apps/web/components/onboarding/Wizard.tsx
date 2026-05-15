@@ -36,13 +36,23 @@ interface TwilioCandidate {
   region: string | null;
 }
 
-const CATEGORIES: Category[] = [
+const ALL_CATEGORIES: Category[] = [
   { slug: 'plumbing', display_name: 'Plumbing' },
   { slug: 'hvac', display_name: 'HVAC' },
   { slug: 'electrical', display_name: 'Electrical' },
   { slug: 'roofing', display_name: 'Roofing' },
   { slug: 'garage_door', display_name: 'Garage Door' },
 ];
+
+// Filter to feature-flagged set. Server-side gate in operators.service.ts is
+// the actual security boundary; this controls what the UI offers.
+const ENABLED_SLUGS = new Set(
+  (publicEnv.NEXT_PUBLIC_ENABLED_CATEGORIES ?? ALL_CATEGORIES.map((c) => c.slug).join(','))
+    .split(',')
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean),
+);
+const CATEGORIES: Category[] = ALL_CATEGORIES.filter((c) => ENABLED_SLUGS.has(c.slug));
 
 /** US E.164 → `(415) 555-1234` for display. Non-US falls through unchanged. */
 function formatE164(e164: string): string {
@@ -329,8 +339,31 @@ export function Wizard({ initial }: { initial: Operator | null }): JSX.Element {
     return () => clearTimeout(t);
   }, [connectBanner, router]);
 
+  // PROGRESS.md Slice 18(7): single highest-conversion activation lever per
+  // the plumber roadmap. Persistent banner above every step, hidden when
+  // SETUP_CALL_BOOKING_URL is unset (e.g. local dev).
+  const setupCallUrl = publicEnv.NEXT_PUBLIC_SETUP_CALL_BOOKING_URL ?? '';
+
   return (
     <div className="space-y-4">
+      {setupCallUrl ? (
+        <div className="rounded-md border border-emerald-200 bg-emerald-50 dark:border-emerald-900 dark:bg-emerald-950/40 p-3 flex items-center justify-between gap-3">
+          <div className="text-sm text-emerald-900 dark:text-emerald-200">
+            <p className="font-medium">Stuck on any step? We&apos;ll set this up with you live.</p>
+            <p className="text-xs mt-0.5 opacity-90">
+              10 minutes on Zoom and you&apos;re booking jobs by tonight.
+            </p>
+          </div>
+          <a
+            href={setupCallUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="shrink-0 rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white no-underline hover:bg-emerald-700"
+          >
+            Schedule a setup call
+          </a>
+        </div>
+      ) : null}
       {connectBanner ? (
         <div className="rounded-md border border-blue-200 bg-blue-50 dark:border-blue-900 dark:bg-blue-950/40 p-3 text-sm text-blue-800 dark:text-blue-300">
           {connectBanner}

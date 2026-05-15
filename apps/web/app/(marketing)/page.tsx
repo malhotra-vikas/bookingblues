@@ -9,20 +9,20 @@ export default function HomePage(): JSX.Element {
         <div className="max-w-5xl mx-auto px-6 py-16 sm:py-20 grid lg:grid-cols-2 gap-12 items-center">
           <div>
             <p className="inline-block text-[11px] font-semibold tracking-[0.18em] uppercase text-accent bg-blue-50 border border-blue-100 rounded-full px-3 py-1 mb-5">
-              AI lead recovery for the trades
+              AI lead recovery — built for plumbers
             </p>
             <h1 className="text-4xl sm:text-5xl font-semibold leading-[1.1] text-ink tracking-tight mb-5">
-              The first to answer wins the job.
+              Plumbers: never miss another
               <br />
-              <span className="text-red-600">Stop letting voicemail win.</span>
+              <span className="text-red-600">emergency call.</span>
             </h1>
             <p className="text-lg text-muted leading-relaxed mb-7 max-w-md">
-              Our AI texts back missed calls in under 10 seconds — qualifies the lead, books the
-              appointment, and collects a deposit. Before your competitor even picks up.
+              AI books your jobs by text while you&apos;re on the wrench. Burst pipe at 11pm? Caller
+              gets a text in 10 seconds, you get an SMS alert, and the appointment lands on your
+              calendar before they call the next plumber.
             </p>
             <div className="flex flex-wrap gap-3 mb-3">
-              <CtaPrimary href="/signup">Start my free 7-day trial</CtaPrimary>
-              <CtaSecondary href="/pricing">See pricing</CtaSecondary>
+              <CtaPrimary href="/signup">Start free 7-day trial</CtaPrimary>
             </div>
             <p className="text-xs text-slate-500">
               Card on file to start · Cancel before day 7 and you won&apos;t be charged
@@ -43,23 +43,23 @@ export default function HomePage(): JSX.Element {
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-8">
             <FeatureCard
               title="Instant text-back"
-              body="Responds in <10 seconds. Customers feel heard before they dial the next number."
+              body="Responds in <10 seconds. Homeowner feels heard before they dial the next plumber in the search results."
               icon={<IconBolt />}
             />
             <FeatureCard
-              title="Lead qualification"
-              body="AI scopes the job, urgency, and priority — so you show up to the right calls first."
+              title="Plumbing-tuned vetting"
+              body="Asks the right questions: leak vs install, sparks/burning smell, owner vs tenant, ZIP. So you show up to the right jobs first."
               icon={<IconClipboard />}
             />
             <FeatureCard
-              title="Real-time booking"
-              body="Syncs live with Google Calendar today. Jobber, ServiceTitan, and Housecall Pro coming soon."
-              icon={<IconCalendar />}
+              title="Emergency alerts"
+              body="Burst pipe, gas smell, sewage backup — you get an SMS the moment those words come through. Call them back in 30 seconds, win the job."
+              icon={<IconBolt />}
             />
             <FeatureCard
-              title="Deposit collection"
-              body="Locks in the appointment via Stripe (Clover coming soon). Eliminates no-shows before you drive out."
-              icon={<IconCard />}
+              title="Calendar + deposit"
+              body="Books a 90-min slot on your Google Calendar. Optional non-refundable deposit via Stripe — kills no-shows before you drive out."
+              icon={<IconCalendar />}
             />
           </div>
         </div>
@@ -93,10 +93,11 @@ export default function HomePage(): JSX.Element {
             </div>
             <blockquote className="bg-white border-l-4 border-accent rounded-r-md py-5 px-5 self-start shadow-sm">
               <p className="text-base italic text-ink leading-relaxed mb-2">
-                &ldquo;It&apos;s like having a world-class receptionist who never sleeps, never
-                takes a lunch break, and pays for herself in the first week.&rdquo;
+                &ldquo;I used to come home to ten missed calls and lose half of them to whoever
+                answered first. BookingBlues books while I&apos;m under a sink. Paid for itself in
+                week one.&rdquo;
               </p>
-              <p className="text-xs text-muted">— Beta user, HVAC contractor</p>
+              <p className="text-xs text-muted">— Beta user, residential plumber (testimonial placeholder)</p>
             </blockquote>
           </div>
         </div>
@@ -111,18 +112,18 @@ export default function HomePage(): JSX.Element {
           <ol className="grid md:grid-cols-3 gap-6 mt-8 relative">
             <Step
               n={1}
-              title="Connect your calendar"
-              body="Google Calendar today — sync in minutes. CRM connectors (Jobber, ServiceTitan, Housecall Pro) coming soon."
+              title="Forward your missed calls"
+              body="Set up carrier conditional forwarding on your cell — takes 60 seconds, we show you exactly how. Google Calendar syncs in minutes; Jobber and Housecall Pro coming soon."
             />
             <Step
               n={2}
               title="Miss a call — AI steps in"
-              body="The bot engages your customer, qualifies the need, and books the job while you’re on the tools."
+              body="Caller gets a text in under 10 seconds. The bot asks the right plumber questions, books a 90-minute slot, and (optionally) collects a deposit."
             />
             <Step
               n={3}
               title="Show up to a booked job"
-              body="You get a summary email. The customer’s confirmed and deposited. You get to work."
+              body="Job summary email with the caller&apos;s description, likely parts, and quoted price range. You load the truck before driving."
             />
           </ol>
 
@@ -139,19 +140,17 @@ export default function HomePage(): JSX.Element {
       <section className="bg-gradient-to-b from-white to-slate-50">
         <div className="max-w-3xl mx-auto px-6 py-20 text-center">
           <h2 className="text-3xl sm:text-4xl font-semibold text-ink tracking-tight mb-4">
-            Ready to stop donating jobs to voicemail?
+            Stop donating jobs to voicemail.
           </h2>
           <p className="text-lg text-muted mb-8">
-            Try it free for 7 days. Cancel before the trial ends and you won&apos;t be charged a
-            dime.
+            Try it free for 7 days. Cancel before the trial ends and you won&apos;t be charged.
           </p>
           <div className="flex flex-wrap justify-center gap-3 mb-3">
-            <CtaPrimary href="/signup">Claim my free week</CtaPrimary>
-            <CtaSecondary href="/pricing">See pricing</CtaSecondary>
+            <CtaPrimary href="/signup">Start free 7-day trial</CtaPrimary>
           </div>
           <p className="text-xs text-slate-500">
-            Card on file to start · Works with Google Calendar today; Jobber, ServiceTitan, and
-            Housecall Pro coming soon
+            Card on file to start · Works with Google Calendar today; Jobber and Housecall Pro
+            coming soon
           </p>
         </div>
       </section>
@@ -253,35 +252,37 @@ function SmsMockup(): JSX.Element {
         <div className="flex items-center justify-between pb-3 border-b border-slate-100">
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 rounded-full bg-accent/10 text-accent text-xs font-semibold flex items-center justify-center">
-              ZE
+              SP
             </div>
             <div>
-              <p className="text-[13px] font-medium text-ink leading-none">Zeus Electrical</p>
+              <p className="text-[13px] font-medium text-ink leading-none">Sanders Plumbing</p>
               <p className="text-[11px] text-muted mt-0.5">+1 (415) 555-9387</p>
             </div>
           </div>
           <span className="text-[11px] text-emerald-600 font-medium">● Live</span>
         </div>
 
-        <Bubble side="left" time="2:14 PM">
-          Hi! Saw you tried to reach Zeus Electrical — they&apos;re on a service call. I can help
-          schedule you. What&apos;s going on?
+        <Bubble side="left" time="11:02 PM">
+          Hi! Saw you tried Sanders Plumbing — they&apos;re on another emergency. I can get you on
+          their schedule. What&apos;s going on? (Reply STOP to opt out.)
         </Bubble>
-        <Bubble side="right" time="2:14 PM">
-          Breaker keeps tripping in my garage. Need someone today if possible.
+        <Bubble side="right" time="11:02 PM">
+          Pipe burst under my kitchen sink. Water everywhere.
         </Bubble>
-        <Bubble side="left" time="2:15 PM">
-          Got it — sounds urgent. They&apos;re free Tue 9–11 AM or today 4–6 PM. Which works?
+        <Bubble side="left" time="11:02 PM">
+          Got it — that&apos;s an emergency. Have you shut off the main water valve? I&apos;m
+          flagging Mike right now.
         </Bubble>
-        <Bubble side="right" time="2:15 PM">
-          Today 4 PM please.
+        <Bubble side="right" time="11:03 PM">
+          Yes, water&apos;s off. How fast can he get here?
         </Bubble>
-        <Bubble side="left" time="2:15 PM" success>
-          Booked ✅ Tue 4 PM with Zeus Electrical. $50 deposit secured. See you soon!
+        <Bubble side="left" time="11:03 PM" success>
+          Mike will be there 11:45 PM tonight. $75 emergency callout secured. He&apos;ll bring
+          standard repair parts.
         </Bubble>
       </div>
       <div className="absolute -bottom-3 right-6 bg-emerald-600 text-white text-xs font-medium px-3 py-1 rounded-full shadow">
-        Booked in 90 seconds
+        Emergency booked in 60 seconds
       </div>
     </div>
   );
