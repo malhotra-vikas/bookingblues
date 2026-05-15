@@ -30,19 +30,21 @@ export default function AuthLayout({ children }: { children: ReactNode }): JSX.E
           {/* Brand pitch — desktop only */}
           <aside className="hidden lg:block">
             <p className="text-xs font-semibold tracking-[0.18em] uppercase text-accent dark:text-blue-400 mb-4">
-              AI lead recovery for the trades
+              AI lead recovery — built for plumbers
             </p>
             <h2 className="text-3xl font-semibold leading-tight text-ink dark:text-slate-100 tracking-tight mb-4">
-              The first to answer wins the job.
+              Never miss another emergency call.
             </h2>
             <p className="text-base text-muted dark:text-slate-400 leading-relaxed max-w-md">
-              When a customer hits your voicemail, BookingBlues texts them right back, vets the
-              job, and books it on your calendar — all while you&apos;re on the other line.
+              AI books your jobs by text while you&apos;re on the wrench. Burst pipe at 11pm? The
+              caller gets a text in 10 seconds, you get an SMS alert, and the appointment lands on
+              your calendar before they call the next plumber.
             </p>
             <ul className="mt-6 space-y-2 text-sm text-muted dark:text-slate-400">
               <Bullet>Responds in under 10 seconds, 24/7</Bullet>
-              <Bullet>Syncs with Google Calendar today</Bullet>
-              <Bullet>Optional booking deposit via Stripe</Bullet>
+              <Bullet>Plumbing-tuned vetting (leak vs install, sparks, owner vs tenant)</Bullet>
+              <Bullet>Emergency-keyword detection alerts you instantly</Bullet>
+              <Bullet>Syncs with Google Calendar today — Jobber + HCP coming soon</Bullet>
               <Bullet>Free for 7 days · cancel anytime</Bullet>
             </ul>
           </aside>
