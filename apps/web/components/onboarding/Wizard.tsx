@@ -46,13 +46,42 @@ const ALL_CATEGORIES: Category[] = [
 
 // Filter to feature-flagged set. Server-side gate in operators.service.ts is
 // the actual security boundary; this controls what the UI offers.
+//
+// DEBUG (2026-05-15): Turbopack production-build inlining is misbehaving for
+// these two NEXT_PUBLIC_ vars. We're reading both the publicEnv path AND
+// process.env directly to see which (if either) actually has the runtime
+// value. Remove logging once the inlining mystery is solved.
+const RAW_ENABLED_VIA_PROCESS = process.env.NEXT_PUBLIC_ENABLED_CATEGORIES;
+const RAW_ENABLED_VIA_PUBLIC_ENV = publicEnv.NEXT_PUBLIC_ENABLED_CATEGORIES;
+const RAW_SETUP_URL_VIA_PROCESS = process.env.NEXT_PUBLIC_SETUP_CALL_BOOKING_URL;
+const RAW_SETUP_URL_VIA_PUBLIC_ENV = publicEnv.NEXT_PUBLIC_SETUP_CALL_BOOKING_URL;
+
+// Prefer the direct process.env read if it has a value; fall back to publicEnv.
+const EFFECTIVE_ENABLED_CATEGORIES =
+  RAW_ENABLED_VIA_PROCESS || RAW_ENABLED_VIA_PUBLIC_ENV || ALL_CATEGORIES.map((c) => c.slug).join(',');
+
 const ENABLED_SLUGS = new Set(
-  (publicEnv.NEXT_PUBLIC_ENABLED_CATEGORIES ?? ALL_CATEGORIES.map((c) => c.slug).join(','))
+  EFFECTIVE_ENABLED_CATEGORIES
     .split(',')
     .map((s) => s.trim().toLowerCase())
     .filter(Boolean),
 );
 const CATEGORIES: Category[] = ALL_CATEGORIES.filter((c) => ENABLED_SLUGS.has(c.slug));
+
+if (typeof window !== 'undefined') {
+  // Browser-side debug. Open the console on /onboarding to see the values.
+  // eslint-disable-next-line no-console
+  console.log('[BB env debug]', {
+    RAW_ENABLED_VIA_PROCESS,
+    RAW_ENABLED_VIA_PUBLIC_ENV,
+    RAW_SETUP_URL_VIA_PROCESS,
+    RAW_SETUP_URL_VIA_PUBLIC_ENV,
+    EFFECTIVE_ENABLED_CATEGORIES,
+    ENABLED_SLUGS: [...ENABLED_SLUGS],
+    CATEGORIES,
+    process_env_NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL,
+  });
+}
 
 /** US E.164 → `(415) 555-1234` for display. Non-US falls through unchanged. */
 function formatE164(e164: string): string {
@@ -341,8 +370,10 @@ export function Wizard({ initial }: { initial: Operator | null }): JSX.Element {
 
   // PROGRESS.md Slice 18(7): single highest-conversion activation lever per
   // the plumber roadmap. Persistent banner above every step, hidden when
-  // SETUP_CALL_BOOKING_URL is unset (e.g. local dev).
-  const setupCallUrl = publicEnv.NEXT_PUBLIC_SETUP_CALL_BOOKING_URL ?? '';
+  // SETUP_CALL_BOOKING_URL is unset (e.g. local dev). Same Turbopack
+  // workaround as the category gate — prefer direct process.env read.
+  const setupCallUrl =
+    RAW_SETUP_URL_VIA_PROCESS || RAW_SETUP_URL_VIA_PUBLIC_ENV || '';
 
   return (
     <div className="space-y-4">
