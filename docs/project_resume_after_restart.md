@@ -6,194 +6,121 @@ Quick-start brief for the next session. Read this first, then `docs/PROGRESS.md`
 
 ---
 
-## Resume brief — 2026-05-15 (start-of-day after 2026-05-14 session)
+## Resume brief — 2026-05-16 (start-of-day after 2026-05-15 session)
 
-**Status: Plumbing-MVP cut is code-complete locally.** Today landed all of
-Slice 16, the upgraded Slice 17(17), the cheap part of Slice 18(7), and task
-#45 (lowercase emails). Code is uncommitted in working tree — user planned
-to commit + push.
+**Plumbing-MVP cut is LIVE in production** and the first two smoke tests pass.
 
-### What shipped today (in working tree, not yet pushed unless user committed)
+### What was verified working today (2026-05-15) in prod
 
-| Slice | Item | Status |
-|---|---|---|
-| 16 | (1) Feature-flag non-plumbing categories | ✅ |
-| 16 | (4) Plumber-specific landing + FAQ | ✅ |
-| 16 | (15) STOP opt-out compliance copy | ✅ |
-| 17 | (17) Emergency detection — keyword + AI hybrid (`gpt-4.1-mini`) | ✅ |
-| 18 | (7) Schedule-setup-call banner on every onboarding step | ✅ (partial — Google Workspace, carrier screenshots, iPhone video still open) |
-| #45 | Lowercase emails at signup + migration | ✅ |
+- ✅ Trade dropdown on `/onboarding` shows **only Plumbing** (no HVAC,
+  Electrical, Roofing, Garage Door)
+- ✅ Green "Schedule a setup call with our team" banner appears above
+  every onboarding step, linking to
+  `cal.com/malhotra-vikas/intro-session-30-minutes`
 
-### Files changed (10 modified + 3 new)
+Got there via an unexpected detour: **Next.js 16's Turbopack production
+build does not inline custom `NEXT_PUBLIC_*` env vars** at call sites,
+even with the `env: {…}` escape hatch in `next.config.mjs`. This caused
+a hydration mismatch (React error #418) where the server rendered the
+correct values from Node's `process.env` but the client bundle had
+`undefined` for these vars, so React discarded the SSR tree and
+re-rendered with the fallback (all 5 categories). Fix: read env in the
+`/onboarding` **Server Component** and pass values to the `<Wizard>`
+client component as props. Documented in `docs/PROGRESS.md` Slice
+16(1). The `env: {…}` block in `next.config.mjs` is now redundant but
+harmless; leaving it.
 
-API:
-- `apps/api/src/config/env.ts` — `ENABLED_CATEGORIES` + `SETUP_CALL_BOOKING_URL` + parsed `ENABLED_CATEGORY_SET` on `Env`
-- `apps/api/src/common/openai/openai.service.ts` — added `CLASSIFIER_MODEL = 'gpt-4.1-mini'`
-- `apps/api/src/modules/operators/operators.service.ts` — server-side category gate
-- `apps/api/src/modules/webhooks/twilio-voice.controller.ts` — STOP copy in opening SMS
-- `apps/api/src/modules/webhooks/twilio-sms.controller.ts` — keyword + AI emergency alert wiring
-- `apps/api/src/modules/conversations/conversations.module.ts` — imports OpenAIModule, exports classifier
-- `apps/api/src/modules/conversations/emergency-detection.ts` (new) — keyword matcher
-- `apps/api/src/modules/conversations/emergency-classifier.service.ts` (new) — AI classifier
+### Still UNVERIFIED in prod from yesterday's smoke checklist
 
-Web:
-- `apps/web/lib/env.ts` — `NEXT_PUBLIC_ENABLED_CATEGORIES` + `NEXT_PUBLIC_SETUP_CALL_BOOKING_URL`
-- `apps/web/components/onboarding/Wizard.tsx` — category filter + persistent setup-call banner
-- `apps/web/components/AuthForm.tsx` — `.trim().toLowerCase()` on email at signup + signin
-- `apps/web/app/(marketing)/page.tsx` — plumber-specific hero, copy, SMS mockup, single CTA
-- `apps/web/app/(marketing)/faq/page.tsx` — 8 plumber-objection entries
+All shipped, deployed, and code-correct — just not yet end-to-end tested
+on the live system. Walk through these next session:
 
-DB:
-- `supabase/migrations/20260514000001_lowercase_auth_emails.sql` (new) — backfill with collision-skip safety
+- [ ] **STOP opt-out copy (Slice 16(15))** — call your Twilio number,
+  hang up, wait for first SMS. Must end with
+  `Reply STOP to opt out. Msg & data rates may apply.`
+- [ ] **Emergency keyword path (Slice 17(17))** — text "burst pipe in
+  my kitchen" → personal phone gets alert within ~1s with the raw
+  keyword.
+- [ ] **Emergency AI path (Slice 17(17))** — text "water is everywhere
+  in the basement, can't shut it off" (no keyword) → alert within ~2s
+  with an AI-extracted reason.
+- [ ] **Emergency negative case** — text "what time can you come
+  Tuesday?" → NO alert, AI advance replies normally.
+- [ ] **Lowercase emails (task #45)** — try logging in with
+  `MALHOTRA.VIKAS@gmail.com` (mixed case) → should succeed against the
+  lowercase row in `auth.users` from yesterday's backfill.
 
-Misc:
-- `.env.example` — documents new vars + `SETUP_CALL_BOOKING_URL` set to `cal.com/malhotra-vikas/intro-session-30-minutes`
+### Feature work to continue next session
 
-### Deploy steps before testing
+Pick up where the plumbing pivot left off. Order suggestion:
 
-1. **Push the commit to GitHub** so Railway auto-deploys both api + web services.
+**Slice 17 remaining items** (from `docs/PROGRESS.md`):
+- (2) Drive-time aware booking + 90-min default slots — needs Google
+  Distance Matrix API key + integration. Mid-size piece of work.
+- (3) Emergency / urgent / scheduled triage classification — overlaps
+  with the AI emergency classifier we already shipped. Could be done
+  as a second classifier call or merged into the existing prompt.
+- (19) Repeat caller recognition — load prior conversation summary
+  into the system prompt when same number calls back.
 
-2. **Paste this SQL into Supabase SQL Editor** (lowercase email backfill):
+**Slice 18 remaining items**:
+- (7 rest) Google Workspace provisioning offer, iPhone walkthrough
+  video, per-carrier (Verizon/AT&T/T-Mobile/US Cellular) forwarding
+  screenshots (need real device photos).
+- (8) Demo mode toggle on dashboard.
+- (14) Plumber mobile dashboard PWA.
 
-   ```sql
-   do $$
-   declare
-     conflict_count int;
-   begin
-     select count(*) into conflict_count
-     from auth.users u1
-     where u1.email is not null
-       and u1.email <> lower(u1.email)
-       and exists (
-         select 1 from auth.users u2
-         where u2.id <> u1.id and u2.email = lower(u1.email)
-       );
-     if conflict_count > 0 then
-       raise notice 'Lowercase email collisions on % rows — review manually.', conflict_count;
-     end if;
-   end$$;
+**Slices 19–22** — business intelligence, caller polish, Jobber/HCP,
+network effects + AI rebuild — all still open.
 
-   update auth.users
-   set email = lower(email)
-   where email is not null
-     and email <> lower(email)
-     and not exists (
-       select 1 from auth.users u2
-       where u2.id <> auth.users.id
-         and u2.email = lower(auth.users.email)
-     );
-   ```
+### Critical-path carry-overs (non-engineering)
 
-3. **Add 4 new env vars on Railway** (2 per service):
+These continue to be blocking for "first paying plumber" but aren't
+code work:
 
-   **API service:**
-   ```
-   ENABLED_CATEGORIES=plumbing
-   SETUP_CALL_BOOKING_URL=https://cal.com/malhotra-vikas/intro-session-30-minutes
-   ```
-
-   **Web service:**
-   ```
-   NEXT_PUBLIC_ENABLED_CATEGORIES=plumbing
-   NEXT_PUBLIC_SETUP_CALL_BOOKING_URL=https://cal.com/malhotra-vikas/intro-session-30-minutes
-   ```
-
-   ⚠️ `ENABLED_CATEGORIES` and `NEXT_PUBLIC_ENABLED_CATEGORIES` must MATCH on
-   the two services. If they drift the wizard shows categories the API
-   will reject.
-
-### Smoke checklist after deploy
-
-Run these in order. Each one validates a specific slice that shipped today.
-
-- [ ] **Landing page (Slice 16(4))** — visit prod web URL. Hero must read
-      "Plumbers: never miss another emergency call." If still see the old
-      "first to answer wins the job", the web deploy hasn't picked up.
-- [ ] **Plumbing-only signup (Slice 16(1))** — fresh test signup. The
-      onboarding wizard's "Pick your trade" dropdown should show **only
-      Plumbing**, not 5 trades. Also: server-side direct PATCH attempt
-      with `category: "hvac"` should return 400 with
-      `Category "hvac" is not currently enabled. Available: plumbing.`
-- [ ] **Setup-call banner (Slice 18(7))** — open the wizard logged in.
-      Green banner at the top with "Schedule a setup call" button →
-      should open `cal.com/malhotra-vikas/intro-session-30-minutes` in a
-      new tab. Banner persists across every step.
-- [ ] **STOP opt-out copy (Slice 16(15))** — call your Twilio number, hang
-      up, wait for the first SMS. Must end with `Reply STOP to opt out.
-      Msg & data rates may apply.`
-- [ ] **Emergency detection — keyword path (Slice 17(17))** — text "burst
-      pipe in my kitchen" to your Twilio number from your test phone.
-      Within ~1s your `personal_phone_e164` should receive an alert SMS
-      `🚨 EMERGENCY CALL — <business>. Caller •••NNNN reports "burst
-      pipe". Call them back: +1NNN…`
-- [ ] **Emergency detection — AI path (Slice 17(17))** — text "water is
-      everywhere in the basement, can't shut it off" (no keyword match).
-      Within ~2s your `personal_phone_e164` should get a similar alert
-      but with an AI-extracted reason like
-      `Caller •••NNNN reports: basement flooding, water won't shut off.`
-- [ ] **Emergency detection — negative case** — text "what time can you
-      come Tuesday?" — should NOT trigger an alert. AI advance reply
-      should still happen normally.
-- [ ] **Lowercase emails (task #45)** — try logging in with email typed in
-      different case (e.g. `MALHOTRA.VIKAS@gmail.com`). Should succeed.
-
-### Tuning knobs (no rebuild needed)
-
-- Emergency-detection sensitivity lives in the system prompt of
-  `apps/api/src/modules/conversations/emergency-classifier.service.ts`.
-  If you're getting false positives, tighten the prompt further. If
-  missing real emergencies, soften.
-- Keyword list is in `apps/api/src/modules/conversations/emergency-detection.ts`
-  — add domain-specific terms as you hear them on real calls.
-
-### Critical-path carry-overs (NOT shipped — open work)
-
-In priority order for first paying plumber:
-
-1. **A2P 10DLC brand + campaign registration with Twilio** — 1–3 week
-   external clock. File at: Twilio Console → Messaging → Regulatory
-   Compliance → A2P 10DLC. Need brand info, sample messages, opt-in
-   evidence narrative ("caller-initiated forwarding flow + STOP copy"
-   in opening SMS).
-2. **Resend domain verification** — current sender `onboarding@resend.dev`
-   only delivers to `malhotra.vikas@gmail.com` (Resend test-sender
-   restriction). Verify a domain you own (DKIM/SPF/DMARC) and switch
-   `EMAIL_FROM`.
-3. **Stripe Connect platform setup** — user-side blocker. `accounts.create`
+1. **A2P 10DLC brand + campaign registration with Twilio** — long-pole
+   external clock (1–3 week review). File at: Twilio Console →
+   Messaging → Regulatory Compliance → A2P 10DLC. Brand info, sample
+   messages, opt-in evidence narrative needed.
+2. **Resend domain verification** — current sender is
+   `onboarding@resend.dev` (test sender, only delivers to
+   `malhotra.vikas@gmail.com`). Verify a domain we own with DKIM/SPF/
+   DMARC and switch `EMAIL_FROM`.
+3. **Stripe Connect platform setup** — user-side blocker (`accounts.create`
    returns "You can only create new accounts if you've signed up for
-   Connect." NOT a launch blocker — plumbers can pay $49/mo without
+   Connect"). NOT a launch blocker — plumbers can pay $49/mo without
    ever using booking fees. Defer until first 1–2 plumbers signed up.
-4. **Slack token rotation** — bot token + signing secret were pasted in
-   chat during earlier debugging. Rotate.
-5. **Daily-summary cron wiring** — once Resend is verified, configure
-   Railway cron (or external scheduler) to POST
-   `/v1/internal/daily-summaries/run` daily with `X-Cron-Secret`.
+4. **Slack token rotation** — bot token + signing secret were pasted
+   in chat during earlier debugging. Rotate.
 
-### Still-open items inside today's slices (deferred from scope)
+### Cleanup tasks (low priority)
 
-These are tracked in PROGRESS.md Slices 17–22:
+- [ ] Remove the now-redundant `env: { … }` block in
+  `apps/web/next.config.mjs`. It was added when we thought it would
+  fix the Turbopack inlining; we ended up going the Server-Component
+  route. Harmless to keep, but unused.
+- [ ] If we ever migrate other UI surfaces (e.g. dashboard, settings)
+  to need feature-flagged env vars, use the same Server-Component-prop
+  pattern, NOT direct `process.env.NEXT_PUBLIC_*` reads in client
+  components. The bug is global to Turbopack's handling of those vars.
 
-- **17(2)** Drive-time aware booking + 90-min default slots (needs Google
-  Distance Matrix API key + integration)
-- **17(3)** Emergency / urgent / scheduled triage classification (overlaps
-  with 17(17); revisit after live-call data shows what's needed)
-- **17(19)** Repeat caller recognition (load prior conversation history into
-  the system prompt)
-- **18(7)** remainder — Google Workspace provisioning, iPhone walkthrough
-  video, per-carrier screenshots (Verizon, AT&T, T-Mobile, US Cellular —
-  need real device photos)
-- **18(8)** Demo mode toggle
-- **18(14)** Plumber mobile dashboard PWA
-- Slices 19–22 (business intelligence · caller polish · Jobber/HCP · network
-  effects + AI rebuild) — all still open
+### Latest commits (origin/main)
+
+```
+2c6a545 Server Component side adding of envs  ← the Turbopack fix
+f7d81b8 Debugging envs noty getting loaded
+4476bb7 Force NEXT_PUBLIC_* inlining via next.config env block (Turbopack workaround)
+8d18c15 Trigger web rebuild for env var pickup
+20ddfec Force rebuild for env var pickup
+ca34dfc Updazted layouts
+e6c2bb8 Plumbing-MVP cut: Slice 16, 17(17 AI hybrid), 18(7 banner), task #45
+```
 
 ### Reference
 
-- Source of truth for what's built / pending: `docs/PROGRESS.md`
-  (search for `Slice 16`, `Slice 17`, `Slice 18` to see shipped/pending
-  breakdown).
+- Full slice/todo breakdown: `docs/PROGRESS.md` (Slices 16–22).
 - Architecture + non-negotiables: `CLAUDE.md`.
-- Slack setup: `docs/SLACK_SETUP.md`.
-- Last 30–35 day critical-path doc (target: first paying plumber): see
-  resume brief from 2026-05-14 session, scroll back in chat for the
-  day-by-day Day 0 → Day 35 timeline.
+- Critical-path day-by-day timeline to first paying plumber: search
+  prior chat transcripts for "First Paying Plumber" section from
+  2026-05-14. Roughly 30–35 days from today; A2P 10DLC clock is the
+  binding constraint.

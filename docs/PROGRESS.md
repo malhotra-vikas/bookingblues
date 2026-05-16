@@ -441,15 +441,36 @@ back behind a feature flag once plumbing converts well.
 The work splits cleanly into six themes. Each theme is roughly one slice of
 build, but inside a theme items can ship independently.
 
-### Slice 16 — Plumbing-only collapse (foundation) — ✅ **shipped 2026-05-14**
+### Slice 16 — Plumbing-only collapse (foundation) — ✅ **shipped 2026-05-14, verified in prod 2026-05-15**
 
-The unblocker. Shipped all three sub-items in the plumbing-MVP cut.
+The unblocker. Shipped all three sub-items in the plumbing-MVP cut. Deployed
+and verified in prod on 2026-05-15. Required a Turbopack-bug workaround late
+in the day — see below.
 
 - [x] **(1) Hide non-plumbing categories** — `ENABLED_CATEGORIES` env (api)
       + `NEXT_PUBLIC_ENABLED_CATEGORIES` (web) feature-flag the 4 non-plumber
-      categories. Wizard filter is client-side; `OperatorsService.update`
-      enforces server-side rejection so a stale frontend can't bypass.
-      DB seeds untouched — flip env to re-enable.
+      categories. Server-side gate in `OperatorsService.update` enforces
+      rejection so a stale frontend can't bypass. DB seeds untouched — flip
+      env to re-enable.
+      
+      **Turbopack workaround (2026-05-15)**: Next.js 16's Turbopack
+      production build does NOT inline custom `NEXT_PUBLIC_*` env vars at
+      call sites (confirmed empirically — known-good vars like
+      `NEXT_PUBLIC_SUPABASE_URL` inline because they're referenced in
+      `middleware.ts`; new vars only used through the `publicEnv` zod
+      schema in `lib/env.ts` do not). The `env: { ... }` block in
+      `next.config.mjs` also did not force inlining. Caused a hydration
+      mismatch (React error #418): server had the real env from Node, the
+      client bundle had `undefined`, trees diverged, React discarded the
+      SSR tree and re-rendered with the fallback (all 5 categories).
+      
+      **Fix**: read the env in the `/onboarding` Server Component, pass
+      values to the `<Wizard>` client component as props. Server-side
+      reads always work; props serialize into the rendered HTML so the
+      client receives identical values during hydration. See
+      `apps/web/app/(dashboard)/onboarding/page.tsx`. `export const
+      dynamic = 'force-dynamic'` keeps the route from being statically
+      pre-rendered (which would freeze env at build time).
 - [x] **(4) Plumbing-specific landing + FAQ + pricing teaser** — new hero
       ("Plumbers: never miss another emergency call."), plumber-tuned
       feature cards (emergency alerts, plumbing-tuned vetting, calendar +
@@ -508,10 +529,12 @@ drop at step 4. Activation is the highest-leverage conversion knob.
         four major carriers** (Verizon, AT&T, T-Mobile, US Cellular). Test
         each on a real phone.
       - [x] **"Schedule a setup call with our team"** button at EVERY step
-        — ✅ **shipped 2026-05-14**. Persistent banner above every onboarding
-        step driven by `SETUP_CALL_BOOKING_URL` env (api) +
-        `NEXT_PUBLIC_SETUP_CALL_BOOKING_URL` (web). Hidden when unset.
-        Current target: `cal.com/malhotra-vikas/intro-session-30-minutes`.
+        — ✅ **shipped 2026-05-14, verified in prod 2026-05-15**. Persistent
+        banner above every onboarding step. URL passed to `<Wizard>` as a
+        prop from the `/onboarding` Server Component (same Turbopack
+        workaround as 16(1)). Current target:
+        `cal.com/malhotra-vikas/intro-session-30-minutes`. Hidden when
+        unset.
 - [ ] **(8) Demo mode toggle** — dashboard button "Demo my product" simulates
       an incoming call to the plumber's Twilio number, runs a fake plumbing
       conversation, books a fake appointment on their calendar marked
