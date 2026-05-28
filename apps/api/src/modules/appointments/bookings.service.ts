@@ -309,7 +309,7 @@ export class BookingsService {
     const lines = [
       'BEGIN:VCALENDAR',
       'VERSION:2.0',
-      'PRODID:-//BookingBlues//EN',
+      'PRODID:-//KeeprSteady//EN',
       'CALSCALE:GREGORIAN',
       'METHOD:PUBLISH',
       'BEGIN:VEVENT',

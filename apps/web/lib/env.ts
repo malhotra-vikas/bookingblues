@@ -9,9 +9,9 @@ const PublicEnv = z.object({
   // Browser bundle only; the actual take is computed server-side by pricing.ts.
   NEXT_PUBLIC_PLATFORM_TAKE_RATE_BPS: z.coerce.number().int().min(0).max(10_000).default(1000),
   NEXT_PUBLIC_DEFAULT_BOOKING_FEE_CENTS: z.coerce.number().int().min(0).default(2500),
-  // Mirror of api ENABLED_CATEGORIES (PROGRESS.md Slice 16). Comma-separated
-  // slugs the onboarding wizard + landing should expose. Unset = all 5
-  // legacy trades. Plumbing-only MVP: `plumbing`. Browser bundle only —
+  // Mirror of api ENABLED_CATEGORIES. Comma-separated slugs the onboarding
+  // wizard + landing should expose. Unset = all 5 home-services trades
+  // (plumbing, hvac, electrical, roofing, garage_door). Browser bundle only —
   // server-side enforcement lives in operators.service.ts.
   NEXT_PUBLIC_ENABLED_CATEGORIES: z.string().optional(),
   // Public Calendly (or similar) URL for the persistent "Schedule a setup

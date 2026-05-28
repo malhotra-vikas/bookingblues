@@ -112,12 +112,12 @@ const baseSchema = z.object({
   SLACK_CHANNEL_LEADS_ID: z.string().optional(),     // #bb-leads — new-signup notifications
   SLACK_SIGNING_SECRET: z.string().optional(),
 
-  // Plumbing-vertical pivot (PROGRESS.md Slice 16). Comma-separated category
-  // slugs allowed to be picked at signup / shown in UI. Unset = all 5 seed
-  // trades enabled (legacy). For the plumbing-only MVP launch:
-  // `ENABLED_CATEGORIES=plumbing`. No DB change — flip env to bring trades
-  // back. Operators already on disabled categories are NOT migrated;
-  // they keep their existing category and prompt.
+  // Comma-separated category slugs allowed to be picked at signup / shown in
+  // UI. Unset = all 5 seeded home-services trades enabled (plumbing, hvac,
+  // electrical, roofing, garage_door) — the default for the multi-trade
+  // product. Set explicitly only to constrain a launch to a subset; no DB
+  // change needed either way. Operators already on a now-disabled category
+  // are NOT migrated — they keep their existing category and prompt.
   ENABLED_CATEGORIES: z.string().optional(),
 
   // Public Calendly (or similar) URL surfaced as "Schedule a setup call with
@@ -131,8 +131,7 @@ const baseSchema = z.object({
  * The full list of seeded category slugs (categories DB table). Mirrors the
  * 5 trades in `supabase/migrations/20260505000003_seed_categories.sql`.
  * When `ENABLED_CATEGORIES` env is unset we fall back to this set so existing
- * deployments don't quietly disable everything. Plumbing-only MVP sets the
- * env to just `plumbing`.
+ * deployments don't quietly disable everything (the multi-trade default).
  */
 export const ALL_SEEDED_CATEGORIES = [
   'plumbing',

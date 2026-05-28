@@ -5,22 +5,36 @@ import { z } from 'zod';
 import { CLASSIFIER_MODEL, OpenAIService } from '../../common/openai/openai.service';
 
 /**
- * Plumbing-emergency AI classifier (PROGRESS.md Slice 17 — item 17).
+ * Home-services emergency AI classifier (PROGRESS.md Slice 17 — item 17).
  *
  * Sits BEHIND the keyword pre-filter in `emergency-detection.ts`. The keyword
- * list catches obvious cases ("burst pipe", "gas smell") in zero ms / zero
+ * list catches obvious cases ("burst pipe", "sparks") in zero ms / zero
  * cost; this service is invoked only when the keyword path misses, so it
  * pays the ~1s / ~$0.0005 OpenAI bill only when the message phrasing is
  * non-obvious ("water everywhere in basement", "the kids are scared, can't
  * shut it off"). Returns a structured `{ is_emergency, reason }` that the
- * webhook stuffs into the plumber's alert SMS — the AI-extracted reason
+ * webhook stuffs into the operator's alert SMS — the AI-extracted reason
  * tends to be more actionable than the raw keyword.
+ *
+ * Trade-aware: the caller's operator runs a specific trade (plumbing, HVAC,
+ * electrical, roofing, garage door), so we pass the operator's category to
+ * sharpen the definition of "emergency" for that trade. Falls back to a
+ * general home-services framing when the category is unknown.
  *
  * Failure modes (OpenAI down, key missing, rate-limited, JSON parse): all
  * return `null` so the SMS webhook treats it as "not classified as
  * emergency" and the AI advance loop proceeds as normal. Never blocks the
  * advance pipeline.
  */
+
+/** Human-readable trade label for the classifier prompt, keyed by category slug. */
+const TRADE_LABEL: Record<string, string> = {
+  plumbing: 'plumbing',
+  hvac: 'HVAC',
+  electrical: 'electrical',
+  roofing: 'roofing',
+  garage_door: 'garage door',
+};
 
 const ClassificationResponse = z.object({
   is_emergency: z.boolean(),
@@ -43,33 +57,41 @@ export class EmergencyClassifierService {
   }
 
   /**
-   * Classify a single caller SMS. Returns null if classification fails for
-   * any reason (no key, network error, malformed model output). Caller
-   * should treat null as "not an emergency" — fail-safe toward not paging
-   * the plumber on uncertainty.
+   * Classify a single caller SMS. `category` is the operator's trade slug
+   * (plumbing, hvac, electrical, roofing, garage_door) used to sharpen the
+   * emergency definition; omit/unknown falls back to general home-services
+   * framing. Returns null if classification fails for any reason (no key,
+   * network error, malformed model output). Caller should treat null as
+   * "not an emergency" — fail-safe toward not paging the operator on
+   * uncertainty.
    */
-  async classify(body: string): Promise<EmergencyClassification | null> {
+  async classify(body: string, category?: string | null): Promise<EmergencyClassification | null> {
+    const tradeLabel = (category && TRADE_LABEL[category]) || 'home services';
     try {
       const completion = await this.openai.client_().chat.completions.create({
         model: CLASSIFIER_MODEL,
-        // Strict, plumber-specific definition of emergency to keep false
-        // positives down. A leaky faucet is NOT an emergency; standing
-        // water in a basement IS.
+        // Strict, trade-aware definition of emergency to keep false positives
+        // down. A leaky faucet / thermostat question is NOT an emergency;
+        // standing water, sparking wires, or an active roof leak IS.
         messages: [
           {
             role: 'system',
             content:
-              'You classify single inbound SMS messages from homeowners to a plumber. ' +
+              `You classify single inbound SMS messages from homeowners to a ${tradeLabel} contractor. ` +
               'Decide if the situation is a TRUE emergency requiring same-hour response ' +
-              'to avoid water/property damage, gas/CO safety risk, or loss of essential ' +
-              'service (no water at all in the home).\n\n' +
-              'Emergency examples: burst pipe, sewage backup, no water in the house, ' +
-              'gas smell, carbon monoxide, active flooding, water heater leaking heavily, ' +
-              'main line break.\n' +
-              'NOT emergency: slow drain, leaky faucet, dripping showerhead, "needs ' +
-              'service soon", routine install, quote requests, scheduling questions.\n\n' +
+              'to avoid property damage, fire/gas/CO/electrical safety risk, or loss of an ' +
+              'essential service (no water, no heat in freezing weather, no AC in extreme heat).\n\n' +
+              'Emergency examples across home-services trades: burst pipe, sewage backup, ' +
+              'no water in the house, gas smell, carbon monoxide, active flooding, water ' +
+              'heater leaking heavily; sparking outlet, burning smell, exposed live wires, ' +
+              'electrical fire, total power loss; active roof leak with water entering the ' +
+              'home, storm damage; no heat in freezing temps, no AC in dangerous heat; ' +
+              'garage door off-track trapping a vehicle or stuck open overnight.\n' +
+              'NOT emergency: slow drain, leaky faucet, dripping showerhead, thermostat or ' +
+              'filter questions, flickering light, minor dent, "needs service soon", ' +
+              'routine install, quote requests, scheduling questions.\n\n' +
               'Be conservative — only flag as emergency if delaying response by >2 hours ' +
-              'would likely cause damage or safety risk.\n\n' +
+              'would likely cause damage or a safety risk.\n\n' +
               'Respond with valid JSON: ' +
               '{"is_emergency": boolean, "reason": "<=12 words describing the issue if emergency, ' +
               'empty string otherwise"}',

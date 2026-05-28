@@ -172,7 +172,7 @@ export class TwilioSmsController {
                 `🚨 EMERGENCY CALL — ${businessName}\n` +
                 `Caller •••${callerLast4} reports: ${reason}.\n` +
                 `Call them back: ${callerFrom}\n` +
-                `(BookingBlues AI is also responding to keep them engaged until you do.)`;
+                `(KeeprSteady AI is also responding to keep them engaged until you do.)`;
               this.twilio
                 .sendSms({ from: twilioFrom, to: operatorPhone, body: alert })
                 .then((res) => {
@@ -184,7 +184,7 @@ export class TwilioSmsController {
                   } else {
                     this.logger.info(
                       { operatorId, conversationId, source, reason, alertSid: res.sid },
-                      'emergency alert SMS sent to plumber',
+                      'emergency alert SMS sent to operator',
                     );
                   }
                 })
@@ -206,9 +206,10 @@ export class TwilioSmsController {
             if (keywordHit) {
               sendAlert(`"${keywordHit}"`, 'keyword');
             } else {
-              // Fire-and-forget AI classification — don't await.
+              // Fire-and-forget AI classification — don't await. Pass the
+              // operator's trade so the emergency definition is trade-aware.
               this.emergencyClassifier
-                .classify(form.Body)
+                .classify(form.Body, operatorRow.category)
                 .then((cls) => {
                   if (cls?.is_emergency && cls.reason) {
                     sendAlert(cls.reason, 'ai');
@@ -236,8 +237,8 @@ export class TwilioSmsController {
           if (openEsc) {
             // Human is on it; the echo above already informed the team.
           } else {
-            // Debounce 2s — rapid-fire caller SMS bursts (common: "I need a
-            // plumber" / "kitchen flood" / "08820") collapse into one advance
+            // Debounce 2s — rapid-fire caller SMS bursts (common: "I need
+            // someone" / "kitchen flood" / "08820") collapse into one advance
             // run that reads all turns at once. Prevents concurrent OpenAI
             // calls, contradictory replies, and §9.3 rate-limit drops on
             // the bot's second/third reply.

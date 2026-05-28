@@ -854,7 +854,7 @@ export class SlackWebhooksController {
         no_open_escalation:
           "⚠ No open escalation OR conversation thread match for this thread. Can't bridge to SMS.",
         no_matching_thread:
-          "⚠ Couldn't match this thread to a conversation — was the thread opened by BookingBlues?",
+          "⚠ Couldn't match this thread to a conversation — was the thread opened by KeeprSteady?",
         no_operator_number: '⚠ Operator has no Twilio number assigned — SMS not sent.',
         exception: '⚠ Internal error while bridging to SMS — check Railway logs.',
       } as Record<string, string>

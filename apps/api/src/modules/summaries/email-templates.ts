@@ -124,7 +124,7 @@ export function renderBookingSummary(args: BookingSummaryArgs): { subject: strin
     </table>
 
     <p style="margin-top:24px; font-size:12px; color:#64748b;">
-      Manage this booking in your <a href="${escapeHtml(args.platformAppUrl)}/dashboard" style="color:#0b5cd6;">BookingBlues dashboard</a>.
+      Manage this booking in your <a href="${escapeHtml(args.platformAppUrl)}/dashboard" style="color:#0b5cd6;">KeeprSteady dashboard</a>.
     </p>
   </div>
 </body></html>`;
@@ -201,7 +201,7 @@ export function renderDailySummary(args: DailySummaryArgs): { subject: string; h
       : '<p style="color:#64748b;">No appointments scheduled for today.</p>'}
 
     <p style="margin-top:24px; font-size:12px; color:#64748b;">
-      Full numbers in your <a href="${escapeHtml(args.platformAppUrl)}/dashboard" style="color:#0b5cd6;">BookingBlues dashboard</a>.
+      Full numbers in your <a href="${escapeHtml(args.platformAppUrl)}/dashboard" style="color:#0b5cd6;">KeeprSteady dashboard</a>.
       ${args.conversationsAbandoned > 0 ? `${args.conversationsAbandoned} caller${args.conversationsAbandoned === 1 ? '' : 's'} stopped responding mid-conversation.` : ''}
     </p>
   </div>
@@ -222,7 +222,7 @@ export function renderDailySummary(args: DailySummaryArgs): { subject: string; h
     `\n\nDashboard: ${args.platformAppUrl}/dashboard\n`;
 
   return {
-    subject: `BookingBlues daily summary — ${dateLabel}`,
+    subject: `KeeprSteady daily summary — ${dateLabel}`,
     html,
     text,
   };
