@@ -12,8 +12,9 @@ export const BRAND = {
   // (NEXT_PUBLIC_SETUP_CALL_BOOKING_URL). Marketing pages link directly so the
   // /contact and demo CTAs work even on static-rendered marketing routes.
   demoBookingUrl: 'https://cal.com/malhotra-vikas/intro-session-30-minutes',
-  // TODO: replace with the real LinkedIn company URL once the page is published.
-  linkedinUrl: 'https://www.linkedin.com/company/keeprsteady',
+  linkedinUrl: 'https://www.linkedin.com/company/119484231',
+  instagramUrl: 'https://www.instagram.com/keeprsteady/',
+  xUrl: 'https://x.com/KeeprSteady',
 } as const;
 
 /**
