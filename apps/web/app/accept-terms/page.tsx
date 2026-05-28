@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 
 import { BRAND, TERMS } from '../../lib/brand';
 import { publicEnv } from '../../lib/env';
@@ -13,8 +13,20 @@ import { getSupabaseBrowserClient } from '../../lib/supabase/browser';
  * operator's recorded terms_version doesn't match the current TERMS.version.
  * Accepting updates auth.users.user_metadata (the gate's source of truth) and
  * mirrors the acceptance onto the operators row server-side.
+ *
+ * The inner component reads useSearchParams(), so it must sit under a
+ * <Suspense> boundary or the production build fails to prerender this route
+ * (same pattern as the signup/login pages wrapping <AuthForm>).
  */
 export default function AcceptTermsPage(): JSX.Element {
+  return (
+    <Suspense fallback={<Centered>Loading…</Centered>}>
+      <AcceptTerms />
+    </Suspense>
+  );
+}
+
+function AcceptTerms(): JSX.Element {
   const router = useRouter();
   const search = useSearchParams();
   const next = search.get('next') ?? '/dashboard';
@@ -75,13 +87,7 @@ export default function AcceptTermsPage(): JSX.Element {
     }
   }
 
-  if (!ready) {
-    return (
-      <main className="min-h-screen grid place-items-center px-6">
-        <p className="text-sm text-muted">Loading…</p>
-      </main>
-    );
-  }
+  if (!ready) return <Centered>Loading…</Centered>;
 
   return (
     <main className="min-h-screen grid place-items-center px-6 bg-gradient-to-b from-slate-50 to-white dark:from-slate-950 dark:to-slate-900">
@@ -129,6 +135,14 @@ export default function AcceptTermsPage(): JSX.Element {
           {busy ? 'Saving…' : 'Accept and continue'}
         </button>
       </div>
+    </main>
+  );
+}
+
+function Centered({ children }: { children: React.ReactNode }): JSX.Element {
+  return (
+    <main className="min-h-screen grid place-items-center px-6">
+      <p className="text-sm text-muted">{children}</p>
     </main>
   );
 }
