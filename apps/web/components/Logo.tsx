@@ -1,27 +1,21 @@
 import Image from 'next/image';
 
-import { BRAND } from '../lib/brand';
-
 /**
- * Header brand lockup: the rounded K mark + wordmark text. The mark is a
- * dark chip (logo-mark.png) so it reads on both light and dark headers,
- * where the bare lavender wordmark would wash out on white. `priority`
- * since it's above the fold on every page.
+ * Header brand mark — the rounded K logo on its own (no wordmark text beside
+ * it). The dark chip reads on both light and dark headers. The wrapping
+ * <Link> in each layout carries the accessible name, so alt stays meaningful
+ * but isn't double-announced. `priority` since it's above the fold on every
+ * page.
  */
 export function Logo({ className }: { className?: string }): JSX.Element {
   return (
-    <span className={`inline-flex items-center gap-2 ${className ?? ''}`}>
-      <Image
-        src="/logo-mark.png"
-        alt=""
-        width={28}
-        height={28}
-        priority
-        className="rounded-md"
-      />
-      <span className="font-semibold tracking-tight text-ink dark:text-slate-100">
-        {BRAND.name}
-      </span>
-    </span>
+    <Image
+      src="/logo-mark.png"
+      alt="KeeprSteady"
+      width={40}
+      height={40}
+      priority
+      className={`rounded-md ${className ?? ''}`}
+    />
   );
 }
