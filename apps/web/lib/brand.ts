@@ -16,6 +16,19 @@ export const BRAND = {
   linkedinUrl: 'https://www.linkedin.com/company/keeprsteady',
 } as const;
 
+/**
+ * Current Terms of Service / Privacy Policy version. Bump `version` whenever
+ * the legal text materially changes — the middleware re-accept gate compares
+ * each user's recorded `terms_version` against this and forces re-acceptance
+ * on the next gated page load. Keep `version` === the effective date shown on
+ * the /terms and /privacy pages so the recorded value matches what the user
+ * actually saw.
+ */
+export const TERMS = {
+  version: '2026-05-26',
+  effectiveDate: 'May 26, 2026',
+} as const;
+
 export const TRIAL_COPY = {
   durationLabel: '7-day free trial',
   chargeReassurance: 'No charge until day 8 — cancel in 2 clicks from Settings.',

@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useState } from 'react';
 
+import { TERMS } from '../lib/brand';
 import { publicEnv } from '../lib/env';
 import { getSupabaseBrowserClient } from '../lib/supabase/browser';
 
@@ -49,6 +50,12 @@ export function AuthForm({ mode }: { mode: 'login' | 'signup' }): JSX.Element {
             data: {
               business_name: trimmedName,
               personal_phone_e164: phoneE164,
+              // Consent record — lands in auth.users.user_metadata. This is the
+              // primary, queryable proof of acceptance and the source the
+              // re-accept gate compares against. Mirrored onto operators
+              // server-side at row creation.
+              terms_accepted_at: new Date().toISOString(),
+              terms_version: TERMS.version,
             },
           },
         });

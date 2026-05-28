@@ -20,6 +20,8 @@ const baseOperator: Tables<'operators'> = {
   stripe_price_id: null,
   plan: null,
   plan_cadence: null,
+  terms_accepted_at: null,
+  terms_version: null,
   subscription_status: 'active',
   trial_ends_at: null,
   stripe_connect_account_id: null,

@@ -2,9 +2,16 @@ import { createServerClient } from '@supabase/ssr';
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
+import { TERMS } from './lib/brand';
+
 const PROTECTED_PREFIXES = ['/dashboard', '/onboarding', '/settings', '/admin'];
 const ADMIN_PREFIXES = ['/admin'];
 const AUTH_PAGES = ['/login', '/signup'];
+// Operator-app pages requiring an up-to-date terms acceptance. /admin is
+// excluded — internal staff aren't subject to the operator ToS. /accept-terms
+// is deliberately NOT a protected prefix, so the gate never redirects to
+// itself (no loop).
+const TERMS_GATE_PREFIXES = ['/dashboard', '/onboarding', '/settings'];
 
 export async function middleware(req: NextRequest) {
   let response = NextResponse.next({ request: req });
@@ -56,6 +63,21 @@ export async function middleware(req: NextRequest) {
     const url = req.nextUrl.clone();
     url.pathname = '/dashboard';
     return NextResponse.redirect(url);
+  }
+
+  // Terms re-acceptance gate. If the signed-in operator's recorded
+  // terms_version (stamped in user_metadata at signup / last accept) doesn't
+  // match the current TERMS.version, force a re-accept before they can use
+  // the operator app. Legacy users with no recorded version are caught too.
+  if (isAuthed && TERMS_GATE_PREFIXES.some((p) => path === p || path.startsWith(`${p}/`))) {
+    const accepted = (data.user?.user_metadata as { terms_version?: unknown } | undefined)
+      ?.terms_version;
+    if (accepted !== TERMS.version) {
+      const url = req.nextUrl.clone();
+      url.pathname = '/accept-terms';
+      url.searchParams.set('next', path);
+      return NextResponse.redirect(url);
+    }
   }
 
   return response;

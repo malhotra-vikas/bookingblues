@@ -71,6 +71,7 @@ export class OperatorsService {
       user_id: userId,
       business_name: businessName,
       ...(phoneE164 ? { personal_phone_e164: phoneE164 } : {}),
+      ...termsFromMetadata(metadata),
     };
     const { data: created, error: insertErr } = await this.supabase
       .db()
@@ -182,4 +183,37 @@ export class OperatorsService {
       Object.values(steps).every((s) => s === true);
     return { steps, completed };
   }
+
+  /**
+   * Record a Terms of Service / Privacy re-acceptance, server-side. The
+   * timestamp is the server clock (never trust a client-supplied one);
+   * `version` is the version string the client displayed and the user
+   * accepted. Bootstraps the operator row first if it doesn't exist yet.
+   */
+  async recordTermsAcceptance(userId: string, version: string): Promise<OperatorRow> {
+    const operator = await this.getByUserIdRequired(userId);
+    const { data, error } = await this.supabase
+      .db()
+      .from('operators')
+      .update({ terms_accepted_at: new Date().toISOString(), terms_version: version })
+      .eq('id', operator.id)
+      .select('*')
+      .single();
+    if (error) throw error;
+    return data;
+  }
+}
+
+/**
+ * Pull the consent fields stashed in auth.users.user_metadata at signup into
+ * an operators insert fragment. Returns an empty object when absent so the
+ * spread is a no-op for pre-feature signups.
+ */
+export function termsFromMetadata(
+  metadata: Record<string, unknown>,
+): { terms_accepted_at?: string; terms_version?: string } {
+  const out: { terms_accepted_at?: string; terms_version?: string } = {};
+  if (typeof metadata.terms_accepted_at === 'string') out.terms_accepted_at = metadata.terms_accepted_at;
+  if (typeof metadata.terms_version === 'string') out.terms_version = metadata.terms_version;
+  return out;
 }

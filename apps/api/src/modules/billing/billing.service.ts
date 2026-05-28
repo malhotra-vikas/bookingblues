@@ -152,14 +152,34 @@ export class BillingService {
       businessName?.trim() ||
       (userEmail ? userEmail.split('@')[0] : null) ||
       'New Business';
+    // Copy the consent record stashed at signup so the operators mirror is
+    // populated even when this billing path (not the operators bootstrap) is
+    // what first creates the row.
+    const terms = await this.termsFromAuthMetadata(userId);
     const { data, error } = await this.supabase
       .db()
       .from('operators')
-      .insert({ user_id: userId, business_name: fallbackName })
+      .insert({ user_id: userId, business_name: fallbackName, ...terms })
       .select('*')
       .single();
     if (error) throw error;
     return data;
+  }
+
+  private async termsFromAuthMetadata(
+    userId: string,
+  ): Promise<{ terms_accepted_at?: string; terms_version?: string }> {
+    try {
+      const { data, error } = await this.supabase.db().auth.admin.getUserById(userId);
+      if (error || !data?.user) return {};
+      const m = (data.user.user_metadata ?? {}) as Record<string, unknown>;
+      const out: { terms_accepted_at?: string; terms_version?: string } = {};
+      if (typeof m.terms_accepted_at === 'string') out.terms_accepted_at = m.terms_accepted_at;
+      if (typeof m.terms_version === 'string') out.terms_version = m.terms_version;
+      return out;
+    } catch {
+      return {};
+    }
   }
 
   private async ensureStripeCustomer(

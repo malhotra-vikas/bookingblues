@@ -391,6 +391,8 @@ export type Database = {
           personal_phone_e164: string | null;
           plan: string | null;
           plan_cadence: string | null;
+          terms_accepted_at: string | null;
+          terms_version: string | null;
           service_radius_zones: Json;
           service_zip_codes: string[];
           stripe_connect_account_id: string | null;
@@ -424,6 +426,8 @@ export type Database = {
           personal_phone_e164?: string | null;
           plan?: string | null;
           plan_cadence?: string | null;
+          terms_accepted_at?: string | null;
+          terms_version?: string | null;
           service_radius_zones?: Json;
           service_zip_codes?: string[];
           stripe_connect_account_id?: string | null;
@@ -457,6 +461,8 @@ export type Database = {
           personal_phone_e164?: string | null;
           plan?: string | null;
           plan_cadence?: string | null;
+          terms_accepted_at?: string | null;
+          terms_version?: string | null;
           service_radius_zones?: Json;
           service_zip_codes?: string[];
           stripe_connect_account_id?: string | null;

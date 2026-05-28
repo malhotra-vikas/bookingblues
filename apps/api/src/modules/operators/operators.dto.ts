@@ -59,3 +59,12 @@ export const UpdateOperatorSchema = z
   );
 
 export type UpdateOperator = z.infer<typeof UpdateOperatorSchema>;
+
+export const AcceptTermsSchema = z
+  .object({
+    // The version string the client displayed and the user accepted. The
+    // acceptance timestamp is set server-side, not trusted from the client.
+    version: z.string().min(1).max(40),
+  })
+  .strict();
+export type AcceptTerms = z.infer<typeof AcceptTermsSchema>;

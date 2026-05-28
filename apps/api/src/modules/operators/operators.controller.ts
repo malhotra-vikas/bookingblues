@@ -1,11 +1,11 @@
-import { Body, Controller, Get, Patch, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Patch, Post, UseGuards } from '@nestjs/common';
 
 import { AuthGuard } from '../../common/auth/auth.guard';
 import { CurrentUser } from '../../common/auth/current-user.decorator';
 import type { AuthenticatedUser } from '../../common/auth/jwt-verifier.service';
 import { ZodBodyPipe } from '../../common/pipes/zod-body.pipe';
-import type { UpdateOperator } from './operators.dto';
-import { UpdateOperatorSchema } from './operators.dto';
+import type { AcceptTerms, UpdateOperator } from './operators.dto';
+import { AcceptTermsSchema, UpdateOperatorSchema } from './operators.dto';
 import type { OnboardingStatus, OperatorRow } from './operators.service';
 import { OperatorsService } from './operators.service';
 
@@ -31,5 +31,13 @@ export class OperatorsController {
   async onboardingStatus(@CurrentUser() user: AuthenticatedUser): Promise<OnboardingStatus> {
     const op = await this.service.getByUserIdRequired(user.userId);
     return this.service.getOnboardingStatus(op);
+  }
+
+  @Post('accept-terms')
+  async acceptTerms(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body(new ZodBodyPipe(AcceptTermsSchema)) body: AcceptTerms,
+  ): Promise<OperatorRow> {
+    return this.service.recordTermsAcceptance(user.userId, body.version);
   }
 }

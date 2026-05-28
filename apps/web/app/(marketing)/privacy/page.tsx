@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 
-import { BRAND } from '../../../lib/brand';
+import { BRAND, TERMS } from '../../../lib/brand';
 
 export const metadata: Metadata = {
   title: 'Privacy Policy — KeeprSteady',
@@ -17,7 +17,7 @@ export default function PrivacyPage(): JSX.Element {
           Privacy Policy
         </h1>
         <p className="mt-2 text-sm text-muted">
-          Effective Date: May 26, 2026 · Governing Law: State of Florida
+          Effective Date: {TERMS.effectiveDate} · Governing Law: State of Florida
         </p>
       </header>
 
