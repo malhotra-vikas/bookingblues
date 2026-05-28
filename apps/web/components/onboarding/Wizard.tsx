@@ -5,9 +5,12 @@ import { useEffect, useState } from 'react';
 
 import { ConfirmModal } from '../ConfirmModal';
 import { getSupabaseBrowserClient } from '../../lib/supabase/browser';
+import { PLANS, type PlanSlug } from '../../lib/brand';
 import { publicEnv } from '../../lib/env';
 import { CarrierForwarding } from './CarrierForwarding';
 import { StepCard } from './StepCard';
+
+type Cadence = 'monthly' | 'annual';
 
 interface Operator {
   id: string;
@@ -117,6 +120,7 @@ export function Wizard({
 
   const [releaseModalOpen, setReleaseModalOpen] = useState(false);
   const [disconnectGoogleOpen, setDisconnectGoogleOpen] = useState(false);
+  const [pendingCadence, setPendingCadence] = useState<Cadence>('monthly');
 
   // Per-action busy tracker. Keeps individual buttons disabled while their
   // request is in flight, so a fast double-click can't fire two checkouts /
@@ -237,17 +241,26 @@ export function Wizard({
     });
   }
 
-  async function startBilling(plan: 'starter' | 'pro'): Promise<void> {
-    await handle(`startBilling:${plan}`, async () => {
+  async function startBilling(plan: PlanSlug, cadence: Cadence): Promise<void> {
+    await handle(`startBilling:${plan}:${cadence}`, async () => {
       const res = await authedFetch('/v1/billing/checkout-session', {
         method: 'POST',
-        body: JSON.stringify({ plan }),
+        body: JSON.stringify({ plan, cadence }),
       });
-      if (!res.ok) throw new Error('Could not start checkout');
+      if (!res.ok) {
+        const detail = await res.json().catch(() => ({}));
+        throw new Error(detail.detail ?? `Could not start checkout (${res.status})`);
+      }
       const { url } = (await res.json()) as { url: string };
       window.location.href = url;
     });
   }
+  // While ANY plan is checking out, every plan button should disable —
+  // double-tapping different tiers would otherwise race two Stripe sessions.
+  const anyBillingBusy = (): boolean =>
+    PLANS.some((p) =>
+      isBusy(`startBilling:${p.slug}:monthly`) || isBusy(`startBilling:${p.slug}:annual`),
+    );
 
   async function saveServiceArea(): Promise<void> {
     await handle('saveServiceArea', async () => {
@@ -394,27 +407,89 @@ export function Wizard({
       <StepCard
         number={1}
         title="Subscribe"
-        description="7-day free trial. We need a card up front, but you won't be charged until day 7."
+        description="7-day free trial. We need a card up front, but you won't be charged until day 8."
         done={!!subscribed}
       >
         {!subscribed ? (
-          <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={() => startBilling('starter')}
-              disabled={isBusy('startBilling:starter') || isBusy('startBilling:pro')}
-              className="rounded-md bg-accent px-4 py-2 text-sm text-white disabled:opacity-50"
-            >
-              {isBusy('startBilling:starter') ? 'Opening checkout…' : 'Start trial — Starter'}
-            </button>
-            <button
-              type="button"
-              onClick={() => startBilling('pro')}
-              disabled={isBusy('startBilling:starter') || isBusy('startBilling:pro')}
-              className="rounded-md border border-slate-300 dark:border-slate-700 dark:text-slate-200 px-4 py-2 text-sm disabled:opacity-50"
-            >
-              {isBusy('startBilling:pro') ? 'Opening checkout…' : 'Start trial — Pro'}
-            </button>
+          <div className="space-y-4">
+            {/* Monthly / Annual cadence toggle — matches the public /pricing page */}
+            <div className="inline-flex rounded-full border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-1 text-xs">
+              {(['monthly', 'annual'] as const).map((c) => (
+                <button
+                  key={c}
+                  type="button"
+                  onClick={() => setPendingCadence(c)}
+                  className={`rounded-full px-3 py-1 transition-colors ${
+                    pendingCadence === c
+                      ? 'bg-accent text-white'
+                      : 'text-muted hover:text-ink dark:hover:text-slate-100'
+                  }`}
+                >
+                  {c === 'monthly' ? 'Monthly' : 'Annual (save 2 months)'}
+                </button>
+              ))}
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-3">
+              {PLANS.map((plan) => {
+                const busyHere = isBusy(`startBilling:${plan.slug}:${pendingCadence}`);
+                const monthlyEquivalent =
+                  pendingCadence === 'annual'
+                    ? Math.round((plan.annualPriceUsd / 12) * 100) / 100
+                    : plan.monthlyPriceUsd;
+                return (
+                  <div
+                    key={plan.slug}
+                    className={`relative rounded-lg border p-4 ${
+                      plan.recommended
+                        ? 'border-accent ring-1 ring-accent/30 bg-white dark:bg-slate-900'
+                        : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900'
+                    }`}
+                  >
+                    {plan.recommended ? (
+                      <span className="absolute -top-2 left-3 inline-block rounded-full bg-accent text-white text-[10px] font-semibold tracking-wide uppercase px-2 py-0.5">
+                        Most popular
+                      </span>
+                    ) : null}
+                    <p className="text-xs uppercase tracking-wide text-muted">{plan.name}</p>
+                    <p className="mt-1 text-2xl font-semibold text-ink dark:text-slate-100">
+                      ${monthlyEquivalent.toLocaleString()}
+                      <span className="text-sm text-muted font-normal">/mo</span>
+                    </p>
+                    <p className="text-[11px] text-muted">
+                      {pendingCadence === 'annual'
+                        ? `$${plan.annualPriceUsd.toLocaleString()}/yr billed`
+                        : 'Billed monthly'}
+                    </p>
+                    <p className="mt-3 text-xs text-ink dark:text-slate-200">
+                      {plan.conversationsPerMonth.toLocaleString()} convos/mo · +{plan.platformFeePct}% deposit fee
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => startBilling(plan.slug, pendingCadence)}
+                      disabled={anyBillingBusy()}
+                      className={`mt-4 w-full rounded-md px-3 py-2 text-sm font-medium disabled:opacity-50 ${
+                        plan.recommended
+                          ? 'bg-accent text-white hover:bg-blue-700'
+                          : 'border border-slate-300 dark:border-slate-700 dark:text-slate-200'
+                      }`}
+                    >
+                      {busyHere
+                        ? 'Opening checkout…'
+                        : `Start trial — ${plan.name}`}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+            <p className="text-[11px] text-muted">
+              Cancel in 2 clicks from Settings · No long-term contract · {' '}
+              See the{' '}
+              <a href="/pricing" className="underline">
+                full pricing page
+              </a>{' '}
+              for deposit and overage details.
+            </p>
           </div>
         ) : null}
       </StepCard>
@@ -548,7 +623,7 @@ export function Wizard({
 
       <StepCard
         number={3}
-        title="Get your BookingBlues phone number"
+        title="Get your KeeprSteady phone number"
         description="A new local US number we'll use to text customers when you miss their call. You'll forward your real business line to it in step 7."
         done={twilioDone}
       >
@@ -742,14 +817,14 @@ export function Wizard({
       <StepCard
         number={7}
         title="Forward your real business line"
-        description="When customers call your real number and you don't pick up, your phone carrier sends the call to BookingBlues. Your phone still rings normally — only missed calls get caught by the AI."
+        description="When customers call your real number and you don't pick up, your phone carrier sends the call to KeeprSteady. Your phone still rings normally — only missed calls get caught by the AI."
         done={false}
       >
         {twilioDone ? (
           <CarrierForwarding twilioNumber={op!.twilio_number_e164!} />
         ) : (
           <p className="text-sm text-muted dark:text-slate-400">
-            Get your BookingBlues number first (step 3) — once you have it we&apos;ll show you the
+            Get your KeeprSteady number first (step 3) — once you have it we&apos;ll show you the
             short code to dial on your phone for your carrier.
           </p>
         )}
@@ -839,7 +914,7 @@ function FeeBreakdown({ depositDollars }: { depositDollars: number }): JSX.Eleme
       <div className="font-medium mb-2">For a {fmt(depositCents)} deposit:</div>
       <ul className="space-y-1 text-muted">
         <li className="flex justify-between"><span>Card processing fee (2.9% + 30¢)</span><span className="font-mono">−{fmt(stripeFeeCents)}</span></li>
-        <li className="flex justify-between"><span>BookingBlues fee ({ratePct}%)</span><span className="font-mono">−{fmt(platformFeeCents)}</span></li>
+        <li className="flex justify-between"><span>KeeprSteady fee ({ratePct}%)</span><span className="font-mono">−{fmt(platformFeeCents)}</span></li>
         <li className="flex justify-between font-medium text-ink border-t pt-1"><span>You get</span><span className="font-mono">{fmt(operatorKeepsCents)}</span></li>
       </ul>
     </div>

@@ -57,8 +57,17 @@ const baseSchema = z.object({
   STRIPE_SECRET_KEY: z.string().optional(),
   STRIPE_WEBHOOK_SECRET: z.string().optional(),
   STRIPE_CONNECT_WEBHOOK_SECRET: z.string().optional(),
-  STRIPE_PRICE_STARTER: z.string().optional(),
-  STRIPE_PRICE_PRO: z.string().optional(),
+  // Six Stripe price IDs — one per (plan × cadence) combo. Created in the
+  // Stripe Dashboard under three products (Solo / Crew / Fleet), each with a
+  // monthly + annual recurring price. Resolved at checkout time via
+  // `priceForPlan(plan, cadence)` in billing.service.ts. Required in
+  // STRICT_ENV_REQUIRED mode (pre-launch lockdown).
+  STRIPE_PRICE_SOLO_MONTHLY: z.string().optional(),
+  STRIPE_PRICE_SOLO_ANNUAL: z.string().optional(),
+  STRIPE_PRICE_CREW_MONTHLY: z.string().optional(),
+  STRIPE_PRICE_CREW_ANNUAL: z.string().optional(),
+  STRIPE_PRICE_FLEET_MONTHLY: z.string().optional(),
+  STRIPE_PRICE_FLEET_ANNUAL: z.string().optional(),
 
   // Stripe (booking-fee economics)
   PLATFORM_TAKE_RATE_BPS: z.coerce.number().int().min(0).max(10_000).default(1000),
@@ -167,7 +176,12 @@ const strictRequiredInProd = [
   'STRIPE_SECRET_KEY',
   'STRIPE_WEBHOOK_SECRET',
   'STRIPE_CONNECT_WEBHOOK_SECRET',
-  'STRIPE_PRICE_STARTER',
+  'STRIPE_PRICE_SOLO_MONTHLY',
+  'STRIPE_PRICE_SOLO_ANNUAL',
+  'STRIPE_PRICE_CREW_MONTHLY',
+  'STRIPE_PRICE_CREW_ANNUAL',
+  'STRIPE_PRICE_FLEET_MONTHLY',
+  'STRIPE_PRICE_FLEET_ANNUAL',
   'GOOGLE_OAUTH_CLIENT_ID',
   'GOOGLE_OAUTH_CLIENT_SECRET',
   'GOOGLE_OAUTH_REDIRECT_URI',

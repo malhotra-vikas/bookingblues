@@ -88,7 +88,7 @@ export default async function DashboardPage(): Promise<JSX.Element> {
   if (noOperator) {
     return (
       <div className="space-y-4">
-        <h1 className="text-2xl font-semibold dark:text-slate-100">Welcome to BookingBlues</h1>
+        <h1 className="text-2xl font-semibold dark:text-slate-100">Welcome to KeeprSteady</h1>
         <p className="text-muted dark:text-slate-400">You haven&apos;t finished setup yet.</p>
         <Link
           href="/onboarding"

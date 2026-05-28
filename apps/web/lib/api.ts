@@ -9,7 +9,7 @@ export interface ApiOptions {
 }
 
 /**
- * Fetch the BookingBlues API with the caller's Supabase access token.
+ * Fetch the KeeprSteady API with the caller's Supabase access token.
  * Server components: pass `accessToken` (resolved via getSession). Client
  * components: prefer `apiFromBrowser` which mounts the supabase-js client.
  */

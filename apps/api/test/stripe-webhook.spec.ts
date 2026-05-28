@@ -20,7 +20,12 @@ import {
 const TEST_WEBHOOK_SECRET = 'whsec_test_secret_for_signature_only';
 process.env.STRIPE_SECRET_KEY ||= 'sk_test_dummy_for_sdk_init';
 process.env.STRIPE_WEBHOOK_SECRET = TEST_WEBHOOK_SECRET;
-process.env.STRIPE_PRICE_STARTER ||= 'price_test_starter';
+process.env.STRIPE_PRICE_SOLO_MONTHLY ||= 'price_test_solo_monthly';
+process.env.STRIPE_PRICE_SOLO_ANNUAL ||= 'price_test_solo_annual';
+process.env.STRIPE_PRICE_CREW_MONTHLY ||= 'price_test_crew_monthly';
+process.env.STRIPE_PRICE_CREW_ANNUAL ||= 'price_test_crew_annual';
+process.env.STRIPE_PRICE_FLEET_MONTHLY ||= 'price_test_fleet_monthly';
+process.env.STRIPE_PRICE_FLEET_ANNUAL ||= 'price_test_fleet_annual';
 
 function signedRequest(
   app: INestApplication,

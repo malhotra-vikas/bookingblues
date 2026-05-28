@@ -203,7 +203,7 @@ export function SettingsPanel({ operator }: { operator: Operator }): JSX.Element
                   For a ${(feeCents / 100).toFixed(2)} deposit
                 </div>
                 <EconomicsRow label="Card processing (2.9% + 30¢)" amount={-stripeProcessingCents} />
-                <EconomicsRow label={`BookingBlues fee (${(takeBps / 100).toFixed(0)}%)`} amount={-platformCents} />
+                <EconomicsRow label={`KeeprSteady fee (${(takeBps / 100).toFixed(0)}%)`} amount={-platformCents} />
                 <div className="border-t border-slate-200 dark:border-slate-700 mt-2 pt-2">
                   <EconomicsRow label="You get" amount={operatorTakeCents} bold />
                 </div>
@@ -218,7 +218,7 @@ export function SettingsPanel({ operator }: { operator: Operator }): JSX.Element
       {/* ── Stripe Connect ───────────────────────────────────────────── */}
       <Card
         title="Payouts (Stripe Connect)"
-        description="Where booking-fee money lands. BookingBlues collects, takes our cut, deposits the rest to your bank."
+        description="Where booking-fee money lands. KeeprSteady collects, takes our cut, deposits the rest to your bank."
       >
         <ConnectStatusBadge status={connectStatus} />
         <p className="text-sm text-muted">
@@ -292,7 +292,7 @@ export function SettingsPanel({ operator }: { operator: Operator }): JSX.Element
       {/* ── Billing ──────────────────────────────────────────────────── */}
       <Card
         title="Subscription"
-        description="Your BookingBlues plan. Manage card, change plans, or cancel via the customer portal."
+        description="Your KeeprSteady plan. Manage card, change plans, or cancel via the customer portal."
       >
         <div className="flex items-center justify-between">
           <div className="text-sm">

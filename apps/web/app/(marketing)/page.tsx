@@ -1,5 +1,15 @@
+import type { Metadata } from 'next';
 import Link from 'next/link';
 import type { ReactNode } from 'react';
+
+import { BRAND, TRIAL_COPY } from '../../lib/brand';
+
+export const metadata: Metadata = {
+  title: `${BRAND.name} — AI Dispatcher for Home Service Pros | Never Miss a Job`,
+  description:
+    'AI books your missed calls by text in under 10 seconds. Built for plumbers, HVAC, roofers, and electricians. 7-day free trial.',
+  alternates: { canonical: '/' },
+};
 
 export default function HomePage(): JSX.Element {
   return (
@@ -9,23 +19,30 @@ export default function HomePage(): JSX.Element {
         <div className="max-w-5xl mx-auto px-6 py-16 sm:py-20 grid lg:grid-cols-2 gap-12 items-center">
           <div>
             <p className="inline-block text-[11px] font-semibold tracking-[0.18em] uppercase text-accent bg-blue-50 border border-blue-100 rounded-full px-3 py-1 mb-5">
-              AI lead recovery — built for plumbers
+              AI lead recovery for home service pros
             </p>
             <h1 className="text-4xl sm:text-5xl font-semibold leading-[1.1] text-ink tracking-tight mb-5">
-              Plumbers: never miss another
+              Home service pros:
               <br />
-              <span className="text-red-600">emergency call.</span>
+              <span className="text-red-600">never miss another emergency call.</span>
             </h1>
-            <p className="text-lg text-muted leading-relaxed mb-7 max-w-md">
-              AI books your jobs by text while you&apos;re on the wrench. Burst pipe at 11pm? Caller
-              gets a text in 10 seconds, you get an SMS alert, and the appointment lands on your
-              calendar before they call the next plumber.
+            <p className="text-lg text-muted leading-relaxed mb-3 max-w-md">
+              AI books your missed calls by text while you&apos;re on the job. Caller gets a text
+              in 10 seconds, you get an SMS alert, and the appointment lands on your calendar
+              before they call the next contractor.
+            </p>
+            <p className="text-sm text-muted mb-7 max-w-md">
+              Works for plumbers, HVAC techs, roofers, electricians, and locksmiths.
             </p>
             <div className="flex flex-wrap gap-3 mb-3">
               <CtaPrimary href="/signup">Start free 7-day trial</CtaPrimary>
+              <CtaSecondary href={BRAND.demoBookingUrl} external>
+                Book a 15-min demo
+              </CtaSecondary>
             </div>
-            <p className="text-xs text-slate-500">
-              Card on file to start · Cancel before day 7 and you won&apos;t be charged
+            <p className="text-xs text-slate-500">{TRIAL_COPY.cardOnFile}</p>
+            <p className="text-xs text-slate-500 mt-1">
+              {TRIAL_COPY.durationLabel} — no charge until day 8.
             </p>
           </div>
 
@@ -43,17 +60,17 @@ export default function HomePage(): JSX.Element {
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-8">
             <FeatureCard
               title="Instant text-back"
-              body="Responds in <10 seconds. Homeowner feels heard before they dial the next plumber in the search results."
+              body="Responds in <10 seconds. Homeowner feels heard before they dial the next contractor in the search results."
               icon={<IconBolt />}
             />
             <FeatureCard
-              title="Plumbing-tuned vetting"
-              body="Asks the right questions: leak vs install, sparks/burning smell, owner vs tenant, ZIP. So you show up to the right jobs first."
+              title="Trade-specific vetting"
+              body="Asks the right questions for your trade — leak vs install, system age, storm damage, owner vs tenant, ZIP — so you show up to the right jobs first."
               icon={<IconClipboard />}
             />
             <FeatureCard
               title="Emergency alerts"
-              body="Burst pipe, gas smell, sewage backup — you get an SMS the moment those words come through. Call them back in 30 seconds, win the job."
+              body="Burst pipe, gas smell, no AC at 95°, sewage backup — you get an SMS the moment those words come through. Call them back in 30 seconds, win the job."
               icon={<IconBolt />}
             />
             <FeatureCard
@@ -78,27 +95,78 @@ export default function HomePage(): JSX.Element {
           </div>
 
           <div className="grid lg:grid-cols-2 gap-10">
-            <div>
-              <p className="text-[15px] text-muted leading-relaxed mb-4">
+            <div className="space-y-4 text-[15px] text-muted leading-relaxed">
+              <p>
                 Every conversation is monitored by our team — not just logged. If the AI makes a
                 misstep, a human corrects it. You get the efficiency of automation with the
                 accuracy you&apos;d expect from a trained dispatcher.
               </p>
-              <p className="text-[15px] text-muted leading-relaxed">
+              <p>
                 After each interaction, you receive a{' '}
                 <strong className="font-medium text-ink">metadata summary email</strong> showing
                 exactly what the AI said, what the customer needed, and the estimated revenue
                 recovered.
               </p>
-            </div>
-            <blockquote className="bg-white border-l-4 border-accent rounded-r-md py-5 px-5 self-start shadow-sm">
-              <p className="text-base italic text-ink leading-relaxed mb-2">
-                &ldquo;I used to come home to ten missed calls and lose half of them to whoever
-                answered first. BookingBlues books while I&apos;m under a sink. Paid for itself in
-                week one.&rdquo;
+              <p>
+                <strong className="font-medium text-ink">You set the deposit — we add our fee on top, charged to the customer.</strong>{' '}
+                You always receive 100% of the deposit you set. Our incentive is exactly the
+                same as yours: book more jobs.
               </p>
-              <p className="text-xs text-muted">— Beta user, residential plumber (testimonial placeholder)</p>
-            </blockquote>
+            </div>
+            <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
+              <p className="text-xs font-semibold tracking-[0.16em] uppercase text-accent mb-3">
+                What you get after every call
+              </p>
+              <p className="text-sm text-muted leading-relaxed">
+                A job summary email with the caller&apos;s description, likely parts, urgency,
+                and quoted price range. Designed so you can load the truck before driving.
+              </p>
+              <AppointmentEmailMockup />
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ── See it in action (mockups) ───────────────────────────────────── */}
+      <section className="border-b border-slate-200">
+        <div className="max-w-5xl mx-auto px-6 py-16">
+          <SectionLabel>See it in action</SectionLabel>
+          <SectionHeading>From missed call to booked job — without you lifting a finger</SectionHeading>
+
+          <div className="grid lg:grid-cols-2 gap-6 mt-8">
+            <DashboardMockup />
+            <JobBriefMockup />
+          </div>
+        </div>
+      </section>
+
+      {/* ── Competitive differentiation ──────────────────────────────────── */}
+      <section className="border-b border-slate-200 bg-slate-50">
+        <div className="max-w-5xl mx-auto px-6 py-16">
+          <SectionLabel>Why {BRAND.name}</SectionLabel>
+          <SectionHeading>Faster and cheaper than humans. Smarter and safer than raw automation.</SectionHeading>
+
+          <div className="mt-8 overflow-x-auto">
+            <table className="w-full text-sm border-collapse">
+              <thead>
+                <tr className="text-left text-xs uppercase tracking-wide text-muted">
+                  <th className="px-3 py-3 font-medium"></th>
+                  <th className="px-3 py-3 font-medium">Live answering service</th>
+                  <th className="px-3 py-3 font-medium">Basic missed-call text</th>
+                  <th className="px-3 py-3 font-medium bg-accent/5 text-accent">
+                    {BRAND.name}
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-200">
+                <CompareRow label="Monthly cost" a="$400–$1,200" b="$25–$75" c="$49 starting" />
+                <CompareRow label="Availability" a="Office hours, often US-only" b="24/7" c="24/7" />
+                <CompareRow label="Avg response time" a="3–8 min" b="<10 sec (canned)" c="<10 sec" />
+                <CompareRow label="Books on your calendar" a="Sometimes" b="No" c="Yes — direct to Google Calendar" />
+                <CompareRow label="Human oversight" a="Yes (it is a human)" b="No" c="Yes — every conversation monitored, real-time correction" />
+                <CompareRow label="Booking fee alignment" a="Flat per-call charge" b="None" c="You get 100% of the deposit; we add our fee on top" />
+              </tbody>
+            </table>
           </div>
         </div>
       </section>
@@ -118,12 +186,12 @@ export default function HomePage(): JSX.Element {
             <Step
               n={2}
               title="Miss a call — AI steps in"
-              body="Caller gets a text in under 10 seconds. The bot asks the right plumber questions, books a 90-minute slot, and (optionally) collects a deposit."
+              body="Caller gets a text in under 10 seconds. The bot asks the right trade-specific questions, books a 90-minute slot, and (optionally) collects a deposit."
             />
             <Step
               n={3}
               title="Show up to a booked job"
-              body="Job summary email with the caller&apos;s description, likely parts, and quoted price range. You load the truck before driving."
+              body="Job summary email with the caller's description, likely parts, and quoted price range. You load the truck before driving."
             />
           </ol>
 
@@ -131,7 +199,7 @@ export default function HomePage(): JSX.Element {
             <TrustItem>Bank-grade encryption</TrustItem>
             <TrustItem>Human-monitored AI</TrustItem>
             <TrustItem>No long-term contracts</TrustItem>
-            <TrustItem>Established 2026</TrustItem>
+            <TrustItem>Aligned incentives — we earn when you earn</TrustItem>
           </div>
         </div>
       </section>
@@ -143,14 +211,17 @@ export default function HomePage(): JSX.Element {
             Stop donating jobs to voicemail.
           </h2>
           <p className="text-lg text-muted mb-8">
-            Try it free for 7 days. Cancel before the trial ends and you won&apos;t be charged.
+            Try it free for 7 days. No charge until day 8. Cancel in 2 clicks from Settings.
           </p>
           <div className="flex flex-wrap justify-center gap-3 mb-3">
             <CtaPrimary href="/signup">Start free 7-day trial</CtaPrimary>
+            <CtaSecondary href={BRAND.demoBookingUrl} external>
+              Book a 15-min demo
+            </CtaSecondary>
           </div>
           <p className="text-xs text-slate-500">
-            Card on file to start · Works with Google Calendar today; Jobber and Housecall Pro
-            coming soon
+            {TRIAL_COPY.cardOnFile} · Works with Google Calendar today; Jobber and Housecall Pro
+            coming soon.
           </p>
         </div>
       </section>
@@ -171,7 +242,27 @@ function CtaPrimary({ href, children }: { href: string; children: ReactNode }): 
   );
 }
 
-function CtaSecondary({ href, children }: { href: string; children: ReactNode }): JSX.Element {
+function CtaSecondary({
+  href,
+  children,
+  external,
+}: {
+  href: string;
+  children: ReactNode;
+  external?: boolean;
+}): JSX.Element {
+  if (external) {
+    return (
+      <a
+        href={href}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="inline-block rounded-md border border-slate-300 bg-white text-ink px-6 py-3 text-base font-medium no-underline hover:border-slate-400 transition-colors"
+      >
+        {children}
+      </a>
+    );
+  }
   return (
     <Link
       href={href}
@@ -242,6 +333,17 @@ function TrustItem({ children }: { children: ReactNode }): JSX.Element {
       <IconShield />
       <span>{children}</span>
     </span>
+  );
+}
+
+function CompareRow({ label, a, b, c }: { label: string; a: string; b: string; c: string }): JSX.Element {
+  return (
+    <tr className="text-ink">
+      <td className="px-3 py-3 font-medium align-top">{label}</td>
+      <td className="px-3 py-3 text-muted align-top">{a}</td>
+      <td className="px-3 py-3 text-muted align-top">{b}</td>
+      <td className="px-3 py-3 align-top bg-accent/5">{c}</td>
+    </tr>
   );
 }
 
@@ -318,6 +420,116 @@ function Bubble({
   );
 }
 
+function AppointmentEmailMockup(): JSX.Element {
+  return (
+    <div className="mt-4 rounded-md border border-slate-200 bg-slate-50 overflow-hidden">
+      <div className="flex items-center gap-2 border-b border-slate-200 bg-white px-3 py-2 text-[11px] text-muted">
+        <span className="inline-block w-2.5 h-2.5 rounded-full bg-red-400"></span>
+        <span className="inline-block w-2.5 h-2.5 rounded-full bg-amber-400"></span>
+        <span className="inline-block w-2.5 h-2.5 rounded-full bg-emerald-400"></span>
+        <span className="ml-2 font-medium text-ink">New booking · Sanders Plumbing</span>
+      </div>
+      <div className="px-4 py-3 text-[13px] text-ink space-y-2">
+        <div className="flex justify-between">
+          <span className="text-muted">Caller</span>
+          <span className="font-medium">Erin H. · (415) ···-9111</span>
+        </div>
+        <div className="flex justify-between">
+          <span className="text-muted">When</span>
+          <span className="font-medium">Today 11:45 PM (90 min)</span>
+        </div>
+        <div className="flex justify-between">
+          <span className="text-muted">Job</span>
+          <span className="font-medium">Burst pipe — kitchen, water off</span>
+        </div>
+        <div className="flex justify-between">
+          <span className="text-muted">Likely parts</span>
+          <span className="font-medium">½″ copper fitting, shark-bite</span>
+        </div>
+        <div className="flex justify-between">
+          <span className="text-muted">Quoted</span>
+          <span className="font-medium">$75 callout + $180–$320 repair</span>
+        </div>
+        <div className="flex justify-between border-t border-slate-200 pt-2">
+          <span className="text-muted">Deposit</span>
+          <span className="font-medium text-emerald-700">$75 secured · payout to your Stripe</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DashboardMockup(): JSX.Element {
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white overflow-hidden shadow-sm">
+      <div className="border-b border-slate-200 px-4 py-3 flex items-center gap-2 text-xs text-muted">
+        <span className="font-semibold text-ink">Dashboard</span>
+        <span>·</span>
+        <span>Upcoming appointments</span>
+      </div>
+      <div className="divide-y divide-slate-100 text-[13px]">
+        {[
+          { who: 'Erin H.', when: 'Tonight 11:45 PM', job: 'Burst pipe — kitchen', fee: '$75 deposit', tone: 'emergency' as const },
+          { who: 'Mark D.', when: 'Tue 8:30 AM', job: 'Water heater — no hot water', fee: '$50 deposit', tone: 'normal' as const },
+          { who: 'Priya R.', when: 'Tue 1:00 PM', job: 'Bathroom fixture install', fee: 'No deposit', tone: 'normal' as const },
+          { who: 'Joe T.', when: 'Wed 10:00 AM', job: 'Slow drain — bathroom sink', fee: '$25 deposit', tone: 'normal' as const },
+        ].map((row) => (
+          <div key={row.who} className="px-4 py-3 flex items-center gap-3">
+            <div
+              className={`w-2 h-2 rounded-full ${row.tone === 'emergency' ? 'bg-red-500' : 'bg-emerald-500'}`}
+              aria-hidden="true"
+            />
+            <div className="flex-1">
+              <p className="font-medium text-ink">{row.who}</p>
+              <p className="text-xs text-muted">{row.job}</p>
+            </div>
+            <div className="text-right">
+              <p className="text-ink">{row.when}</p>
+              <p className="text-xs text-muted">{row.fee}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="border-t border-slate-200 bg-slate-50 px-4 py-2 text-[11px] text-muted">
+        4 booked this week · $225 in deposits secured
+      </div>
+    </div>
+  );
+}
+
+function JobBriefMockup(): JSX.Element {
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white overflow-hidden shadow-sm">
+      <div className="border-b border-slate-200 px-4 py-3 flex items-center gap-2 text-xs text-muted">
+        <span className="font-semibold text-ink">Job brief email</span>
+        <span>·</span>
+        <span>Sent to your inbox after every booking</span>
+      </div>
+      <div className="px-4 py-4 text-[13px] text-ink space-y-3">
+        <div>
+          <p className="text-xs text-muted">Subject</p>
+          <p className="font-medium">New emergency · Burst pipe · Erin H. · Tonight 11:45 PM</p>
+        </div>
+        <div className="rounded-md bg-amber-50 border border-amber-200 px-3 py-2 text-[12px] text-amber-900">
+          ⚠ Emergency keyword detected: <strong>burst pipe</strong>. Caller text-alerted to your
+          mobile.
+        </div>
+        <ul className="space-y-1.5 text-[12px]">
+          <li><strong>Service area:</strong> 94110 (in your zone)</li>
+          <li><strong>Urgency:</strong> Same-night, water shut off</li>
+          <li><strong>Owner / tenant:</strong> Owner-occupied</li>
+          <li><strong>Job details:</strong> Pipe burst under kitchen sink, ½″ copper, no visible mold</li>
+          <li><strong>AI quoted:</strong> $75 callout + $180–$320 repair (in your standard range)</li>
+          <li><strong>Deposit:</strong> $75 paid · Stripe payout to you on next cycle</li>
+        </ul>
+        <p className="text-[11px] text-muted pt-2 border-t border-slate-200">
+          Conversation transcript and customer contact attached. Reply STOP to opt out.
+        </p>
+      </div>
+    </div>
+  );
+}
+
 // ── Inline SVG icons ─────────────────────────────────────────────────────
 
 function IconBolt(): JSX.Element {
@@ -344,14 +556,6 @@ function IconCalendar(): JSX.Element {
     </svg>
   );
 }
-function IconCard(): JSX.Element {
-  return (
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <rect x="2" y="5" width="20" height="14" rx="2" />
-      <path d="M2 10h20M6 15h2" />
-    </svg>
-  );
-}
 function IconShield(): JSX.Element {
   return (
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className="text-emerald-600" aria-hidden="true">
@@ -360,4 +564,3 @@ function IconShield(): JSX.Element {
     </svg>
   );
 }
-

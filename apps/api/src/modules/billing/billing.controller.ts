@@ -22,7 +22,13 @@ export class BillingController {
     @CurrentUser() user: AuthenticatedUser,
     @Body(new ZodBodyPipe(CreateCheckoutSessionSchema)) body: CreateCheckoutSession,
   ): Promise<CheckoutSessionResponse> {
-    return this.service.createCheckoutSession(user.userId, user.email, body.plan, body.business_name);
+    return this.service.createCheckoutSession(
+      user.userId,
+      user.email,
+      body.plan,
+      body.cadence,
+      body.business_name,
+    );
   }
 
   @Get('portal-session')

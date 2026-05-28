@@ -399,7 +399,7 @@ function PaymentsTab({ operatorId }: { operatorId: string }): JSX.Element {
           <div className="space-y-3">
             <p>
               Issues a full refund to the caller on the operator's Stripe Connect account, and
-              reverses BookingBlues' application fee. Cannot be undone.
+              reverses KeeprSteady' application fee. Cannot be undone.
             </p>
             <label className="block text-xs text-muted dark:text-slate-400">
               Reason (required, recorded in audit log)

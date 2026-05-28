@@ -67,6 +67,21 @@ export async function onCheckoutCompleted(
   if (error) throw error;
 }
 
+/**
+ * Narrow `subscription.metadata.plan` / `.cadence` to the values we set at
+ * checkout. Anything we don't recognise — including pre-migration
+ * Starter/Pro subs or third-party-created subscriptions — is stored as
+ * null so we never persist garbage.
+ */
+function planFromMetadata(meta: Stripe.Metadata | null): 'solo' | 'crew' | 'fleet' | null {
+  const v = meta?.['plan'];
+  return v === 'solo' || v === 'crew' || v === 'fleet' ? v : null;
+}
+function cadenceFromMetadata(meta: Stripe.Metadata | null): 'monthly' | 'annual' | null {
+  const v = meta?.['cadence'];
+  return v === 'monthly' || v === 'annual' ? v : null;
+}
+
 export async function onSubscriptionUpserted(
   sub: Stripe.Subscription,
   deps: HandlerDeps,
@@ -87,12 +102,22 @@ export async function onSubscriptionUpserted(
     return;
   }
 
+  // Stripe is the source of truth for the active price ID — pull it off
+  // the subscription item rather than trusting metadata, which a user
+  // could mutate through the Customer Portal when switching plans.
+  const stripePriceId = sub.items.data[0]?.price.id ?? null;
+  const plan = planFromMetadata(sub.metadata);
+  const cadence = cadenceFromMetadata(sub.metadata);
+
   const { error } = await deps.db
     .from('operators')
     .update({
       stripe_subscription_id: sub.id,
       subscription_status: mapSubscriptionStatus(sub.status),
       trial_ends_at: unixToIso(sub.trial_end),
+      ...(plan != null ? { plan } : {}),
+      ...(cadence != null ? { plan_cadence: cadence } : {}),
+      ...(stripePriceId != null ? { stripe_price_id: stripePriceId } : {}),
     })
     .eq('id', operator.id);
   if (error) throw error;

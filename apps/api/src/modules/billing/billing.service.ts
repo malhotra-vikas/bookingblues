@@ -12,7 +12,12 @@ import {
 } from '../../common/errors/app-error';
 import { ENV_TOKEN } from '../../config/config.module';
 import type { Env } from '../../config/env';
-import type { CheckoutSessionResponse, Plan, PortalSessionResponse } from './billing.dto';
+import type {
+  Cadence,
+  CheckoutSessionResponse,
+  Plan,
+  PortalSessionResponse,
+} from './billing.dto';
 
 type OperatorRow = Tables<'operators'>;
 
@@ -28,12 +33,20 @@ export class BillingService {
     userId: string,
     userEmail: string | null,
     plan: Plan,
+    cadence: Cadence,
     businessName?: string,
   ): Promise<CheckoutSessionResponse> {
-    const priceId = this.priceForPlan(plan);
+    const priceId = this.priceForPlan(plan, cadence);
 
     const operator = await this.ensureOperator(userId, userEmail, businessName);
     const customerId = await this.ensureStripeCustomer(operator, userEmail);
+
+    // Stripe webhooks see this metadata on the subscription object —
+    // stripe-event-handlers.ts pulls plan + cadence out of here to keep
+    // operators.plan / .plan_cadence / .stripe_price_id in sync. Without
+    // them on subscription_data.metadata we'd have to re-fetch on every
+    // event.
+    const metadata = { operator_id: operator.id, plan, cadence, stripe_price_id: priceId };
 
     const session = await this.stripe.client().checkout.sessions.create({
       mode: 'subscription',
@@ -46,11 +59,11 @@ export class BillingService {
         trial_settings: {
           end_behavior: { missing_payment_method: 'cancel' },
         },
-        metadata: { operator_id: operator.id, plan },
+        metadata,
       },
       success_url: `${this.env.APP_URL}/dashboard?subscription=success`,
       cancel_url: `${this.env.APP_URL}/pricing?subscription=cancelled`,
-      metadata: { operator_id: operator.id, plan },
+      metadata,
     });
 
     if (!session.url) {
@@ -104,14 +117,16 @@ export class BillingService {
 
   // ── helpers ──────────────────────────────────────────────────────────────
 
-  private priceForPlan(plan: Plan): string {
-    if (plan === 'starter') {
-      const id = this.env.STRIPE_PRICE_STARTER;
-      if (!id) throw new ValidationError('STRIPE_PRICE_STARTER is not configured');
-      return id;
-    }
-    const id = this.env.STRIPE_PRICE_PRO;
-    if (!id) throw new ValidationError('STRIPE_PRICE_PRO is not configured');
+  private priceForPlan(plan: Plan, cadence: Cadence): string {
+    const key = `STRIPE_PRICE_${plan.toUpperCase()}_${cadence.toUpperCase()}` as
+      | 'STRIPE_PRICE_SOLO_MONTHLY'
+      | 'STRIPE_PRICE_SOLO_ANNUAL'
+      | 'STRIPE_PRICE_CREW_MONTHLY'
+      | 'STRIPE_PRICE_CREW_ANNUAL'
+      | 'STRIPE_PRICE_FLEET_MONTHLY'
+      | 'STRIPE_PRICE_FLEET_ANNUAL';
+    const id = this.env[key];
+    if (!id) throw new ValidationError(`${key} is not configured`);
     return id;
   }
 

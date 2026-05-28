@@ -389,12 +389,15 @@ export type Database = {
           id: string;
           onboarding_completed_at: string | null;
           personal_phone_e164: string | null;
+          plan: string | null;
+          plan_cadence: string | null;
           service_radius_zones: Json;
           service_zip_codes: string[];
           stripe_connect_account_id: string | null;
           stripe_connect_charges_enabled: boolean;
           stripe_connect_payouts_enabled: boolean;
           stripe_customer_id: string | null;
+          stripe_price_id: string | null;
           stripe_subscription_id: string | null;
           subscription_status:
             | Database["public"]["Enums"]["subscription_status"]
@@ -419,12 +422,15 @@ export type Database = {
           id?: string;
           onboarding_completed_at?: string | null;
           personal_phone_e164?: string | null;
+          plan?: string | null;
+          plan_cadence?: string | null;
           service_radius_zones?: Json;
           service_zip_codes?: string[];
           stripe_connect_account_id?: string | null;
           stripe_connect_charges_enabled?: boolean;
           stripe_connect_payouts_enabled?: boolean;
           stripe_customer_id?: string | null;
+          stripe_price_id?: string | null;
           stripe_subscription_id?: string | null;
           subscription_status?:
             | Database["public"]["Enums"]["subscription_status"]
@@ -449,12 +455,15 @@ export type Database = {
           id?: string;
           onboarding_completed_at?: string | null;
           personal_phone_e164?: string | null;
+          plan?: string | null;
+          plan_cadence?: string | null;
           service_radius_zones?: Json;
           service_zip_codes?: string[];
           stripe_connect_account_id?: string | null;
           stripe_connect_charges_enabled?: boolean;
           stripe_connect_payouts_enabled?: boolean;
           stripe_customer_id?: string | null;
+          stripe_price_id?: string | null;
           stripe_subscription_id?: string | null;
           subscription_status?:
             | Database["public"]["Enums"]["subscription_status"]

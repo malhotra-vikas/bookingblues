@@ -1,15 +1,18 @@
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 
+import { LegalFooter } from '../../components/LegalFooter';
+import { Logo } from '../../components/Logo';
 import { ThemeToggle } from '../../components/ThemeToggle';
+import { BRAND, TRIAL_COPY } from '../../lib/brand';
 
 export default function AuthLayout({ children }: { children: ReactNode }): JSX.Element {
   return (
     <main className="min-h-screen flex flex-col bg-gradient-to-b from-slate-50 to-white dark:from-slate-950 dark:to-slate-900">
       <header className="px-6 py-4 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
         <div className="max-w-5xl mx-auto flex items-center gap-6">
-          <Link href="/" className="font-semibold no-underline text-ink dark:text-slate-100">
-            BookingBlues
+          <Link href="/" className="no-underline" aria-label={`${BRAND.name} home`}>
+            <Logo />
           </Link>
           <nav className="flex items-center gap-4 text-sm">
             <Link href="/pricing" className="no-underline text-muted hover:text-ink dark:hover:text-slate-100">
@@ -17,6 +20,9 @@ export default function AuthLayout({ children }: { children: ReactNode }): JSX.E
             </Link>
             <Link href="/faq" className="no-underline text-muted hover:text-ink dark:hover:text-slate-100">
               FAQ
+            </Link>
+            <Link href="/contact" className="no-underline text-muted hover:text-ink dark:hover:text-slate-100">
+              Contact
             </Link>
           </nav>
           <div className="ml-auto">
@@ -30,22 +36,23 @@ export default function AuthLayout({ children }: { children: ReactNode }): JSX.E
           {/* Brand pitch — desktop only */}
           <aside className="hidden lg:block">
             <p className="text-xs font-semibold tracking-[0.18em] uppercase text-accent dark:text-blue-400 mb-4">
-              AI lead recovery — built for plumbers
+              AI lead recovery for home service pros
             </p>
             <h2 className="text-3xl font-semibold leading-tight text-ink dark:text-slate-100 tracking-tight mb-4">
-              Never miss another emergency call.
+              Never miss another job.
             </h2>
             <p className="text-base text-muted dark:text-slate-400 leading-relaxed max-w-md">
-              AI books your jobs by text while you&apos;re on the wrench. Burst pipe at 11pm? The
-              caller gets a text in 10 seconds, you get an SMS alert, and the appointment lands on
-              your calendar before they call the next plumber.
+              AI books your missed calls by text while you&apos;re on the job. Burst pipe at
+              11pm, AC out at 95°, storm damage on a roof — the caller gets a text in 10 seconds,
+              you get an SMS alert, and the appointment lands on your calendar before they call
+              the next contractor.
             </p>
             <ul className="mt-6 space-y-2 text-sm text-muted dark:text-slate-400">
               <Bullet>Responds in under 10 seconds, 24/7</Bullet>
-              <Bullet>Plumbing-tuned vetting (leak vs install, sparks, owner vs tenant)</Bullet>
+              <Bullet>Trade-specific vetting for plumbers, HVAC, roofers, and electricians</Bullet>
               <Bullet>Emergency-keyword detection alerts you instantly</Bullet>
-              <Bullet>Syncs with Google Calendar today — Jobber + HCP coming soon</Bullet>
-              <Bullet>Free for 7 days · cancel anytime</Bullet>
+              <Bullet>Syncs with Google Calendar; Jobber and HCP coming soon</Bullet>
+              <Bullet>{TRIAL_COPY.durationLabel} · cancel anytime</Bullet>
             </ul>
           </aside>
 
@@ -59,19 +66,8 @@ export default function AuthLayout({ children }: { children: ReactNode }): JSX.E
       </div>
 
       <footer className="border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
-        <div className="max-w-5xl mx-auto px-6 py-4 flex flex-wrap items-center justify-between gap-2 text-xs text-muted dark:text-slate-400">
-          <span>© {new Date().getFullYear()} BookingBlues</span>
-          <nav className="flex gap-4">
-            <Link href="/pricing" className="no-underline text-muted hover:text-ink dark:hover:text-slate-100">
-              Pricing
-            </Link>
-            <Link href="/faq" className="no-underline text-muted hover:text-ink dark:hover:text-slate-100">
-              FAQ
-            </Link>
-            <a href="mailto:hello@bookingblues.com" className="no-underline text-muted hover:text-ink dark:hover:text-slate-100">
-              Contact
-            </a>
-          </nav>
+        <div className="max-w-5xl mx-auto px-6 py-6">
+          <LegalFooter variant="auth" />
         </div>
       </footer>
     </main>

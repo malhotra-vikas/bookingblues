@@ -64,7 +64,7 @@ export function CarrierForwarding({ twilioNumber }: { twilioNumber: string }): J
   return (
     <div className="space-y-3 text-sm">
       <p className="text-muted">
-        On your business mobile, dial these codes to forward missed calls to your BookingBlues
+        On your business mobile, dial these codes to forward missed calls to your KeeprSteady
         number{' '}
         <span className="font-mono">{twilioNumber}</span>. Your phone still rings — only no-answer
         and busy calls forward to the AI.

@@ -95,7 +95,7 @@ export function SalesCalculator(): JSX.Element {
       <div className="flex items-center justify-between mb-5">
         <div>
           <h1 className="text-base font-semibold tracking-tight">
-            <span className="text-emerald-400">BookingBlues</span>
+            <span className="text-emerald-400">KeeprSteady</span>
             <span className="text-slate-500 mx-2">|</span>
             <span className="text-sm font-normal text-slate-400">Sales Calculator</span>
           </h1>
@@ -206,7 +206,7 @@ export function SalesCalculator(): JSX.Element {
         <main className="flex flex-col gap-4">
           {/* KPIs */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-            <Kpi top="emerald" label="Monthly savings" value={fmt(m.savings) + '/mo'} sub="dispatcher cost − BookingBlues total" />
+            <Kpi top="emerald" label="Monthly savings" value={fmt(m.savings) + '/mo'} sub="dispatcher cost − KeeprSteady total" />
             <Kpi top="blue" label="Revenue recovered" value={fmt(m.revRec) + '/mo'} sub="from AI-captured missed calls" />
             <Kpi top="amber" label="Combined monthly benefit" value={fmt(m.combined) + '/mo'} sub="savings + new revenue" />
             <Kpi top="red" label="First-year ROI" value={pct(m.roi) + ' yr1'} sub="after setup fee" />
@@ -220,7 +220,7 @@ export function SalesCalculator(): JSX.Element {
                 { label: 'Payroll taxes & benefits', value: fmt(m.dispTaxMo) + '/mo', tone: 'neg' },
                 { label: 'True dispatcher cost/mo', value: fmt(m.dispMonthly) + '/mo', tone: 'neg', total: true },
                 { spacer: true },
-                { label: 'BookingBlues platform (MRR)', value: fmt(m.platform) + '/mo' },
+                { label: 'KeeprSteady platform (MRR)', value: fmt(m.platform) + '/mo' },
                 { label: 'HITL verification', value: hitlOn ? fmt(hitlFee) + '/mo' : '$0 (excluded)' },
                 { label: 'Setup fee (amortized)', value: fmt(m.amortized) + `/mo (${amort} mo)` },
                 { label: 'Total BB cost/mo (yr 1)', value: fmt(m.keeprMo) + '/mo', total: true },
@@ -367,7 +367,7 @@ function computeAll(x: Inputs) {
   const s100HITL = hitlFee * 100;
 
   const pitch =
-    `"Right now you're paying ${fmt(dispMonthly)} every single month for your dispatcher — and that's before overtime, sick days, or turnover. With BookingBlues ${tierInfo.name}, your all-in cost drops to ${fmt(keeprMo)} per month in year one. That's ${fmt(Math.abs(savings))} ${savings >= 0 ? 'back in your pocket' : 'more, but here is where it gets interesting'} every month just on labor. But here's the number most owners miss: you're leaving roughly ${effectiveMissedCalls} calls on the table each month. Our AI answers every single one, 24/7. At your job value of ${fmt(x.job)}, that's ${fmt(revRec)} in revenue you're recovering that you weren't seeing before. Combined, we're talking ${fmt(combined)} per month in real financial impact — your setup is paid back in ${paybackMonths === Infinity ? 'a few months' : paybackMonths + ' month' + (paybackMonths === 1 ? '' : 's')} and your first-year ROI is ${pct(roi)}. There's also a live human HITL agent monitoring the AI's every dispatch decision, so you're not just getting automation — you're getting accountability. What does your current dispatcher situation look like?"`;
+    `"Right now you're paying ${fmt(dispMonthly)} every single month for your dispatcher — and that's before overtime, sick days, or turnover. With KeeprSteady ${tierInfo.name}, your all-in cost drops to ${fmt(keeprMo)} per month in year one. That's ${fmt(Math.abs(savings))} ${savings >= 0 ? 'back in your pocket' : 'more, but here is where it gets interesting'} every month just on labor. But here's the number most owners miss: you're leaving roughly ${effectiveMissedCalls} calls on the table each month. Our AI answers every single one, 24/7. At your job value of ${fmt(x.job)}, that's ${fmt(revRec)} in revenue you're recovering that you weren't seeing before. Combined, we're talking ${fmt(combined)} per month in real financial impact — your setup is paid back in ${paybackMonths === Infinity ? 'a few months' : paybackMonths + ' month' + (paybackMonths === 1 ? '' : 's')} and your first-year ROI is ${pct(roi)}. There's also a live human HITL agent monitoring the AI's every dispatch decision, so you're not just getting automation — you're getting accountability. What does your current dispatcher situation look like?"`;
 
   return {
     platform, hitlFee, setupFee, totalMonthlyCalls, calculatedMissedCalls, effectiveMissedCalls,

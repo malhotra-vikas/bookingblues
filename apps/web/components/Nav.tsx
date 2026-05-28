@@ -13,7 +13,7 @@ export function Nav({
   return (
     <header className="px-6 py-3 border-b border-slate-200 dark:border-slate-800 bg-paper dark:bg-slate-900 flex items-center gap-6">
       <Link href="/dashboard" className="font-semibold no-underline text-ink dark:text-slate-100">
-        BookingBlues
+        KeeprSteady
       </Link>
       <nav className="flex items-center gap-4 text-sm">
         <Link href="/dashboard" className="no-underline">

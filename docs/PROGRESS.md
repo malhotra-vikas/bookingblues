@@ -9,9 +9,9 @@ When a section is wrong or stale, fix it in the same commit as the change.
 
 ## Status
 
-- **Phase**: Foundations (scaffolding before features)
-- **Last updated**: 2026-05-11
-- **Active slice**: none — Slice 15 + 7.5 just landed; pending E2E smoke + Slack-app creation
+- **Phase**: Pre-launch (KeeprSteady rebrand + Solo/Crew/Fleet billing landed; awaiting prod test)
+- **Last updated**: 2026-05-27
+- **Active slice**: none — Launch prep (rebrand + billing migration) just landed; user will test 2026-05-28
 - **Production target**: EC2 (Slice 14). Railway is staging only (Slice 13).
 - **HITL**: Slack-based (Slice 7.5) — **shipped** (code, manifest, docs; needs the Slack app created in api.slack.com to function end-to-end).
 
@@ -483,6 +483,165 @@ in the day — see below.
       enforces STOP/UNSTOP automatically — the disclosure is the only
       code change needed for 10DLC approval.) DB-level opt-out tracking
       deferred — not blocking 10DLC review.
+
+### KeeprSteady launch prep + billing migration — ✅ **shipped 2026-05-27, UNTESTED IN PROD**
+
+Two large bundles landed in one session. Both typecheck clean on api + web.
+Nothing has been deployed or smoke-tested yet — user is testing 2026-05-28.
+
+**Source of truth for the change:** the spec docs at
+`/Users/vikas/Downloads/files(1)/KeeprSteady_Edit_Specs.docx` (31 site edit
+items) and `/Users/vikas/Downloads/files(1)/KeeprSteady_Legal_Docs.docx`
+(Privacy Policy + Terms of Service).
+
+#### Bundle 1 — Site rebrand + legal + home-services reframe
+
+- [x] **ED-01 brand rename** — every "BookingBlues" string across
+      `apps/web/**` swapped to "KeeprSteady" (23 files: layouts, dashboard
+      welcome, admin, Nav, SettingsPanel, CarrierForwarding, SalesCalculator,
+      OperatorActions/Tabs, Wizard, api.ts comment). Zero remaining
+      case-insensitive matches in the web tree.
+- [x] **Shared brand constants** — `apps/web/lib/brand.ts` is the new
+      single source of truth for name / sales email / Cal.com URL /
+      LinkedIn URL / plan data (`PLANS` array drives both the public
+      pricing page and the wizard plan picker).
+- [x] **ED-19 LegalFooter component** — `apps/web/components/LegalFooter.tsx`
+      renders the AI disclaimer + TCPA STOP notice + Privacy/Terms/Contact
+      links + LinkedIn icon. Wired into both `(marketing)/layout.tsx` and
+      `(auth)/layout.tsx` so the disclaimer appears on every public page.
+- [x] **ED-02, ED-06, ED-08, ED-14, ED-16, ED-18, ED-28 homepage rebuild** —
+      home-services reframe (still leads with plumbers but explicitly names
+      HVAC/roofing/electrical/locksmith), placeholder testimonial removed,
+      "See it in action" section with dashboard + job-brief CSS mockups,
+      competitive differentiation table (live answering / basic missed-call
+      text / KeeprSteady), 10% alignment callout, trial copy standardised to
+      "7-day free trial — no charge until day 8 · Cancel in 2 clicks from
+      Settings", "Book a 15-min demo" secondary CTA next to every signup CTA.
+- [x] **ED-03, ED-04, ED-05, ED-23 pricing rebuild** —
+      `apps/web/app/(marketing)/pricing/page.tsx` now renders 3 tiers from
+      `PLANS` via `PricingTiers.tsx` (client component with monthly/annual
+      toggle). Crew has a "Most popular" badge. Inline 4-question FAQ
+      accordion ("Can I cancel anytime?", "What happens after my free
+      trial?", "What counts as a conversation?", "Is deposit collection
+      required?"). HITL trust paragraph + 10% alignment callout below the
+      tiers. Per-tier deposit fee row (10/15/20%) with tooltip explaining
+      pass-through to customer.
+- [x] **ED-11 unique meta titles + descriptions per page** — every
+      marketing page exports its own `metadata`, including
+      canonical URLs. Auth pages get `robots: { index: false }`.
+- [x] **ED-24 OG / Twitter card meta** — set on root `metadata` in
+      `app/layout.tsx` with `metadataBase` + `/og-image.png` reference.
+      **Asset not yet in `/public`** — Next 404s gracefully until file lands.
+- [x] **ED-25 favicon hookup** — `icons: { icon, apple }` in root metadata
+      reference `/favicon.ico` + `/apple-touch-icon.png`. Same asset gap.
+- [x] **ED-07 contact page** — `apps/web/app/(marketing)/contact/page.tsx`
+      embeds the Cal.com booking widget as an iframe (`?embed=true`) +
+      shows `sales@keeprsteady.com` for email fallback. Linked from header,
+      footer, and pricing page CTA.
+- [x] **ED-13 Privacy + Terms pages** — full pages at
+      `apps/web/app/(marketing)/privacy/page.tsx` and `/terms/page.tsx`,
+      content lifted verbatim from `KeeprSteady_Legal_Docs.docx` with brand
+      constants interpolated. Both use a shared `Section` helper with
+      Tailwind arbitrary variants for typography (`[&_h3]:...`,
+      `[&_ul]:list-disc`). Florida governing law, AAA arbitration in Polk
+      County, FL, 3-month liability cap.
+- [x] **ED-15 LinkedIn social link** — placeholder URL
+      `https://www.linkedin.com/company/keeprsteady` in `lib/brand.ts`.
+      Footer icon links to it. **Flip the constant when the page exists.**
+- [x] **ED-17, ED-29 FAQ full rewrite** — 15 entries covering: multi-trade,
+      AI accuracy (the differentiator question), out-of-scope handoff,
+      setup time, missed-call forwarding, emergencies, Jobber/HCP,
+      Solo/Crew/Fleet pricing detail, overages, deposit requirements per
+      tier, what-AI-does-when-it-can't-book, trial-end behaviour, data
+      residency, cancellation.
+- [x] **ED-09 demo CTA everywhere** — every primary CTA on the home and
+      pricing pages now has a "Book a 15-min demo" secondary CTA pointing
+      at the Cal.com URL. Also surfaced in the marketing header (desktop).
+- [x] **ED-10 signup loading skeleton** — replaced the bare "Loading…"
+      Suspense fallback on `/signup` and `/login` with a CSS skeleton that
+      matches the field/button layout. Reads as "form initialising"
+      instead of "site broken."
+- [x] **ED-12, ED-22 login brand fix** — login subhead reads "Sign in to
+      your KeeprSteady account." Auth-layout left column re-pitched as
+      home-services with multi-trade bullet ("Trade-specific vetting for
+      plumbers, HVAC, roofers, and electricians").
+- [x] **ED-20 signup left column reframe** — handled via the shared auth
+      layout update above.
+- [x] **ED-21 signup ToS consent checkbox** — `AuthForm.tsx` (signup mode)
+      now has a required checkbox `I agree to the Terms of Service and
+      Privacy Policy.` Submit is disabled until checked, with a JS backstop
+      in `handleSubmit` for AT/form-fill bypasses. Post-trial billing
+      authorization disclosure rendered below the submit button.
+
+#### Bundle 2 — Billing migration: Starter/Pro → Solo/Crew/Fleet × monthly/annual
+
+This was the previously-flagged follow-up from the rebrand. Without it the
+marketing page advertised tiers that the API didn't accept.
+
+- [x] **Migration `20260515000001_operator_plan.sql`** — adds
+      `operators.plan` (`solo|crew|fleet`), `operators.plan_cadence`
+      (`monthly|annual`), `operators.stripe_price_id` (text). All nullable
+      with CHECK constraints. Index on `plan` for admin "how many on each
+      tier" queries. **Not yet run** — user runs `pnpm db:migrate` on
+      2026-05-28.
+- [x] **db-types patched by hand** — `packages/db-types/src/database.types.ts`
+      gets the three new operator columns inserted into Row/Insert/Update.
+      Mirrors what `pnpm gen:db` would emit after the migration. Re-run
+      `pnpm gen:db` to confirm parity once Supabase local is up.
+- [x] **API env** — `STRIPE_PRICE_STARTER`/`_PRO` removed from
+      `apps/api/src/config/env.ts`. Six new vars added:
+      `STRIPE_PRICE_{SOLO,CREW,FLEET}_{MONTHLY,ANNUAL}`. All six added to
+      `strictRequiredInProd`. `.env.example` updated with setup notes.
+- [x] **Billing DTO** — `apps/api/src/modules/billing/billing.dto.ts` now
+      exports `PlanSchema = z.enum(['solo','crew','fleet'])` +
+      `CadenceSchema = z.enum(['monthly','annual'])` (defaults to monthly).
+      `CreateCheckoutSession` accepts `{plan, cadence, business_name?}`.
+- [x] **Billing service** — `priceForPlan(plan, cadence)` constructs the
+      env key (`STRIPE_PRICE_${PLAN}_${CADENCE}`) and pulls the typed value
+      from env. Subscription metadata at checkout now carries
+      `{operator_id, plan, cadence, stripe_price_id}` on both
+      `subscription_data.metadata` and the top-level session metadata
+      (Stripe surfaces only one of these depending on event type).
+- [x] **Webhook persistence** — `stripe-event-handlers.ts`
+      `onSubscriptionUpserted` extracts `plan` + `cadence` from
+      `subscription.metadata` (narrowed via local helpers — anything we
+      don't recognise stays null so we never persist garbage). Reads
+      `stripe_price_id` from `subscription.items[0].price.id` so Stripe
+      remains the source of truth even if a user mutates metadata via the
+      Customer Portal during a plan switch.
+- [x] **Wizard 3-tier plan picker** — Subscribe step renders all three
+      `PLANS` cards with a monthly/annual cadence toggle and "Most
+      popular" badge on Crew. `startBilling(plan, cadence)` POSTs
+      `{plan, cadence}` to `/v1/billing/checkout-session`. Multi-button
+      busy guard prevents double checkout across all six plan×cadence
+      buttons.
+- [x] **Tests** — `stripe-webhook.spec.ts` env presets swapped to the six
+      new vars. `prompts.spec.ts` operator fixture filled in the three new
+      columns (plan/plan_cadence/stripe_price_id) to satisfy the stricter
+      Row type. Full suite still wired against real Supabase — not run in
+      this session.
+- [x] **Typecheck** — `pnpm --filter api typecheck` and
+      `pnpm --filter web typecheck` both pass clean.
+
+#### Intentionally left as-is
+
+- **SalesCalculator** (`apps/web/components/admin/SalesCalculator.tsx`)
+  still uses `TierKey = 'starter' | 'pro' | 'enterprise'` with internal
+  commission tier names ("Launch"/"Command"/"Fleet") and different
+  pricing ($997/$1,897/$3,497). These are sales-rep commission tiers,
+  not customer billing plans — orthogonal. Flag for separate cleanup if
+  desired.
+- **No env.example for the marketing site brand vars** — keeping
+  `lib/brand.ts` as the constants source keeps the build deterministic
+  and avoids another NEXT_PUBLIC_* inlining variable.
+- ~~**No screenshots/OG image asset**~~ — **resolved 2026-05-28.** Brand
+  assets generated from user-supplied logo (`~/Downloads/favicon.jpg` K
+  mark on black + `~/Downloads/canvas.png` transparent wordmark) via
+  Pillow into `apps/web/public/`: `favicon.ico` (16/32/48), `icon.png`
+  (32), `icon-192.png`, `icon-512.png`, `apple-touch-icon.png` (180),
+  `og-image.png` (1200×630, wordmark on black). `app/layout.tsx` `icons`
+  metadata references the full PNG set. Homepage product mockups remain
+  CSS-rendered (not real screenshots) — that's fine.
 
 ### Slice 17 — Smarter scheduling & emergency triage
 

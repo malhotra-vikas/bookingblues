@@ -24,7 +24,7 @@ export default async function AdminLayout({ children }: { children: ReactNode })
   return (
     <div className="min-h-screen flex flex-col bg-paper dark:bg-slate-950">
       <div className="bg-red-700 dark:bg-red-900 px-6 py-1.5 text-center text-xs font-semibold uppercase tracking-wide text-white">
-        BookingBlues Admin · Internal use only · Every action is logged
+        KeeprSteady Admin · Internal use only · Every action is logged
       </div>
       <header className="border-b border-red-100 dark:border-red-900/50 bg-paper dark:bg-slate-900 px-6 py-3 flex items-center gap-6">
         <Link href="/admin" className="font-semibold text-red-700 dark:text-red-400 no-underline">

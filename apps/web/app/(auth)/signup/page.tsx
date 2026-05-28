@@ -1,14 +1,25 @@
+import type { Metadata } from 'next';
 import Link from 'next/link';
 import { Suspense } from 'react';
 
 import { AuthForm } from '../../../components/AuthForm';
+import { TRIAL_COPY } from '../../../lib/brand';
+
+export const metadata: Metadata = {
+  title: 'Start Free Trial — KeeprSteady',
+  description: 'Create your KeeprSteady account. 7-day free trial, no charge until day 8.',
+  robots: { index: false, follow: true },
+  alternates: { canonical: '/signup' },
+};
 
 export default function SignupPage(): JSX.Element {
   return (
     <div>
-      <h1 className="text-2xl font-semibold tracking-tight text-ink mb-1">Start your 7-day trial</h1>
-      <p className="text-sm text-muted mb-6">No charge until day 8 — cancel anytime.</p>
-      <Suspense fallback={<div className="text-sm text-muted">Loading…</div>}>
+      <h1 className="text-2xl font-semibold tracking-tight text-ink dark:text-slate-100 mb-1">
+        Start your {TRIAL_COPY.durationLabel}
+      </h1>
+      <p className="text-sm text-muted mb-6">{TRIAL_COPY.chargeReassurance}</p>
+      <Suspense fallback={<AuthFormSkeleton mode="signup" />}>
         <AuthForm mode="signup" />
       </Suspense>
       <p className="mt-6 text-sm text-muted text-center">
@@ -17,6 +28,24 @@ export default function SignupPage(): JSX.Element {
           Sign in
         </Link>
       </p>
+    </div>
+  );
+}
+
+function AuthFormSkeleton({ mode }: { mode: 'signup' | 'login' }): JSX.Element {
+  const fieldCount = mode === 'signup' ? 4 : 2;
+  return (
+    <div className="space-y-4 animate-pulse" aria-hidden="true">
+      {Array.from({ length: fieldCount }).map((_, i) => (
+        <div key={i}>
+          <div className="h-3.5 w-24 bg-slate-200 dark:bg-slate-800 rounded mb-2" />
+          <div className="h-10 w-full bg-slate-100 dark:bg-slate-800/60 rounded-md border border-slate-200 dark:border-slate-700" />
+        </div>
+      ))}
+      {mode === 'signup' ? (
+        <div className="h-4 w-full bg-slate-100 dark:bg-slate-800/60 rounded" />
+      ) : null}
+      <div className="h-11 w-full bg-slate-200 dark:bg-slate-800 rounded-md" />
     </div>
   );
 }

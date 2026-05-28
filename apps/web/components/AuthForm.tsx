@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useState } from 'react';
 
@@ -15,6 +16,7 @@ export function AuthForm({ mode }: { mode: 'login' | 'signup' }): JSX.Element {
   const [password, setPassword] = useState('');
   const [businessName, setBusinessName] = useState('');
   const [phone, setPhone] = useState('');
+  const [consent, setConsent] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
@@ -33,6 +35,9 @@ export function AuthForm({ mode }: { mode: 'login' | 'signup' }): JSX.Element {
     const normalizedEmail = email.trim().toLowerCase();
     try {
       if (mode === 'signup') {
+        // Backstop the `required` attr — assistive tech and form-fill tools
+        // can still submit if the checkbox state is bypassed.
+        if (!consent) throw new Error('You must agree to the Terms of Service and Privacy Policy');
         const trimmedName = businessName.trim();
         if (!trimmedName) throw new Error('Business name is required');
         const phoneE164 = normalizeUsPhone(phone);
@@ -141,16 +146,44 @@ export function AuthForm({ mode }: { mode: 'login' | 'signup' }): JSX.Element {
           {info}
         </div>
       ) : null}
+      {mode === 'signup' ? (
+        <label className="flex items-start gap-2 text-[13px] text-ink dark:text-slate-200 leading-snug">
+          <input
+            type="checkbox"
+            checked={consent}
+            onChange={(e) => setConsent(e.target.checked)}
+            required
+            className="mt-0.5 h-4 w-4 rounded border-slate-300 dark:border-slate-700 text-accent focus:ring-accent"
+            aria-describedby="consent-help"
+          />
+          <span>
+            I agree to the{' '}
+            <Link href="/terms" target="_blank" className="underline">
+              Terms of Service
+            </Link>{' '}
+            and{' '}
+            <Link href="/privacy" target="_blank" className="underline">
+              Privacy Policy
+            </Link>
+            .
+          </span>
+        </label>
+      ) : null}
       <button
         type="submit"
-        disabled={busy}
+        disabled={busy || (mode === 'signup' && !consent)}
         className="w-full rounded-md bg-accent px-4 py-2.5 text-base font-medium text-white shadow-sm hover:bg-blue-700 transition-colors disabled:opacity-50"
       >
         {busy ? 'Working…' : mode === 'signup' ? 'Create account' : 'Sign in'}
       </button>
       {mode === 'signup' ? (
-        <p className="text-[11px] text-slate-500 dark:text-slate-400 text-center">
-          By creating an account you agree to our terms. We&apos;ll only charge after the 7-day trial.
+        <p
+          id="consent-help"
+          className="text-[11px] text-slate-500 dark:text-slate-400 text-center leading-relaxed"
+        >
+          By starting your trial, you authorize KeeprSteady to charge your card the plan rate
+          after your 7-day free trial ends. Deposit collection is on by default on Crew
+          (disableable in onboarding) and mandatory on Fleet.
         </p>
       ) : null}
     </form>

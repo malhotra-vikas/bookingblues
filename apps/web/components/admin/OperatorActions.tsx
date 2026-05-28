@@ -150,7 +150,7 @@ export function OperatorActions(props: Props): JSX.Element {
         body={
           <div className="space-y-3">
             <p>
-              Stops the BookingBlues subscription. By default, the cancellation takes effect at the
+              Stops the KeeprSteady subscription. By default, the cancellation takes effect at the
               end of the current billing period (the operator keeps access until then). Check the
               "immediate" box if you need to cancel right away.
             </p>

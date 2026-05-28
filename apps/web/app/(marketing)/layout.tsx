@@ -1,14 +1,17 @@
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 
+import { LegalFooter } from '../../components/LegalFooter';
+import { Logo } from '../../components/Logo';
 import { ThemeToggle } from '../../components/ThemeToggle';
+import { BRAND } from '../../lib/brand';
 
 export default function MarketingLayout({ children }: { children: ReactNode }): JSX.Element {
   return (
     <div className="min-h-screen flex flex-col">
       <header className="px-6 py-4 border-b border-slate-200 dark:border-slate-800 flex items-center gap-6">
-        <Link href="/" className="font-semibold no-underline text-ink dark:text-slate-100">
-          BookingBlues
+        <Link href="/" className="no-underline" aria-label={`${BRAND.name} home`}>
+          <Logo />
         </Link>
         <nav className="flex items-center gap-4 text-sm">
           <Link href="/pricing" className="no-underline">
@@ -17,9 +20,20 @@ export default function MarketingLayout({ children }: { children: ReactNode }): 
           <Link href="/faq" className="no-underline">
             FAQ
           </Link>
+          <Link href="/contact" className="no-underline">
+            Contact
+          </Link>
         </nav>
         <div className="ml-auto flex items-center gap-3 text-sm">
           <ThemeToggle />
+          <a
+            href={BRAND.demoBookingUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="no-underline hidden sm:inline"
+          >
+            Book a demo
+          </a>
           <Link href="/login" className="no-underline">
             Sign in
           </Link>
@@ -33,18 +47,8 @@ export default function MarketingLayout({ children }: { children: ReactNode }): 
       </header>
       <main className="flex-1">{children}</main>
       <footer className="border-t border-slate-200 dark:border-slate-800 mt-12">
-        <div className="max-w-5xl mx-auto px-6 py-8 flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between text-sm">
-          <div className="flex items-center gap-2 text-muted">
-            <span className="font-semibold text-ink dark:text-slate-100">BookingBlues</span>
-            <span>·</span>
-            <span>© {new Date().getFullYear()}</span>
-          </div>
-          <nav className="flex flex-wrap gap-x-5 gap-y-2">
-            <Link href="/pricing" className="no-underline text-muted hover:text-ink dark:hover:text-slate-100">Pricing</Link>
-            <Link href="/faq" className="no-underline text-muted hover:text-ink dark:hover:text-slate-100">FAQ</Link>
-            <Link href="/login" className="no-underline text-muted hover:text-ink dark:hover:text-slate-100">Sign in</Link>
-            <a href="mailto:hello@bookingblues.com" className="no-underline text-muted hover:text-ink dark:hover:text-slate-100">Contact</a>
-          </nav>
+        <div className="max-w-5xl mx-auto px-6 py-8">
+          <LegalFooter variant="marketing" />
         </div>
       </footer>
     </div>
