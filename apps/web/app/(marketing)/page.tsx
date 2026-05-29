@@ -18,7 +18,7 @@ export default function HomePage(): JSX.Element {
       <section className="border-b border-slate-200 bg-gradient-to-b from-slate-50 to-white">
         <div className="max-w-5xl mx-auto px-6 py-16 sm:py-20 grid lg:grid-cols-2 gap-12 items-center">
           <div>
-            <p className="inline-block text-[11px] font-semibold tracking-[0.18em] uppercase text-accent bg-blue-50 border border-blue-100 rounded-full px-3 py-1 mb-5">
+            <p className="inline-block text-[11px] font-semibold tracking-[0.18em] uppercase text-accent bg-accent/10 border border-accent/20 rounded-full px-3 py-1 mb-5">
               AI lead recovery for home service pros
             </p>
             <h1 className="text-4xl sm:text-5xl font-semibold leading-[1.1] text-ink tracking-tight mb-5">
@@ -235,7 +235,7 @@ function CtaPrimary({ href, children }: { href: string; children: ReactNode }): 
   return (
     <Link
       href={href}
-      className="inline-block rounded-md bg-accent text-white px-6 py-3 text-base font-medium no-underline shadow-sm hover:bg-blue-700 transition-colors"
+      className="inline-block rounded-md bg-accent text-white px-6 py-3 text-base font-medium no-underline shadow-sm hover:bg-accent-dark transition-colors"
     >
       {children}
     </Link>
@@ -309,7 +309,7 @@ function FeatureCard({
 function ProofStat({ num, label }: { num: string; label: string }): JSX.Element {
   return (
     <div className="rounded-lg bg-white border border-slate-200 p-4 text-center">
-      <span className="block text-3xl font-semibold text-ink tracking-tight">{num}</span>
+      <span className="block text-3xl font-semibold text-accent tracking-tight">{num}</span>
       <span className="block text-xs text-muted mt-1">{label}</span>
     </div>
   );

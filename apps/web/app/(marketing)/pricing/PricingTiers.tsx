@@ -129,7 +129,7 @@ function TierCard({ plan, cadence }: { plan: Plan; cadence: Cadence }): JSX.Elem
         href="/signup"
         className={`mt-6 inline-block text-center rounded-md px-4 py-2.5 text-base font-medium no-underline transition-colors ${
           recommended
-            ? 'bg-accent text-white hover:bg-blue-700'
+            ? 'bg-accent text-white hover:bg-accent-dark'
             : 'border border-slate-300 dark:border-slate-700 text-ink dark:text-slate-100 hover:border-slate-400'
         }`}
       >

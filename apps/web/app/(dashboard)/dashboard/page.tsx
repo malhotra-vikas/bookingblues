@@ -227,11 +227,11 @@ export default async function DashboardPage(): Promise<JSX.Element> {
                     <td className="px-3 py-2">
                       <div className="font-medium">{a.caller_name}</div>
                       <div className="flex items-center gap-2 text-xs text-muted dark:text-slate-400">
-                        <a href={`tel:${a.caller_phone_e164}`} className="text-accent dark:text-blue-400 font-mono no-underline hover:underline">
+                        <a href={`tel:${a.caller_phone_e164}`} className="text-accent dark:text-accent-light font-mono no-underline hover:underline">
                           {formatE164(a.caller_phone_e164)}
                         </a>
                         {a.caller_email && (
-                          <a href={`mailto:${a.caller_email}`} className="text-accent dark:text-blue-400 no-underline hover:underline">
+                          <a href={`mailto:${a.caller_email}`} className="text-accent dark:text-accent-light no-underline hover:underline">
                             email
                           </a>
                         )}
@@ -329,7 +329,7 @@ function EmptyState({
       <p className="text-sm font-medium text-ink dark:text-slate-100">{title}</p>
       <p className="text-sm text-muted dark:text-slate-400 mt-1 max-w-md mx-auto">{body}</p>
       {cta && (
-        <Link href={cta.href} className="inline-block mt-4 text-sm text-accent dark:text-blue-400 no-underline hover:underline">
+        <Link href={cta.href} className="inline-block mt-4 text-sm text-accent dark:text-accent-light no-underline hover:underline">
           {cta.label}
         </Link>
       )}

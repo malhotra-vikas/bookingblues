@@ -76,7 +76,7 @@ export default async function OnboardingPage(): Promise<JSX.Element> {
 
       <p className="text-sm text-muted dark:text-slate-400">
         Done?{' '}
-        <Link href="/dashboard" className="text-accent dark:text-blue-400">
+        <Link href="/dashboard" className="text-accent dark:text-accent-light">
           Go to your dashboard
         </Link>
         .

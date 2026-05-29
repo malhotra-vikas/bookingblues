@@ -15,13 +15,13 @@ export default function AuthLayout({ children }: { children: ReactNode }): JSX.E
             <Logo />
           </Link>
           <nav className="flex items-center gap-4 text-sm">
-            <Link href="/pricing" className="no-underline text-muted hover:text-ink dark:hover:text-slate-100">
+            <Link href="/pricing" className="no-underline text-muted hover:text-accent">
               Pricing
             </Link>
-            <Link href="/faq" className="no-underline text-muted hover:text-ink dark:hover:text-slate-100">
+            <Link href="/faq" className="no-underline text-muted hover:text-accent">
               FAQ
             </Link>
-            <Link href="/contact" className="no-underline text-muted hover:text-ink dark:hover:text-slate-100">
+            <Link href="/contact" className="no-underline text-muted hover:text-accent">
               Contact
             </Link>
           </nav>
@@ -35,7 +35,7 @@ export default function AuthLayout({ children }: { children: ReactNode }): JSX.E
         <div className="max-w-5xl mx-auto grid lg:grid-cols-[1fr_440px] gap-12 items-center">
           {/* Brand pitch — desktop only */}
           <aside className="hidden lg:block">
-            <p className="text-xs font-semibold tracking-[0.18em] uppercase text-accent dark:text-blue-400 mb-4">
+            <p className="text-xs font-semibold tracking-[0.18em] uppercase text-accent dark:text-accent-light mb-4">
               AI lead recovery for home service pros
             </p>
             <h2 className="text-3xl font-semibold leading-tight text-ink dark:text-slate-100 tracking-tight mb-4">

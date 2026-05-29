@@ -130,7 +130,7 @@ function AcceptTerms(): JSX.Element {
           type="button"
           onClick={accept}
           disabled={!checked || busy}
-          className="mt-5 w-full rounded-md bg-accent px-4 py-2.5 text-base font-medium text-white shadow-sm hover:bg-blue-700 transition-colors disabled:opacity-50"
+          className="mt-5 w-full rounded-md bg-accent px-4 py-2.5 text-base font-medium text-white shadow-sm hover:bg-accent-dark transition-colors disabled:opacity-50"
         >
           {busy ? 'Saving…' : 'Accept and continue'}
         </button>

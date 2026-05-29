@@ -36,7 +36,7 @@ export default async function SettingsPage(): Promise<JSX.Element> {
         <h1 className="text-2xl font-semibold dark:text-slate-100">Settings</h1>
         <p className="text-sm text-muted dark:text-slate-400">
           Finish onboarding to access settings.{' '}
-          <Link href="/onboarding" className="text-accent dark:text-blue-400">
+          <Link href="/onboarding" className="text-accent dark:text-accent-light">
             Go to onboarding
           </Link>
           .

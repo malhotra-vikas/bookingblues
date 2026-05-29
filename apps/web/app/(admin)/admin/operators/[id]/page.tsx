@@ -107,7 +107,7 @@ export default async function DossierPage({
             <li>
               Stripe customer:{' '}
               <a
-                className="text-accent dark:text-blue-400 hover:underline"
+                className="text-accent dark:text-accent-light hover:underline"
                 href={`https://dashboard.stripe.com/customers/${op.stripe_customer_id}`}
                 target="_blank"
                 rel="noreferrer"
@@ -120,7 +120,7 @@ export default async function DossierPage({
             <li>
               Subscription:{' '}
               <a
-                className="text-accent dark:text-blue-400 hover:underline"
+                className="text-accent dark:text-accent-light hover:underline"
                 href={`https://dashboard.stripe.com/subscriptions/${op.stripe_subscription_id}`}
                 target="_blank"
                 rel="noreferrer"
@@ -133,7 +133,7 @@ export default async function DossierPage({
             <li>
               Stripe Connect account:{' '}
               <a
-                className="text-accent dark:text-blue-400 hover:underline"
+                className="text-accent dark:text-accent-light hover:underline"
                 href={`https://dashboard.stripe.com/connect/accounts/${op.stripe_connect_account_id}`}
                 target="_blank"
                 rel="noreferrer"
@@ -146,7 +146,7 @@ export default async function DossierPage({
             <li>
               Twilio number:{' '}
               <a
-                className="text-accent dark:text-blue-400 hover:underline"
+                className="text-accent dark:text-accent-light hover:underline"
                 href={`https://console.twilio.com/us1/develop/phone-numbers/manage/incoming/${op.twilio_number_sid}`}
                 target="_blank"
                 rel="noreferrer"

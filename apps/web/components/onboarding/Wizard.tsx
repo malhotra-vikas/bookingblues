@@ -470,7 +470,7 @@ export function Wizard({
                       disabled={anyBillingBusy()}
                       className={`mt-4 w-full rounded-md px-3 py-2 text-sm font-medium disabled:opacity-50 ${
                         plan.recommended
-                          ? 'bg-accent text-white hover:bg-blue-700'
+                          ? 'bg-accent text-white hover:bg-accent-dark'
                           : 'border border-slate-300 dark:border-slate-700 dark:text-slate-200'
                       }`}
                     >

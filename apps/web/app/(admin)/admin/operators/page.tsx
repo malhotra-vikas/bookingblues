@@ -70,7 +70,7 @@ export default async function OperatorsPage({
         </select>
         <button
           type="submit"
-          className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+          className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-white hover:bg-accent-dark"
         >
           Filter
         </button>
@@ -94,7 +94,7 @@ export default async function OperatorsPage({
             {(resp?.items ?? []).map((op) => (
               <tr key={op.id} className="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/50">
                 <td className="px-3 py-2 font-medium">
-                  <Link href={`/admin/operators/${op.id}`} className="text-accent dark:text-blue-400 no-underline hover:underline">
+                  <Link href={`/admin/operators/${op.id}`} className="text-accent dark:text-accent-light no-underline hover:underline">
                     {op.business_name}
                   </Link>
                 </td>
@@ -128,7 +128,7 @@ export default async function OperatorsPage({
         <div className="flex justify-end">
           <Link
             href={{ pathname: '/admin/operators', query: { ...sp, cursor: resp.next_cursor } }}
-            className="text-sm text-accent dark:text-blue-400 no-underline hover:underline"
+            className="text-sm text-accent dark:text-accent-light no-underline hover:underline"
           >
             Next →
           </Link>

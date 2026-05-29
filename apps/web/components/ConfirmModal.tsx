@@ -56,7 +56,7 @@ export function ConfirmModal({
       ? 'bg-red-600 hover:bg-red-700'
       : severity === 'warning'
         ? 'bg-amber-600 hover:bg-amber-700'
-        : 'bg-accent hover:bg-blue-700';
+        : 'bg-accent hover:bg-accent-dark';
   const accentBar =
     severity === 'danger'
       ? 'bg-red-600'

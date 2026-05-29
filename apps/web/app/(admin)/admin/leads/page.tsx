@@ -83,7 +83,7 @@ export default async function LeadsPage({
                 </td>
                 <td className="px-3 py-2">
                   <div className="flex items-center gap-1.5">
-                    <a href={`mailto:${lead.email ?? ''}`} className="text-accent dark:text-blue-400 no-underline hover:underline">
+                    <a href={`mailto:${lead.email ?? ''}`} className="text-accent dark:text-accent-light no-underline hover:underline">
                       {lead.email ?? '—'}
                     </a>
                     {lead.email_confirmed_at ? (
@@ -95,7 +95,7 @@ export default async function LeadsPage({
                 </td>
                 <td className="px-3 py-2 font-mono text-xs">
                   {lead.personal_phone_e164 ? (
-                    <a href={`tel:${lead.personal_phone_e164}`} className="text-accent dark:text-blue-400 no-underline hover:underline">
+                    <a href={`tel:${lead.personal_phone_e164}`} className="text-accent dark:text-accent-light no-underline hover:underline">
                       {formatE164(lead.personal_phone_e164)}
                     </a>
                   ) : (
@@ -149,7 +149,7 @@ export default async function LeadsPage({
         {Number(page) > 1 ? (
           <a
             href={`/admin/leads?page=${Number(page) - 1}`}
-            className="text-sm text-accent dark:text-blue-400 no-underline hover:underline"
+            className="text-sm text-accent dark:text-accent-light no-underline hover:underline"
           >
             ← Previous
           </a>
@@ -157,7 +157,7 @@ export default async function LeadsPage({
         {resp?.next_page ? (
           <a
             href={`/admin/leads?page=${resp.next_page}`}
-            className="text-sm text-accent dark:text-blue-400 no-underline hover:underline"
+            className="text-sm text-accent dark:text-accent-light no-underline hover:underline"
           >
             Next →
           </a>

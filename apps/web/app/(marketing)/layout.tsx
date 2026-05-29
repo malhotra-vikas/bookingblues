@@ -14,13 +14,13 @@ export default function MarketingLayout({ children }: { children: ReactNode }): 
           <Logo />
         </Link>
         <nav className="flex items-center gap-4 text-sm">
-          <Link href="/pricing" className="no-underline">
+          <Link href="/pricing" className="no-underline hover:text-accent">
             Pricing
           </Link>
-          <Link href="/faq" className="no-underline">
+          <Link href="/faq" className="no-underline hover:text-accent">
             FAQ
           </Link>
-          <Link href="/contact" className="no-underline">
+          <Link href="/contact" className="no-underline hover:text-accent">
             Contact
           </Link>
         </nav>
@@ -30,11 +30,11 @@ export default function MarketingLayout({ children }: { children: ReactNode }): 
             href={BRAND.demoBookingUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="no-underline hidden sm:inline"
+            className="no-underline hidden sm:inline hover:text-accent"
           >
             Book a demo
           </a>
-          <Link href="/login" className="no-underline">
+          <Link href="/login" className="no-underline hover:text-accent">
             Sign in
           </Link>
           <Link

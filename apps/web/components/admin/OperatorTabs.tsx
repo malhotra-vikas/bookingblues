@@ -113,7 +113,7 @@ function TabBtn({
     <button
       type="button"
       onClick={() => onClick(id)}
-      className={`-mb-px border-b-2 px-3 py-2 text-sm ${on ? 'border-accent font-medium text-accent dark:text-blue-400' : 'border-transparent text-muted dark:text-slate-400 hover:text-ink dark:hover:text-slate-100'}`}
+      className={`-mb-px border-b-2 px-3 py-2 text-sm ${on ? 'border-accent font-medium text-accent dark:text-accent-light' : 'border-transparent text-muted dark:text-slate-400 hover:text-ink dark:hover:text-slate-100'}`}
     >
       {label}
     </button>

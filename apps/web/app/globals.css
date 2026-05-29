@@ -29,5 +29,5 @@ a:hover {
   @apply underline;
 }
 html.dark a {
-  @apply text-blue-400;
+  @apply text-accent-light;
 }
