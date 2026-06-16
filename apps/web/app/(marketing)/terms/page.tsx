@@ -257,7 +257,7 @@ export default function TermsPage(): JSX.Element {
         <h3>7d. Help</h3>
         <p>
           For help, reply <strong>HELP</strong> to any message, or email{' '}
-          <a href={`mailto:${BRAND.salesEmail}`} className="underline">{BRAND.salesEmail}</a>.
+          <a href={`mailto:${BRAND.supportEmail}`} className="underline">{BRAND.supportEmail}</a>.
         </p>
         <h3>7e. Opt-Out</h3>
         <p>

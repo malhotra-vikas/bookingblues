@@ -135,7 +135,35 @@ export default function PrivacyPage(): JSX.Element {
         <p>We do not share your data with any other third parties except as required by law.</p>
       </Section>
 
-      <Section title="6. Data Retention">
+      <Section title="6. SMS and Text Messaging Consent">
+        <p>
+          When an End User calls a Subscriber&apos;s business number and the call is missed or
+          forwarded to a {BRAND.name} number, {BRAND.name} sends automated SMS messages to that
+          End User on the Subscriber&apos;s behalf to schedule and service the request. By placing
+          the call and continuing the text conversation, the End User consents to receive these
+          messages.
+        </p>
+        <p>
+          <strong>
+            We do not sell, rent, or share mobile phone numbers, SMS opt-in, or consent
+            information with third parties or affiliates for their marketing or promotional
+            purposes. Text-messaging originator opt-in data and consent are not shared with any
+            third parties.
+          </strong>{' '}
+          Mobile information is used solely to deliver the booking conversation and is shared only
+          with the sub-processors listed in Section 5 (such as Twilio) strictly to transmit those
+          messages.
+        </p>
+        <p>
+          Message frequency varies. Message and data rates may apply. End Users may reply{' '}
+          <strong>HELP</strong> for help (or email{' '}
+          <a href={`mailto:${BRAND.supportEmail}`}>{BRAND.supportEmail}</a>) and{' '}
+          <strong>STOP</strong> at any time to opt out of further messages. See the SMS Messaging
+          Program section of our <a href="/terms">Terms of Service</a> for full program details.
+        </p>
+      </Section>
+
+      <Section title="7. Data Retention">
         <ul>
           <li>
             <strong>Conversation transcripts:</strong> retained for 12 months from the date of
@@ -167,7 +195,7 @@ export default function PrivacyPage(): JSX.Element {
         </ul>
       </Section>
 
-      <Section title="7. Data Security">
+      <Section title="8. Data Security">
         <p>We implement industry-standard security measures including:</p>
         <ul>
           <li>Encryption at rest and in transit (TLS 1.2+)</li>
@@ -185,7 +213,7 @@ export default function PrivacyPage(): JSX.Element {
         </p>
       </Section>
 
-      <Section title="8. Your Rights (Florida / US)">
+      <Section title="9. Your Rights (Florida / US)">
         <p>Under applicable US law, you have the right to:</p>
         <ul>
           <li>Request access to the personal information we hold about you</li>
@@ -199,7 +227,7 @@ export default function PrivacyPage(): JSX.Element {
         </p>
       </Section>
 
-      <Section title="9. Children's Privacy">
+      <Section title="10. Children's Privacy">
         <p>
           {BRAND.name} is a B2B service intended for use by business owners and their customers.
           We do not knowingly collect personal information from children under the age of 13. If
@@ -208,7 +236,7 @@ export default function PrivacyPage(): JSX.Element {
         </p>
       </Section>
 
-      <Section title="10. Changes to This Policy">
+      <Section title="11. Changes to This Policy">
         <p>
           We may update this Privacy Policy from time to time. We will notify active Subscribers
           by email at least 14 days before any material change takes effect. Continued use of the
@@ -217,7 +245,7 @@ export default function PrivacyPage(): JSX.Element {
         </p>
       </Section>
 
-      <Section title="11. Contact">
+      <Section title="12. Contact">
         <p>
           {BRAND.name}
           <br />
