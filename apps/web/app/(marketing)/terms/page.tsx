@@ -228,7 +228,54 @@ export default function TermsPage(): JSX.Element {
         </p>
       </Section>
 
-      <Section title="7. Human-in-the-Loop Monitoring">
+      <Section title="7. SMS Messaging Program (End-User Terms)">
+        <p>
+          This section applies to consumers (&ldquo;End Users&rdquo;) who receive text messages
+          from {BRAND.name} on behalf of a participating contractor.
+        </p>
+        <h3>7a. Program Description</h3>
+        <p>
+          <strong>Program name:</strong> {BRAND.name} Appointment Booking. When you call a
+          participating contractor&apos;s business phone number and your call is missed or
+          unanswered, your call may be conditionally forwarded to a {BRAND.name} number, and{' '}
+          {BRAND.name} will send you an automated SMS reply to help schedule an appointment on the
+          contractor&apos;s behalf. Messages relate solely to scheduling and servicing the request
+          associated with your call (for example, confirming job details, proposing appointment
+          times, sending booking confirmations, and, where applicable, a secure link to pay a
+          booking deposit).
+        </p>
+        <h3>7b. Message Frequency</h3>
+        <p>
+          Message frequency varies and depends on your conversation. You will generally receive
+          messages only in response to your own replies.
+        </p>
+        <h3>7c. Cost</h3>
+        <p>
+          <strong>Message and data rates may apply.</strong> {BRAND.name} does not charge End
+          Users for messages; your mobile carrier&apos;s standard rates apply.
+        </p>
+        <h3>7d. Help</h3>
+        <p>
+          For help, reply <strong>HELP</strong> to any message, or email{' '}
+          <a href={`mailto:${BRAND.salesEmail}`} className="underline">{BRAND.salesEmail}</a>.
+        </p>
+        <h3>7e. Opt-Out</h3>
+        <p>
+          To stop receiving messages at any time, reply <strong>STOP</strong> to any message. You
+          will receive a single confirmation message and then no further messages unless you
+          re-initiate contact by calling the contractor again. Opt-out is honored automatically.
+        </p>
+        <h3>7f. Carriers and Privacy</h3>
+        <p>
+          Carriers are not liable for delayed or undelivered messages. {BRAND.name} does not sell
+          or share End-User mobile numbers or SMS opt-in information with third parties for
+          marketing purposes. See our{' '}
+          <a href="/privacy" className="underline">Privacy Policy</a> for how your information is
+          handled.
+        </p>
+      </Section>
+
+      <Section title="8. Human-in-the-Loop Monitoring">
         <p>
           {BRAND.name} staff monitor AI conversations in real time for quality assurance. By
           using the Service, you consent to this monitoring. {BRAND.name} staff may intervene to
@@ -238,7 +285,7 @@ export default function TermsPage(): JSX.Element {
         </p>
       </Section>
 
-      <Section title="8. Intellectual Property">
+      <Section title="9. Intellectual Property">
         <ul>
           <li>{BRAND.name} retains all rights to the platform, AI models, software, and branding.</li>
           <li>
@@ -253,7 +300,7 @@ export default function TermsPage(): JSX.Element {
         </ul>
       </Section>
 
-      <Section title="9. Disclaimer of Warranties">
+      <Section title="10. Disclaimer of Warranties">
         <p className="uppercase text-[13px] tracking-wide">
           THE SERVICE IS PROVIDED &ldquo;AS IS&rdquo; AND &ldquo;AS AVAILABLE&rdquo; WITHOUT
           WARRANTIES OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO WARRANTIES OF
@@ -263,7 +310,7 @@ export default function TermsPage(): JSX.Element {
         </p>
       </Section>
 
-      <Section title="10. Limitation of Liability">
+      <Section title="11. Limitation of Liability">
         <p className="uppercase text-[13px] tracking-wide">
           TO THE MAXIMUM EXTENT PERMITTED BY FLORIDA LAW, {BRAND.name.toUpperCase()}&apos;S TOTAL
           LIABILITY TO ANY SUBSCRIBER FOR ANY CLAIMS ARISING OUT OF OR RELATING TO THESE TERMS OR
@@ -277,7 +324,7 @@ export default function TermsPage(): JSX.Element {
         </p>
       </Section>
 
-      <Section title="11. Indemnification">
+      <Section title="12. Indemnification">
         <p>
           You agree to indemnify and hold harmless {BRAND.name}, its officers, employees, and
           agents from any claims, damages, or expenses (including reasonable attorney&apos;s
@@ -287,7 +334,7 @@ export default function TermsPage(): JSX.Element {
         </p>
       </Section>
 
-      <Section title="12. Governing Law and Dispute Resolution">
+      <Section title="13. Governing Law and Dispute Resolution">
         <p>
           These Terms are governed by the laws of the State of Florida, without regard to
           conflict of law principles. Any dispute arising from these Terms shall be resolved by
@@ -298,7 +345,7 @@ export default function TermsPage(): JSX.Element {
         </p>
       </Section>
 
-      <Section title="13. Modifications to Terms">
+      <Section title="14. Modifications to Terms">
         <p>
           {BRAND.name} may modify these Terms at any time. We will notify active Subscribers by
           email at least 14 days before material changes take effect. Continued use of the
@@ -307,16 +354,16 @@ export default function TermsPage(): JSX.Element {
         </p>
       </Section>
 
-      <Section title="14. Termination">
+      <Section title="15. Termination">
         <p>
           {BRAND.name} reserves the right to suspend or terminate any account, with or without
           notice, for violation of these Terms, suspected fraud, abuse of the platform, or
           non-payment. Upon termination, your access to the Service ceases immediately. Sections
-          8–12 survive termination.
+          9–13 survive termination.
         </p>
       </Section>
 
-      <Section title="15. Contact">
+      <Section title="16. Contact">
         <p>
           {BRAND.name}
           <br />
