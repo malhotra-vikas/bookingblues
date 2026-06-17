@@ -1,4 +1,5 @@
 import { Catch, HttpException, type ArgumentsHost, type ExceptionFilter } from '@nestjs/common';
+import * as Sentry from '@sentry/node';
 import type { Request, Response } from 'express';
 import { PinoLogger } from 'nestjs-pino';
 import { ZodError } from 'zod';
@@ -35,6 +36,14 @@ export class ProblemDetailsFilter implements ExceptionFilter {
 
     if (problem.status >= 500) {
       this.logger.error({ err: exception, problem }, problem.detail);
+      // Report server-side failures to Sentry (no-op when DSN unset). The
+      // beforeSend scrubber in instrument.ts strips PII; we only attach
+      // non-sensitive correlation tags here. 4xx are client errors — not sent.
+      const requestId = (req as Request & { id?: string }).id;
+      Sentry.captureException(exception, {
+        tags: { code: problem.code, ...(requestId ? { request_id: requestId } : {}) },
+        extra: { path: problem.instance, status: problem.status },
+      });
     } else {
       this.logger.warn({ problem }, problem.detail);
     }

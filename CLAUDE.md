@@ -247,8 +247,10 @@ All variables loaded via `apps/api/src/config/env.ts` using `zod` validation. Th
 | `GOOGLE_OAUTH_REDIRECT_URI` | api | |
 | `RESEND_API_KEY` | api | |
 | `ENCRYPTION_KEY` | api | 32-byte hex, AES-256-GCM key for at-rest encryption of Google refresh tokens |
-| `SENTRY_DSN_API` | api | |
-| `SENTRY_DSN_WEB` | web | |
+| `SENTRY_DSN_API` | api | Sentry DSN for the API (server). No-op when unset. |
+| `SENTRY_DSN_WEB` | web | Sentry DSN for the Web server/edge runtime. No-op when unset. |
+| `NEXT_PUBLIC_SENTRY_DSN_WEB` | web | Sentry DSN for the Web browser bundle (must be public to reach the client). No-op when unset. |
+| `SENTRY_ORG` / `SENTRY_PROJECT` / `SENTRY_AUTH_TOKEN` | web (build) | Optional. Only for source-map upload during the web build; the Sentry build plugin no-ops without them. |
 | `LOG_LEVEL` | api | `info` in prod, `debug` in dev |
 | `SLACK_BOT_TOKEN` | api | `xoxb-…` for the single BookingBlues-team workspace (ADR 0010). Must be redacted in logs. |
 | `SLACK_DEFAULT_CHANNEL_ID` | api | `#hitl` — channel where escalation alarms + control buttons post. |

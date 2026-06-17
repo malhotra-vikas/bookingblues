@@ -1,4 +1,6 @@
 import 'reflect-metadata';
+// Sentry must initialise before the Nest app is created. No-op without a DSN.
+import './instrument';
 
 import { resolve } from 'node:path';
 
