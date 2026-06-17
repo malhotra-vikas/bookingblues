@@ -6,6 +6,7 @@ import { config as loadDotenv } from 'dotenv';
 import { NestFactory } from '@nestjs/core';
 import { RequestMethod } from '@nestjs/common';
 import type { NestExpressApplication } from '@nestjs/platform-express';
+import type { Request, Response, NextFunction } from 'express';
 import { Logger } from 'nestjs-pino';
 import helmet from 'helmet';
 
@@ -32,6 +33,15 @@ async function bootstrap(): Promise<void> {
   // Strip the `X-Powered-By: Express` header — small information-disclosure win.
   app.disable('x-powered-by');
 
+  // Trust exactly ONE proxy hop (Railway's edge). Without this, Express derives
+  // `req.ip` from the socket — which is Railway's internal proxy address, the
+  // SAME for every external client — so the per-IP rate limiter (CLAUDE.md
+  // §11.7) collapses into a single shared bucket and 429s everyone at once.
+  // Trusting `1` (not `true`) means we read the client IP that Railway's proxy
+  // recorded and a client cannot forge it by injecting its own X-Forwarded-For.
+  // Locally (no proxy / no XFF) this harmlessly falls back to the socket IP.
+  app.set('trust proxy', 1);
+
   // Security headers (CLAUDE.md §11.20). HSTS preload kicks in only over HTTPS;
   // browsers ignore on http://localhost. CSP off — this is a JSON API, no HTML.
   app.use(
@@ -47,6 +57,17 @@ async function bootstrap(): Promise<void> {
       frameguard: { action: 'deny' },
     }),
   );
+
+  // Permissions-Policy (CLAUDE.md §11.20). helmet doesn't set this. This is a
+  // JSON API with no browser-feature needs, so deny the powerful features
+  // outright — defense in depth if a response is ever rendered in a browser.
+  app.use((_req: Request, res: Response, next: NextFunction) => {
+    res.setHeader(
+      'Permissions-Policy',
+      'geolocation=(), camera=(), microphone=(), payment=(), usb=()',
+    );
+    next();
+  });
 
   const env = app.get<Env>(ENV_TOKEN);
 

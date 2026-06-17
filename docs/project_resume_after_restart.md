@@ -6,147 +6,130 @@ Quick-start brief for the next session. Read this first, then `docs/PROGRESS.md`
 
 ---
 
-## Resume brief — 2026-05-28 (start-of-day after 2026-05-27 session)
+## Resume brief — Monday 2026-06-01 (after weekend; last worked Fri 2026-05-29)
 
-Two large bundles shipped in code on 2026-05-27, **neither tested in prod**:
+Mac was restarted over the weekend, so all local processes (dev servers,
+`stripe listen`, Docker, local Supabase) are stopped. The codebase itself is
+in good shape — **everything is committed.**
 
-1. **KeeprSteady rebrand + legal/marketing launch prep** (≈17 spec items)
-2. **Billing migration**: Starter/Pro → Solo/Crew/Fleet × monthly/annual
+### State in one paragraph
+A full week of KeeprSteady launch-prep shipped and **committed** (HEAD
+`0aac035 "Improved brand colors"`): rebrand, Solo/Crew/Fleet billing
+migration, terms-acceptance tracking, brand assets/logo, multi-trade
+reversal, and the #6B3FA0 accent. Typechecks + `pnpm --filter web build`
+pass. **None of it has been smoke-tested on the live system yet** — Monday is
+a testing + infra-config day, not a coding day. Local dev is wired to **prod
+Supabase** + **BookingBlues Stripe test mode** (see wiring table below).
 
-Source spec docs:
-- `/Users/vikas/Downloads/files(1)/KeeprSteady_Edit_Specs.docx`
-- `/Users/vikas/Downloads/files(1)/KeeprSteady_Legal_Docs.docx`
+### Monday action list (priority order)
 
-Both `pnpm --filter api typecheck` and `pnpm --filter web typecheck` pass
-clean as of end-of-day 2026-05-27. **Everything is uncommitted** — the
-working tree is dirty.
+1. **Confirm commits are pushed to origin.** Working tree is clean except
+   `docs/PROGRESS.md` (the Friday progress write-up — commit it). Then
+   `git status` should be clean and `git log origin/main..HEAD` empty.
 
-### What's blocking actually going live (user task list for 2026-05-28)
-
-1. **Create 6 Stripe prices** in the Dashboard (or via API). Three products
-   ("KeeprSteady — Solo", "Crew", "Fleet"); each with a monthly and annual
-   recurring price. Amounts:
-   - Solo: $49/mo ($4,900 cents) and $490/yr ($49,000 cents)
-   - Crew: $650/mo ($65,000 cents) and $6,500/yr ($650,000 cents)
-   - Fleet: $1,499/mo ($149,900 cents) and $14,990/yr ($1,499,000 cents)
-
-   Drop the six `price_…` IDs into env:
-   - `STRIPE_PRICE_SOLO_MONTHLY`, `STRIPE_PRICE_SOLO_ANNUAL`
-   - `STRIPE_PRICE_CREW_MONTHLY`, `STRIPE_PRICE_CREW_ANNUAL`
-   - `STRIPE_PRICE_FLEET_MONTHLY`, `STRIPE_PRICE_FLEET_ANNUAL`
-
-   The old `STRIPE_PRICE_STARTER` / `STRIPE_PRICE_PRO` were removed
-   wholesale (no grandfathering — pre-launch, no live paying subs).
-2. **Run the migration**: `pnpm db:migrate` (or whatever the deploy pipeline
-   uses). New file is `supabase/migrations/20260515000001_operator_plan.sql`.
-   Adds three nullable columns to `operators` (`plan`, `plan_cadence`,
-   `stripe_price_id`) — won't break existing rows.
-3. **Verify the marketing site loads** in `pnpm dev`. Walk through:
-   - `/` — home services hero, no "BookingBlues" anywhere, no placeholder
-     testimonial, dashboard/job-brief mockups visible, competitive table
-     renders.
-   - `/pricing` — three tiers, monthly/annual toggle works, Crew has the
-     "Most popular" badge, inline FAQ accordion opens/closes, HITL +
-     alignment callouts visible.
-   - `/contact` — Cal.com iframe loads (or shows the "open in new tab"
-     fallback).
-   - `/privacy` and `/terms` — full pages render, no broken layout in
-     the Tailwind arbitrary variants (`[&_h3]:...`).
-   - `/faq` — 15 entries, no plumber-only framing.
-   - `/signup` — ToS consent checkbox blocks submit; skeleton renders
-     while the form initialises (no "Loading…" text).
-   - Footer disclaimer paragraph + LinkedIn icon + Privacy/Terms links
-     visible on every page.
-4. **Test the wizard plan picker end-to-end**:
-   - Log in to a fresh test operator account.
-   - Hit `/onboarding` step 1 (Subscribe). Verify the three plan cards
-     render with the cadence toggle.
-   - Click "Start trial — Solo" on monthly. Should redirect to Stripe
-     Checkout. Complete with test card `4242 4242 4242 4242`.
-   - On return to `/dashboard?subscription=success`, check the DB:
+2. **Apply the terms migration to PROD** (if not already done Friday). The
+   `operators.terms_*` columns must exist on prod
+   (`ozsckjjlydtujbhajjla`) or the signup→operator mirror + accept-terms
+   endpoint error out. Verify first:
+   - Quick check: the app's `POST /v1/operators/me/accept-terms` or a signup
+     completing without a 500 means columns exist. Or run in the Supabase
+     SQL editor:
      ```sql
-     SELECT id, plan, plan_cadence, stripe_price_id, subscription_status
-     FROM operators WHERE id = '<your-test-op-id>';
+     alter table public.operators
+       add column if not exists terms_accepted_at timestamptz,
+       add column if not exists terms_version     text;
      ```
-     All four columns should be populated by the
-     `customer.subscription.created` webhook. If `plan`/`plan_cadence`
-     are NULL but `stripe_price_id` is set, the metadata path failed —
-     check the Stripe Dashboard event log for the subscription's
-     metadata.
-   - Repeat for Crew annual + Fleet monthly to cover all three plans
-     and both cadences.
-5. ~~**Drop in asset files**~~ ✅ **DONE 2026-05-28.** Generated from the
-   logo/favicon the user provided (`~/Downloads/favicon.jpg` = K lettermark
-   on black; `~/Downloads/canvas.png` = transparent KEEPRSTEADY wordmark).
-   `apps/web/public/` now has: `favicon.ico` (16/32/48 multi-res),
-   `icon.png` (32), `icon-192.png`, `icon-512.png`, `apple-touch-icon.png`
-   (180), `og-image.png` (1200×630 — wordmark centred on black).
-   `app/layout.tsx` `icons` metadata updated to reference the PNG set.
-   Verify the favicon shows in the browser tab and the OG card renders in
-   a LinkedIn/iMessage paste once deployed.
-6. **Replace the LinkedIn placeholder** in `apps/web/lib/brand.ts`
-   (`linkedinUrl`) once the company page is published. Currently
-   `https://www.linkedin.com/company/keeprsteady` — likely 404s.
-7. **Commit the diff**. It's large (~30 modified files, 6 new files, 1
-   migration). Suggested split into two commits if you want clean history:
-   one for the rebrand/legal/marketing changes, one for the billing
-   migration. Both depend on the new `lib/brand.ts` so order matters
-   if you split.
+   - (The earlier `operator_plan` migration `20260515000001` is already on
+     prod; this is the only one possibly outstanding.)
 
-### Carry-overs from earlier sessions (still open)
+3. **Remove the plumbing-only env vars on Railway** (this is what reopens the
+   funnel to all trades — the code already supports it):
+   - **web service:** delete `NEXT_PUBLIC_ENABLED_CATEGORIES` (and
+     `ENABLED_CATEGORIES` if set there too)
+   - **api service:** delete `ENABLED_CATEGORIES`
+   - Both are currently `plumbing`. Delete entirely (unset = all 5 trades),
+     then **redeploy both**. If you remove only the web one, the API's
+     server-side gate (`operators.service.ts`) will reject HVAC/electrical/etc.
+     with a 400.
 
-These were on the radar before 2026-05-27 and remain so:
+4. **Restart local dev + Stripe forwarding** (only if testing locally; the app
+   is wired to prod Supabase so no Docker/local-Supabase needed):
+   ```bash
+   pnpm dev                                              # web :3000, api :3001
+   stripe listen --forward-to localhost:3001/webhooks/stripe
+   ```
+   ⚠ `stripe listen` prints a **new** `whsec_…` each session — paste it into
+   `STRIPE_WEBHOOK_SECRET` in root `.env.local` and **restart the API**
+   (dotenv reads at boot). The Friday `whsec_` is dead.
 
-- **A2P 10DLC** brand + campaign with Twilio (1–3 week clock).
-- **Resend domain verification** (current `EMAIL_FROM` is the test sender
-  `onboarding@resend.dev`, only delivers to your Gmail).
-- **Stripe Connect platform setup** (user-side blocker; not a launch
-  blocker for $49/mo Solo subs without deposits).
-- **Slack token rotation** (bot token + signing secret were pasted in
-  chat during earlier debugging).
-- **Slice 16 verification leftovers** — STOP opt-out copy, emergency
-  keyword path, emergency AI path, emergency negative case, lowercase
-  email login. All shipped but the in-prod walkthrough never happened.
+5. **End-to-end billing test** (the big untested path): signup → confirm →
+   `/onboarding` step 1 → 3 plan cards + monthly/annual toggle → "Start trial"
+   → Stripe Checkout (`4242 4242 4242 4242`) → watch `stripe listen` for
+   `checkout.session.completed` + `customer.subscription.created` (200) →
+   verify in prod DB:
+   ```sql
+   select plan, plan_cadence, stripe_price_id, subscription_status
+   from operators where id = '<op-id>';
+   ```
+   All four populated = webhook→DB path works. Repeat Crew-annual +
+   Fleet-monthly.
 
-### Intentionally NOT done in this session — flag if you want them
+6. **Test the terms re-accept gate:** with a logged-in operator whose
+   `user_metadata.terms_version` is stale (or never set), hitting
+   `/dashboard` should redirect to `/accept-terms`; accepting returns you to
+   the app and stamps `operators.terms_accepted_at`.
 
-- **SalesCalculator rename** — internal admin tool still uses
-  `'starter'|'pro'|'enterprise'` for commission tiers (different
-  prices, different purpose from billing). Untouched.
-- **OG image, favicon, apple-touch-icon assets** — code hookup is in,
-  files aren't.
-- **ED-26 robots.txt / sitemap.xml** — not in scope; route list to
-  include when ready: `/`, `/pricing`, `/faq`, `/privacy`, `/terms`,
-  `/contact`.
-- **ED-27 branded 404 page** — not in scope.
-- **ED-30 SMS demo trade toggle on homepage** — not in scope (would
-  need three trade-specific demo scripts).
-- **ED-31 post-signup onboarding checklist + drip email sequence** —
-  not in scope (multi-day feature on its own).
-- **Backwards compat for any live Starter/Pro subs** — none exist
-  pre-launch. If a test sub from earlier QA happens to be sitting on
-  one of those old prices in Stripe, its next webhook will leave
-  `plan`/`plan_cadence` NULL (metadata won't have the new keys) and
-  only `stripe_price_id` will populate. Acceptable.
+7. **Test a non-plumbing emergency SMS** (validates the trade-aware
+   classifier change): as an HVAC or electrical operator, text "sparks coming
+   from my panel" → operator's phone should get the alert. (Live SMS path —
+   confirm it fires for non-plumbing wording.)
 
-### Latest commits (origin/main, as of 2026-05-27)
+8. **Visual QA:** purple accent (#6B3FA0) on CTAs/stats/section labels/nav
+   hover/pricing "Most popular"/KeeprSteady table column; logo mark (no text)
+   in all three headers (marketing, auth, dashboard); favicon in tab; OG card
+   when pasting a link in Slack/iMessage. Check light + dark mode.
 
+### Current wiring (so you don't re-discover Friday's rabbit holes)
+
+| Piece | Points at |
+|---|---|
+| Web `apps/web/.env.local` Supabase | **prod** `ozsckjjlydtujbhajjla.supabase.co` (208-char anon key) |
+| API root `.env.local` Supabase | same prod project |
+| Stripe (`STRIPE_SECRET_KEY` etc.) | **BookingBlues** account, **test mode** |
+| 6 price IDs | validated on BookingBlues test (Solo/Crew/Fleet × mo/yr) |
+| `STRIPE_WEBHOOK_SECRET` | **stale** — regenerate via `stripe listen` Monday |
+
+**Stripe account gotcha:** the Stripe CLI defaults to a *different* account
+("Reaper Labs", `acct_1TPSUf…`). KeeprSteady's real account is **"BookingBlues"**
+(`acct_1TUVtIBrlSqhHprp`). If `stripe` CLI commands show no Solo/Crew/Fleet
+products, you're on the wrong account — `stripe login` → pick BookingBlues.
+(Also captured as a reference memory.)
+
+### Carry-overs (unchanged, still open)
+- A2P 10DLC brand+campaign (1–3 wk external clock), Resend domain
+  verification, Stripe Connect platform enablement, Slack token rotation.
+- Email-confirm redirect: add `http://localhost:3000/**` to the prod
+  Supabase Auth → Redirect URLs if local signup-confirm bounces to prod.
+
+### Roadmap pointer
+Full pending list is in `docs/PROGRESS.md`:
+- **Launch-readiness:** Hardening Phases 1–6 (incl. the new **Phase 6
+  penetration test**), Slices 10–14 (notifications, Sentry, CI security,
+  staging/domain/EC2), rate-limiting + CORS + helmet (flagged as not yet
+  implemented).
+- **Product (Slices 17–22):** scheduling/triage, activation, business
+  intelligence, caller polish, Jobber/HCP, network effects. NOTE: this
+  roadmap is still written in plumber-only language — re-generalize to "home
+  services" as each slice is picked up (the product itself is now multi-trade).
+
+### Latest commits (local `main`, as of 2026-05-29)
 ```
-1be994e Progress from today. We will continue tomorrow
-2c6a545 Server Component side adding of envs  ← the Turbopack fix
-f7d81b8 Debugging envs noty getting loaded
-4476bb7 Force NEXT_PUBLIC_* inlining via next.config env block (Turbopack workaround)
+0aac035 Improved brand colors
+00c7504 Home Services level change
+2c5bff8 Logo Fixed
+eabf25d Improved logo
+e9b70fc Fixed a build error
+7ccc421 Added socaol links
+e0c33e6 Capturing terms accepted timestamp
+6e43395 Push new changes
 ```
-
-The 2026-05-27 work is **not** in any of these — still uncommitted
-working tree.
-
-### Reference
-
-- Full session detail: `docs/PROGRESS.md` → "KeeprSteady launch prep +
-  billing migration" entry (inserted before Slice 17).
-- Marketing copy + spec source: the two `.docx` files in
-  `~/Downloads/files(1)/`.
-- Plan data is in one place: `apps/web/lib/brand.ts` (`PLANS` array).
-  Edit there and both `/pricing` and the Wizard pick up the change.
-- Architecture + non-negotiables: `CLAUDE.md`.

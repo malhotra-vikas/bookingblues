@@ -21,6 +21,20 @@ import type {
 
 type OperatorRow = Tables<'operators'>;
 
+/**
+ * Subscription states that represent a still-live Stripe subscription. Starting
+ * a new Checkout while in one of these would create a SECOND subscription on the
+ * same customer and double-bill (Slice 4-followup). Re-subscribing is only
+ * allowed from a terminal state (`canceled` / `incomplete_expired`) or when no
+ * subscription exists yet.
+ */
+const LIVE_SUBSCRIPTION_STATUSES: ReadonlySet<string> = new Set([
+  'trialing',
+  'active',
+  'past_due',
+  'incomplete',
+]);
+
 @Injectable()
 export class BillingService {
   constructor(
@@ -39,6 +53,22 @@ export class BillingService {
     const priceId = this.priceForPlan(plan, cadence);
 
     const operator = await this.ensureOperator(userId, userEmail, businessName);
+
+    // Duplicate-subscription guard (Slice 4-followup). If the operator already
+    // has a live subscription, a second Checkout creates a second Stripe
+    // subscription on the same customer → double-bill on the next cycle. Send
+    // them to the billing portal to manage the existing one instead.
+    if (
+      operator.stripe_subscription_id &&
+      operator.subscription_status &&
+      LIVE_SUBSCRIPTION_STATUSES.has(operator.subscription_status)
+    ) {
+      throw new ConflictError(
+        `This account already has a ${operator.subscription_status} subscription. ` +
+          'Manage it from the billing portal instead of starting a new one.',
+      );
+    }
+
     const customerId = await this.ensureStripeCustomer(operator, userEmail);
 
     // Stripe webhooks see this metadata on the subscription object —

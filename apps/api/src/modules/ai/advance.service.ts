@@ -40,6 +40,27 @@ type OperatorRow = Tables<'operators'>;
 const MAX_CALLER_TURNS = 20;
 const MAX_TOOL_ITERATIONS = 5;
 
+/**
+ * Subscription states in which the AI booking loop runs normally. Anything else
+ * (past_due / canceled / incomplete / incomplete_expired / none) drops into the
+ * §9.5 Flow A degraded mode: the caller still gets the voice greeting + opening
+ * SMS, but no AI booking and no fee collection.
+ */
+const GOOD_STANDING_STATUSES: ReadonlySet<string> = new Set(['trialing', 'active']);
+
+/**
+ * Stable substring present in every degraded-mode handoff SMS, used to dedupe so
+ * a caller who keeps texting isn't re-notified on every turn.
+ */
+const DEGRADED_HANDOFF_MARKER = "can't book online right now";
+
+function degradedHandoffMessage(businessName: string): string {
+  return (
+    `Thanks for reaching ${businessName}! We ${DEGRADED_HANDOFF_MARKER}, ` +
+    'but we have your number and will follow up with you as soon as possible.'
+  );
+}
+
 @Injectable()
 export class AdvanceService {
   constructor(
@@ -156,6 +177,34 @@ export class AdvanceService {
       this.logger.info(
         { conversationId: conversation.id, latestRole: latest.role },
         'advance skipped: latest message is not a caller turn',
+      );
+      return;
+    }
+
+    // Degraded mode (CLAUDE.md §9.5 Flow A). When the operator's subscription is
+    // not in good standing (past_due / canceled / incomplete / none), we do NOT
+    // run the AI booking loop and do NOT collect fees. The caller already got the
+    // voice greeting + opening SMS; send one polite handoff and stop. Repeat
+    // caller turns aren't re-notified (dedupe on the marker).
+    if (
+      !operator.subscription_status ||
+      !GOOD_STANDING_STATUSES.has(operator.subscription_status)
+    ) {
+      if (!(await this.degradedNoticeAlreadySent(conversation.id))) {
+        await this.sendBotSms(
+          operator.twilio_number_e164,
+          callerPhoneE164,
+          conversation.id,
+          degradedHandoffMessage(operator.business_name),
+        );
+      }
+      this.logger.warn(
+        {
+          operatorId: operator.id,
+          conversationId: conversation.id,
+          subscriptionStatus: operator.subscription_status,
+        },
+        'advance degraded: operator not in good standing — skipped AI booking loop',
       );
       return;
     }
@@ -407,6 +456,24 @@ export class AdvanceService {
       .update(update)
       .eq('id', conversationId);
     if (error) throw error;
+  }
+
+  /**
+   * Has a degraded-mode handoff SMS already been sent on this conversation?
+   * Matches the stable marker substring on any prior bot message so repeat
+   * caller turns during past-due/degraded mode aren't notified every time.
+   */
+  private async degradedNoticeAlreadySent(conversationId: string): Promise<boolean> {
+    const { data } = await this.supabase
+      .db()
+      .from('messages')
+      .select('id')
+      .eq('conversation_id', conversationId)
+      .eq('role', 'bot')
+      .ilike('body', `%${DEGRADED_HANDOFF_MARKER}%`)
+      .limit(1)
+      .maybeSingle();
+    return Boolean(data);
   }
 
   private async sendBotSms(

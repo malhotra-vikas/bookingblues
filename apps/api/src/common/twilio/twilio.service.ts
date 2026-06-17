@@ -7,6 +7,18 @@ import { ENV_TOKEN } from '../../config/config.module';
 import type { Env } from '../../config/env';
 import { AppError, ExternalServiceError } from '../errors/app-error';
 
+/** Twilio error code for "Attempt to send to unsubscribed recipient" (replied STOP). */
+const TWILIO_OPT_OUT_ERROR_CODE = 21610;
+
+function isTwilioOptOutError(err: unknown): boolean {
+  return (
+    typeof err === 'object' &&
+    err !== null &&
+    'code' in err &&
+    (err as { code: unknown }).code === TWILIO_OPT_OUT_ERROR_CODE
+  );
+}
+
 /**
  * Thin wrapper around the Twilio SDK. **API-only.** Per CLAUDE.md §11.1 (signature
  * validation) and §11.12 (outbound SMS allowlist for non-prod).
@@ -84,7 +96,7 @@ export class TwilioService {
     from: string;
     to: string;
     body: string;
-  }): Promise<{ sid: string } | { skipped: 'allowlist' }> {
+  }): Promise<{ sid: string } | { skipped: 'allowlist' | 'opted_out' }> {
     if (!this.isProd) {
       if (!this.allowlist.has(args.to)) {
         this.logger.warn(
@@ -108,6 +120,18 @@ export class TwilioService {
       });
       return { sid: msg.sid };
     } catch (err) {
+      // Recipient has opted out (replied STOP). Twilio rejects the send with
+      // code 21610 and auto-blocks further sends until they reply START. This
+      // is an expected end-state, not an outage: throwing here would log loudly
+      // and (on webhook-driven sends) risk a Twilio retry loop. Treat it like a
+      // skip so the caller persists a marker and moves on.
+      if (isTwilioOptOutError(err)) {
+        this.logger.info(
+          { to_last4: args.to.slice(-4), reason: 'opted_out' },
+          'Outbound SMS skipped: recipient opted out (Twilio 21610)',
+        );
+        return { skipped: 'opted_out' };
+      }
       throw new ExternalServiceError(
         'twilio',
         `Failed to send SMS to ${args.to.slice(-4)}`,

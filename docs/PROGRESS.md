@@ -9,11 +9,193 @@ When a section is wrong or stale, fix it in the same commit as the change.
 
 ## Status
 
-- **Phase**: Pre-launch (KeeprSteady rebrand + Solo/Crew/Fleet billing landed; awaiting prod test)
-- **Last updated**: 2026-05-27
-- **Active slice**: none — Launch prep (rebrand + billing migration) just landed; user will test 2026-05-28
+- **Phase**: Pre-launch (KeeprSteady rebrand + Solo/Crew/Fleet billing landed; infra verified live, functional E2E still pending)
+- **Last updated**: 2026-06-16
+- **Active slice**: none — launch-prep infra now verified against prod; remaining work is functional E2E testing + finishing the domain cutover.
 - **Production target**: EC2 (Slice 14). Railway is staging only (Slice 13).
 - **HITL**: Slack-based (Slice 7.5) — **shipped** (code, manifest, docs; needs the Slack app created in api.slack.com to function end-to-end).
+
+### Prod infra verification — 2026-06-16
+
+Re-verified the 2026-06-01 resume brief's blocker list against the live
+systems (Railway linked to BookingBlues/production; Stripe CLI on the
+`bookingblues` account `acct_1TUVtI…`; prod Supabase `ozsckjjlydtujbhajjla`).
+**All of the brief's infra blockers are already resolved:**
+
+- ✅ Terms migration applied to prod — `operators.terms_accepted_at` +
+  `terms_version` present.
+- ✅ Plan migration applied to prod — `operators.plan` + `plan_cadence` +
+  `stripe_price_id` present.
+- ✅ All 6 Stripe prices live and env-wired at correct amounts
+  (Solo 4900/49000, Crew 65000/650000, Fleet 149900/1499000).
+- ✅ Category gate **open to all 5 trades** in prod — `ENABLED_CATEGORIES`
+  unset on the api service and `NEXT_PUBLIC_ENABLED_CATEGORIES` unset on the
+  web service.
+- ✅ Prod API + web deployed and healthy (200).
+
+**Still genuinely open:** functional E2E walkthroughs — billing
+checkout→DB, terms re-accept gate, non-plumbing emergency SMS, visual QA.
+
+### Domain cutover to keeprsteady.com (Slice 13.5) — ✅ done 2026-06-16
+
+Full swap to the owned domain. Targets: web `https://keeprsteady.com`,
+api `https://api.keeprsteady.com` (both custom domains already provisioned on
+Railway and serving). No code changes — every URL is env-driven
+(`API_URL`/`APP_URL`/`NEXT_PUBLIC_*`; CORS reads `env.APP_URL`; Twilio webhook
+URLs built from `env.API_URL`). Verified no hardcoded Railway URLs in source.
+
+- ✅ Railway **api**: `API_URL=https://api.keeprsteady.com`,
+  `APP_URL=https://keeprsteady.com`,
+  `GOOGLE_OAUTH_REDIRECT_URI=https://api.keeprsteady.com/webhooks/google/oauth/callback`
+- ✅ Railway **web**: `NEXT_PUBLIC_API_URL=https://api.keeprsteady.com`,
+  `NEXT_PUBLIC_APP_URL=https://keeprsteady.com`
+- ✅ **Stripe** platform webhook endpoint `we_1TUW2c…` repointed to
+  `https://api.keeprsteady.com/webhooks/stripe` (signing secret unchanged →
+  `STRIPE_WEBHOOK_SECRET` untouched). No Connect endpoint exists in prod.
+- ✅ **Twilio** all 3 provisioned numbers' voice+sms URLs repointed to
+  `api.keeprsteady.com` (operator-id paths preserved).
+- ✅ **Google Cloud** OAuth client redirect URI + consent-screen domain
+  updated (user, console). Env flip was gated on this to avoid
+  `redirect_uri_mismatch`.
+- ✅ **Supabase** Auth Site URL + redirect allowlist updated to keeprsteady.com
+  (user, dashboard — CLI is on a different account, can't reach this project).
+
+**Validation passed (2026-06-16):** api health 200; web home 200; CORS
+preflight returns `access-control-allow-origin: https://keeprsteady.com`;
+Google OAuth callback 302 → `https://keeprsteady.com/onboarding?error=…`;
+Stripe endpoint unsigned POST → 400 (sig-reject, handler alive); web bundle
+has zero stale old-domain references.
+
+**Cleanup still to do:** after the functional E2E confirms the new domain end
+to end, remove the OLD Railway URLs from the Google authorized-redirect list
+and the Supabase redirect allowlist (leaving them is an open-redirect/abuse
+surface). Optionally refresh example URLs in `docs/DEPLOY_RAILWAY.md`.
+
+### A2P 10DLC + Track B (Messaging Service wiring) — 2026-06-16
+
+US SMS was blocked because no A2P 10DLC brand/campaign existed (CLAUDE.md §17).
+
+- ✅ **Brand** `BNc842…` registered + **APPROVED** (Standard).
+- ❌ **Campaign** `CMcc65e4…` (msg-svc resource `QE2c68…`; Low Volume Mixed,
+  use case LOW_VOLUME) — **REJECTED** by carriers 2026-06-16 (see resubmission
+  block below). Messaging stays "disabled" on the numbers until an approved
+  campaign clears.
+- ✅ Auto-created **Messaging Service** `MG4b74e3498aa730f7fc57895e4b40a250`
+  ("Low Volume Mixed A2P Messaging Service") is bound to the campaign;
+  `use_inbound_webhook_on_number=true` so inbound SMS keeps using each number's
+  per-operator webhook.
+- ✅ Backfilled all 3 existing numbers into that Messaging Service's sender pool.
+- ✅ Legal pages updated for carrier review: `/terms` §7 "SMS Messaging Program
+  (End-User Terms)" and `/privacy` §6 "SMS and Text Messaging Consent" (HELP,
+  STOP, frequency, "msg & data rates", opt-in-not-shared clause). Added
+  `BRAND.supportEmail = support@keeprsteady.com` as the HELP contact.
+
+**Track B — provisioning auto-attach (shipped):**
+- `TWILIO_MESSAGING_SERVICE_SID` set on Railway api + local `.env.local`
+  (already in env schema + `.env.example`).
+- `twilio-provisioning.service.ts`: after `incomingPhoneNumbers.create`, the
+  number is added to the Messaging Service pool so every future number inherits
+  the brand+campaign with no per-number step. Best-effort (loud error log on
+  failure, never orphans the purchase; warns if the SID is unset).
+- **`sendSms` deliberately unchanged** — we keep `from=<operator's own number>`
+  so each caller is texted from the number they dialed. A2P attribution follows
+  the number's Messaging-Service membership, not the send method (confirmed via
+  Twilio docs), so per-operator sender identity is preserved. Do NOT switch to
+  `messagingServiceSid` (shared pool → Twilio could pick another operator's
+  number). API typecheck clean.
+
+**Pre-launch deps still external:** wait for campaign approval; consider a
+Toll-Free verified number for early customers while Low Volume clears (§17).
+
+#### Campaign rejection #1 + resubmission (2026-06-16)
+
+Campaign `CMcc65e4…` rejected. Codes:
+- **30886** — Campaign description didn't clearly explain who sends / who
+  receives / why (and must match use case + samples + registered brand).
+- **30909** — opt-in / Message Flow didn't give reviewers enough to verify how
+  end users consent.
+
+Root cause is the classic missed-call-text-back "can't verify consent" review.
+The live `/terms` §7 + `/privacy` §6 SMS disclosures ARE deployed and compliant
+(verified live), so the fix is the campaign form copy itself, not the URLs/code.
+Resubmit via Messaging → Regulatory Compliance → A2P 10DLC → Campaigns →
+`CMcc65e4…` → Edit & resubmit. Keep the existing 5 sample messages.
+
+Replacement **Campaign Description** (ties brand "Malhotra Consultants LLC" to
+product "KeeprSteady" to avoid a brand-mismatch flag):
+
+> KeeprSteady is a software platform operated by the registered brand Malhotra
+> Consultants LLC. It runs this messaging program on behalf of individual
+> home-service contractors who subscribe to it (plumbing, HVAC, electrical,
+> roofing, garage door). Sender: the subscribing contractor's business, using
+> its own dedicated KeeprSteady 10DLC number. Recipients: homeowners and
+> customers who have just called that contractor's published business phone
+> number and did not reach a person. Why: to text the caller back and help
+> schedule the service they were calling about — collecting job details,
+> proposing available appointment times, confirming the booking, and optionally
+> sending a secure link to pay a booking deposit. These are one-to-one,
+> conversational customer-care messages, sent only in direct response to an
+> inbound phone call from the recipient. No marketing or promotional messages
+> are sent. Message volume is low.
+
+Replacement **How do end users consent / Message Flow** (names the verbal
+voice-greeting disclosure as a pre-SMS consent touchpoint — the key lever):
+
+> Consent is obtained through a consumer-initiated phone call. No phone numbers
+> are ever purchased, rented, shared, or sold, and no contact lists are used.
+> Opt-in workflow: 1. A homeowner dials a contractor's published business phone
+> number. 2. If the call is unanswered or busy, the contractor's carrier
+> conditionally forwards it to the contractor's dedicated KeeprSteady number.
+> 3. KeeprSteady answers with a brief voice greeting that explicitly tells the
+> caller they will receive a text to schedule (for example: "Thanks for calling
+> [Business Name]. Sorry we missed you — we'll text you right now to get you
+> scheduled."). This verbal disclosure occurs before any SMS is sent.
+> 4. KeeprSteady then sends a single SMS to the exact number the customer called
+> from. The first message identifies the business and includes: "Reply STOP to
+> opt out, HELP for help. Msg & data rates may apply." Because the consumer
+> initiated the call and is verbally told they will be texted, they have a clear
+> and reasonable expectation of receiving the message. Messages are only ever
+> sent to a number that called the business first. Full SMS program terms
+> (message frequency, message and data rates, HELP, and STOP) are published at
+> https://keeprsteady.com/terms in the "SMS Messaging Program" section, and our
+> privacy policy — which states that SMS opt-in information is never shared with
+> third parties — is at https://keeprsteady.com/privacy.
+
+**If rejected again:** narrow the use case from Low Volume Mixed to a single
+Customer Care framing, and/or stand up a Toll-Free verified number to start
+testing while 10DLC iterates (§17).
+
+**Follow-up — STOP/HELP keyword support (tracked):** we promised HELP/STOP in
+the legal pages; need to (1) confirm whether Twilio intercepts STOP/HELP/START
+vs forwards to our webhook, (2) handle Twilio error 21610 (opted-out) in the
+send path instead of throwing loudly, (3) choose branded HELP/STOP copy that
+preserves per-operator `from` identity, (4) add DB-level opt-out tracking
+(deferred from Slice 16) so the bot stops messaging opted-out callers. See the
+"DB-level opt-out tracking deferred" note under Slice 16.
+
+### Launch-readiness session — 2026-06-17 (while A2P campaign in review)
+
+Code-only hardening done while waiting on carrier campaign approval. All API
+typecheck clean. **Not yet committed/deployed** (see uncommitted list — these
+land with the next push).
+
+- ✅ **Billing dedup** — `billing.service.ts`: live-subscription guard blocks a
+  second Checkout (double-bill prevention). Routes to billing portal instead.
+- ✅ **Past-due degraded mode** — `advance.service.ts`: skips AI booking + fee
+  when the operator isn't in good standing, sends one deduped polite handoff
+  (CLAUDE.md §9.5 Flow A).
+- ✅ **Security** — `main.ts`: `trust proxy = 1` (fixes per-IP throttling behind
+  Railway) + `Permissions-Policy` header. Audit confirmed rate-limiting +
+  CORS + helmet were already comprehensive (hardening-doc note was stale).
+- 🔶 **STOP/HELP resilience (partial)** — `twilio.service.ts`: `sendSms` now
+  catches Twilio 21610 (recipient opted out) and returns `{skipped:'opted_out'}`
+  instead of throwing (no loud error / no webhook retry loop). **Still open**
+  (needs live messaging or a migration): audit whether Twilio forwards
+  STOP/HELP vs intercepts; DB-level opt-out tracking + a conversation
+  `opted_out` outcome; branded HELP/STOP copy that preserves per-operator
+  `from`. Tracked as session task #1.
+
+**Skipped this session:** Notifications (Slice 10) — user deprioritized.
 
 ---
 
@@ -161,8 +343,8 @@ Goal: everything non-product-feature — security, observability, CI/CD discipli
 - [ ] Crypto review: AES-256-GCM IV+tag handling (we already have `EncryptionService`), key derivation, decrypt failure shape
 - [ ] Authorization route-coverage matrix (every protected route → guard; every mutation → rate-limit)
 - [ ] OWASP Top 10 walkthrough with file:line evidence
-- [ ] Rate-limit coverage audit (auth strict 5/15min, write 60/min) — currently NOT implemented; CLAUDE.md §11.7 calls it out
-- [ ] CORS + helmet config review (current: not yet wired — needed in API)
+- [x] Rate-limit coverage audit — **IS implemented** (audit 2026-06-17; the earlier "NOT implemented" note was stale). `@nestjs/throttler` global `ThrottlerGuard` (60/min default), webhooks `@SkipThrottle()` (Twilio/Stripe/Slack/cron — they retry/burst), admin 30/min read & 10/min write, leads 10/min, `/me` PATCH 5/15min. **Fixed 2026-06-17:** added `app.set('trust proxy', 1)` so per-IP keying works behind Railway's proxy (without it all clients shared one bucket).
+- [x] CORS + helmet config review — already wired in `main.ts` (single-origin CORS off `env.APP_URL`, helmet HSTS preload 2yr + includeSubDomains, frameguard deny, referrer-policy, x-powered-by off, CSP off for JSON API). **Added 2026-06-17:** `Permissions-Policy` header (helmet omits it; §11.20).
 - [ ] Prioritized fix list with diffs
 
 **Phase 2 — CI/CD plumbing (~½ day)** → `docs/CI_AND_BRANCH_PROTECTION.md`
@@ -197,6 +379,53 @@ Goal: everything non-product-feature — security, observability, CI/CD discipli
 - [ ] Output to `$GITHUB_STEP_SUMMARY` + 90-day artifact
 - [ ] v2: commit each report to `security-reports` branch (avoid main push-loop)
 
+**Phase 6 — Third-party penetration test (pre-launch GO/NO-GO gate)**
+Independent external validation before we hold real operator + caller PII and
+move live money. Run AFTER Phases 1–5 land — fixing our own findings first is
+far cheaper than paying a firm to rediscover them. Test against the staging
+environment with production-equivalent config (Slice 13). Hand the tester this
+checklist + CLAUDE.md §11 as the control list.
+- [ ] Engage a reputable firm or vetted independent tester; MSA + NDA; agree
+      rules of engagement, test window, and an emergency contact
+- [ ] Seed the engagement: staging URLs, **two** operator accounts (for
+      cross-tenant probing), one admin account, Stripe/Twilio **test-mode**
+      creds — never live keys
+- [ ] **Multi-tenant isolation / IDOR** — JWT manipulation + object-id
+      enumeration against `/v1/operators/me`, `/v1/conversations/:id`,
+      `/v1/appointments/:id`, `/v1/admin/*`. Baseline is our cross-tenant
+      suite (§11.11); the test should try to break past it.
+- [ ] **RLS bypass** — confirm the anon/authenticated keys cannot read another
+      tenant's rows via crafted PostgREST queries (§11.3, §11.18); confirm the
+      service-role key never reaches the browser bundle
+- [ ] **Webhook forgery + replay** — Twilio / Stripe / Stripe-Connect / Slack /
+      Google signature verification, idempotency via `webhook_events`, and the
+      Connect `account`↔`operators.stripe_connect_account_id` cross-check
+      (§11.1, §11.2, §9.5)
+- [ ] **Auth + privilege escalation** — Supabase JWT verification, magic-link /
+      password-reset abuse, admin-role escalation (verify `app_metadata.role`
+      is server-only-writable, ADR 0009), and that the **terms-acceptance gate
+      can't be bypassed** to enter the app without consent
+- [ ] **Payment / MoR boundary** — no code path holds caller funds; the
+      `Stripe-Account` header is present on every Connect call;
+      `application_fee_amount` can't be tampered to over/under-charge (§9.5,
+      ADR 0005)
+- [ ] **AI prompt injection** — caller SMS attempting to leak the system
+      prompt, invoke tools out of policy, book out of scope, or reach another
+      tenant's data (§9.3, §11.16, §11.17)
+- [ ] **PII exposure** — logs, RFC-7807 error bodies, and Sentry events
+      confirmed to redact phone/email/message-body per §11.5
+- [ ] **Rate-limit / abuse** — auth + write endpoints (§11.7), outbound-SMS
+      abuse, and signup/trial farming (§17: dedupe by verified phone, block
+      disposable email)
+- [ ] **Transport + headers** — HTTPS, HSTS preload, CSP, and Secure /
+      HttpOnly / SameSite cookie flags (§11.20)
+- [ ] Triage report: severity-ranked. **Fix all Critical + High before
+      go-live**; ticket Medium/Low with owners + dates
+- [ ] Retest Critical/High fixes; obtain written sign-off / attestation letter
+      (useful for enterprise sales + cyber-insurance)
+- [ ] Set a recurring cadence: annual, plus after any material change to auth,
+      payments, or the webhook surface
+
 ### Service-area follow-up: city/town centers via Google Maps Geocoding (Phase C)
 Today the operator can express service area as (a) explicit ZIPs and (b) radius
 zones around a center ZIP. Phase C adds:
@@ -219,8 +448,8 @@ OSM. Less accurate but acceptable for occasional operator setup.
 ### Slice 4-followup: billing flow gaps (surfaced during E2E 2026-05-07)
 - [ ] **Trial → paid conversion test** — manually advance the trial via Stripe dashboard "Cancel trial / charge now", verify `customer.subscription.updated` flips status to `active`, dashboard reflects, no double-billing
 - [ ] **Cancellation flow test** — operator clicks "Cancel" via Customer Portal (Settings → Billing → Open billing portal), verify `customer.subscription.deleted` → `subscription_status='canceled'`, dashboard banner, AI conversations gracefully degrade per §9.1 (greeting still plays, no booking, no fee). 7-day Twilio number grace then release.
-- [ ] **Duplicate-checkout dedup** — `BillingService.createCheckoutSession` should refuse if `subscription_status IN ('trialing','active')` and there's an open subscription. Today, clicking "Start Trial" twice creates two Stripe subscriptions for the same customer (will double-bill on day 7).
-- [ ] **Past-due degraded mode** — when `invoice.payment_failed` flips status to `past_due`, the AI advance loop should still run the call greeting + polite handoff SMS but skip booking + fee collection (CLAUDE.md §9.5 Flow A behavior). Today nothing in the AI loop checks subscription state.
+- [x] **Duplicate-checkout dedup** (✅ 2026-06-17) — `BillingService.createCheckoutSession` now refuses when the operator has a live subscription (`stripe_subscription_id` set AND status in trialing/active/past_due/incomplete) with a `ConflictError` pointing to the billing portal. Re-subscribe is allowed only from terminal states (canceled / incomplete_expired / none). Prevents the double-bill from clicking "Start Trial" again after subscribing.
+- [x] **Past-due degraded mode** (✅ 2026-06-17) — `AdvanceService.advance` now gates the AI loop on subscription standing. When status is not trialing/active, it sends ONE polite handoff SMS (deduped via a marker substring so repeat caller turns aren't re-notified) and skips booking + fee collection entirely (CLAUDE.md §9.5 Flow A). Voice greeting + opening SMS are unaffected (voice-side).
 - [ ] **Trial reminder emails** — day 3 (us, via pg-boss) + day 6 (us OR `customer.subscription.trial_will_end` via Stripe). Currently the webhook just logs; Slice 10 wires Resend.
 
 ### Slice 7-followup: pg-boss queue + delayed jobs (deferred from Slice 7)
@@ -642,6 +871,69 @@ marketing page advertised tiers that the API didn't accept.
   `og-image.png` (1200×630, wordmark on black). `app/layout.tsx` `icons`
   metadata references the full PNG set. Homepage product mockups remain
   CSS-rendered (not real screenshots) — that's fine.
+
+### Post-launch-prep hardening + multi-trade reversal (2026-05-28 → 05-29) — ✅ **committed, UNTESTED in prod**
+
+Continuation of the KeeprSteady launch prep. All committed (HEAD `0aac035`,
+8 commits: terms → social links → build fix → logo → home-services → brand
+colors). Typechecks + `pnpm --filter web build` pass. **Not yet smoke-tested
+on the live system** — that's Monday's job (see `project_resume_after_restart.md`).
+
+**Brand assets + logo**
+- Generated from user art (`~/Downloads/favicon.jpg` = K mark on black,
+  `~/Downloads/canvas.png` = transparent wordmark) via Pillow into
+  `apps/web/public/`: `favicon.ico`, `icon.png`, `icon-192/512`,
+  `apple-touch-icon`, `og-image` (wordmark on black), `logo-mark.png`
+  (rounded K chip).
+- `components/Logo.tsx` — 40px header mark, no wordmark text. Used in
+  marketing, auth, AND dashboard (`Nav.tsx`) headers so all three match.
+
+**Terms-of-Service acceptance tracking** (migration
+`20260528000001_operator_terms_acceptance.sql` — `operators.terms_accepted_at`
++ `terms_version`, nullable)
+- Captured at signup into `auth.users.user_metadata` (`AuthForm`); mirrored
+  onto operators server-side at row creation (operators bootstrap +
+  `billing.ensureOperator`).
+- `TERMS = { version: '2026-05-26', effectiveDate }` in `lib/brand.ts`;
+  Terms/Privacy pages read `effectiveDate`. Bump `version` to force a
+  site-wide re-accept.
+- Middleware re-accept gate: authed + `/dashboard|/onboarding|/settings` +
+  `user_metadata.terms_version !== TERMS.version` → redirect `/accept-terms`
+  (admin exempt; `/accept-terms` not a protected prefix so no loop).
+  `/accept-terms` updates metadata + `POST /v1/operators/me/accept-terms`
+  (server-trusted mirror). db-types hand-patched.
+- **Build gotcha (fixed):** `/accept-terms` used `useSearchParams()` without a
+  `<Suspense>` boundary → Railway prod build failed prerendering. Wrapped it
+  (same pattern as signup/login). **Lesson:** run `pnpm --filter web build`,
+  not just `tsc`, before deploy — tsc misses prerender errors.
+
+**Multi-trade reversal across the product** (undoing the Slice 16 plumbing-only cut)
+- API user-facing brand strings BookingBlues→KeeprSteady (the earlier rebrand
+  only touched `apps/web`): summary emails, daily-summary subject, emergency
+  alert SMS, ICS `PRODID`, Slack thread-match message.
+- `emergency-detection.ts`: added cross-trade keywords (electrical: sparks,
+  burning smell, exposed wire, electrical fire; roofing: roof/ceiling leak,
+  water coming through, storm damage; HVAC: no heat, no ac).
+- `emergency-classifier.service.ts`: was hardcoded "to a plumber" → now
+  trade-aware `classify(body, category)` with all-trades examples + "home
+  services" fallback. Twilio webhook passes `operatorRow.category`.
+- Stale "Plumbing-only MVP" comments in both `env.ts` files updated.
+- Already trade-agnostic (no change): category-driven AI system prompt,
+  `vanity-slugs`, `tool-handlers` SERVICES_BY_CATEGORY, wizard trade list.
+- **Action still required (infra, not code):** remove
+  `NEXT_PUBLIC_ENABLED_CATEGORIES` (web service) + `ENABLED_CATEGORIES` (api
+  service) on Railway — both currently `plumbing` — then redeploy. Unset =
+  all 5 trades. Existing plumbing operators are not migrated.
+
+**Brand accent → #6B3FA0** (KeeprSteady purple; was `#0b5cd6` blue)
+- `tailwind.config` `accent` token is now nested: `DEFAULT #6B3FA0`,
+  `dark #55307F` (hover), `light #B79CE6` (dark-mode text). All `*-accent`
+  classes recolor automatically.
+- Swapped accent-paired blues (`hover:bg-blue-700`→`hover:bg-accent-dark`,
+  `dark:text-blue-400`→`dark:text-accent-light` incl. `globals.css` link,
+  hero badge tint, ProofStat numbers, nav `hover:text-accent`).
+- Kept semantic status blues (appointment "confirmed" badge, Stripe-connect
+  info banner, admin lead badges, SalesCalculator palette).
 
 ### Slice 17 — Smarter scheduling & emergency triage
 
