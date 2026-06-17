@@ -168,6 +168,39 @@ export class TwilioProvisioningService {
       smsMethod: 'POST',
     });
 
+    // Attach the number to the A2P-registered Messaging Service so it inherits
+    // our brand + campaign registration (CLAUDE.md §17). Without this, a freshly
+    // provisioned 10DLC number cannot send SMS once A2P is enforced. We still
+    // send with an explicit `from` (the operator's own number) so each caller is
+    // texted from the number they dialed — campaign attribution follows the
+    // number's Messaging Service membership, not the send method. Best-effort:
+    // the purchase is already committed, so a failure here is logged for
+    // reconciliation rather than thrown (which would orphan the number).
+    const messagingServiceSid = this.env.TWILIO_MESSAGING_SERVICE_SID;
+    if (messagingServiceSid) {
+      try {
+        await this.twilio
+          .client()
+          .messaging.v1.services(messagingServiceSid)
+          .phoneNumbers.create({ phoneNumberSid: purchased.sid });
+      } catch (err) {
+        this.logger.error(
+          {
+            operatorId: operator.id,
+            sid: purchased.sid,
+            messagingServiceSid,
+            err: (err as Error).message,
+          },
+          'Number purchased but Messaging Service attach failed — SMS will be blocked until reconciled',
+        );
+      }
+    } else {
+      this.logger.warn(
+        { operatorId: operator.id, sid: purchased.sid },
+        'TWILIO_MESSAGING_SERVICE_SID not set — provisioned number is NOT A2P-registered and cannot send SMS',
+      );
+    }
+
     // Persist the pool row + link to operator. If the DB write fails after the
     // Twilio purchase, log loudly so ops can reconcile (number will be in
     // Twilio with no DB row).
