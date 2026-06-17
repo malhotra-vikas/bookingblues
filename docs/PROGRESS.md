@@ -513,8 +513,33 @@ The bot escalates to a human in Slack and stays bridged. The SMS channel never c
 - [ ] Smoke checklist `apps/api/test/SMOKE.md`
 
 ### Slice 11: Observability — Sentry
-- [ ] Sentry SDK init in `apps/api` with PII scrubbing config matching §11.5 redact paths
-- [ ] Sentry SDK init in `apps/web`
+
+**Shipped 2026-06-17** (`@sentry/node` + `@sentry/nextjs`, both `^10.58`):
+- ✅ **api** — `apps/api/src/instrument.ts` (imported first in `main.ts`) inits
+  `@sentry/node`; `ProblemDetailsFilter` captures 5xx/unknown via
+  `Sentry.captureException` with non-PII tags (code, request_id). No-op without
+  `SENTRY_DSN_API`. Typecheck clean.
+- ✅ **web** — `instrumentation.ts` (server/edge configs) + `instrumentation-client.ts`
+  + `withSentryConfig` wrap in `next.config.mjs`. Server/edge read
+  `SENTRY_DSN_WEB`; client reads `NEXT_PUBLIC_SENTRY_DSN_WEB`. **Verified a full
+  `next build` (Turbopack) succeeds** with the wrap. No-op without DSNs.
+- ✅ **PII scrubbing** — shared recursive `beforeSend`/`beforeSendTransaction`
+  scrubber (`apps/api/src/instrument.ts`, `apps/web/lib/sentry-scrub.ts`)
+  redacts keys matching §11.5 (phone/email/Twilio From-To-Body/auth/cookie/
+  signature/token/secret). `sendDefaultPii: false`.
+- ✅ Env documented — `.env.example` + CLAUDE.md §7 (incl. new
+  `NEXT_PUBLIC_SENTRY_DSN_WEB` + optional source-map upload vars).
+
+**Activation (user):** create Sentry projects and set `SENTRY_DSN_API`,
+`SENTRY_DSN_WEB`, `NEXT_PUBLIC_SENTRY_DSN_WEB` on Railway. Optional source-map
+upload: `SENTRY_ORG` / `SENTRY_PROJECT` / `SENTRY_AUTH_TOKEN`. Until then Sentry
+is inert (no events sent).
+
+**Deferred:** release tagging beyond `RAILWAY_GIT_COMMIT_SHA`, end-to-end
+redaction integration test, alert routing. Original checklist below.
+
+- [x] Sentry SDK init in `apps/api` with PII scrubbing config matching §11.5 redact paths
+- [x] Sentry SDK init in `apps/web`
 - [ ] Source maps upload from CI (api + web)
 - [ ] Release tagging via git SHA; environment tag (`development`/`staging`/`production`)
 - [ ] User context: attach `operator_id` (never raw email/phone) to error events
@@ -524,6 +549,23 @@ The bot escalates to a human in Slack and stays bridged. The SMS channel never c
 
 ### Slice 12: CI gates + security scanning
 Triggered on every PR and push to `main`. Blocks merge on failures.
+
+**First cut shipped 2026-06-17** (`.github/workflows/ci.yml`, `.github/dependabot.yml`,
+`.gitleaks.toml`, `docs/CI_AND_BRANCH_PROTECTION.md`):
+- ✅ `build` job — install (corepack pnpm, no action-setup) → **typecheck** →
+  **build** (api + web; web gets placeholder `NEXT_PUBLIC_*`). Both blocking.
+- ⚠️ lint + format:check run **report-only** (eslint declared but gate not yet
+  proven repo-clean) — flip to blocking via task #8.
+- ✅ `audit` job — blocks on **critical** (currently 0; `next` is 16.2.5 so the
+  old criticals are gone), reports **high** (11 transitive, mostly
+  `form-data <4.0.6`) non-blocking until remediated (task #8).
+- ✅ `gitleaks` job — bare binary (not the action — Dependabot-token footgun),
+  full history, `.gitleaks.toml` allowlists `.env.example`.
+- ✅ Dependabot — npm (workspace root) + github-actions, weekly, grouped
+  minor/patch.
+- Branch protection documented (manual UI step) in `docs/CI_AND_BRANCH_PROTECTION.md`.
+- **Deferred** (task #8 + Phases 2/5): Supabase-backed test + RLS/cross-tenant
+  jobs (need ephemeral test project, never prod), CodeQL, Trivy, license check.
 - [ ] GitHub Actions workflow: install, typecheck, lint, test, build (matrix per app)
 - [ ] **Secret scanning** — `gitleaks` pre-commit hook + CI workflow (per §11.8)
 - [ ] **Dependency vulnerability scanning** — `pnpm audit --prod` gate; block merge on high+ severity (per §11.19)
