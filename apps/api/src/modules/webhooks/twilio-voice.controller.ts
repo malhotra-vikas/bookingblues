@@ -15,6 +15,7 @@ import { PinoLogger } from 'nestjs-pino';
 
 import { SupabaseService } from '../../common/supabase/supabase.service';
 import { TwilioService } from '../../common/twilio/twilio.service';
+import { openingSms } from '../conversations/templates/sms-templates';
 import { WebhookIdempotencyService } from '../../common/webhooks/webhook-idempotency.service';
 import { ENV_TOKEN } from '../../config/config.module';
 import type { Env } from '../../config/env';
@@ -113,8 +114,8 @@ export class TwilioVoiceController {
     // opt-out + message-rate language (CTIA + carrier guidelines). Twilio
     // enforces STOP/UNSTOP automatically once a recipient sends those words;
     // we just need the human-readable disclosure on the first turn.
-    // PROGRESS.md Slice 16(15).
-    const opening = `Hi! Thanks for calling ${operator.business_name}. What can we help with today? Reply here and we'll get you on the schedule. Reply STOP to opt out. Msg & data rates may apply.`;
+    // PROGRESS.md Slice 16(15). Template carries the disclosure.
+    const opening = openingSms(operator.business_name);
 
     const send = await this.twilio.sendSms({
       from: operator.twilio_number_e164,

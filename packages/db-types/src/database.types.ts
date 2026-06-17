@@ -29,6 +29,7 @@ export type Database = {
           id: string;
           job_summary: string;
           operator_id: string;
+          reminder_sent_at: string | null;
           scheduled_for_end: string;
           scheduled_for_start: string;
           status: Database["public"]["Enums"]["appointment_status"];
@@ -48,6 +49,7 @@ export type Database = {
           id?: string;
           job_summary: string;
           operator_id: string;
+          reminder_sent_at?: string | null;
           scheduled_for_end: string;
           scheduled_for_start: string;
           status?: Database["public"]["Enums"]["appointment_status"];
@@ -67,6 +69,7 @@ export type Database = {
           id?: string;
           job_summary?: string;
           operator_id?: string;
+          reminder_sent_at?: string | null;
           scheduled_for_end?: string;
           scheduled_for_start?: string;
           status?: Database["public"]["Enums"]["appointment_status"];

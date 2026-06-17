@@ -11,6 +11,7 @@ import { ENV_TOKEN } from '../../config/config.module';
 import type { Env } from '../../config/env';
 import { CalendarService } from '../calendar/calendar.service';
 import { ConversationsService } from '../conversations/conversations.service';
+import { bookingConfirmationSms, bookingFeeLine } from '../conversations/templates/sms-templates';
 import { isBookingFeeCollectible } from '../ai/prompts';
 import { PaymentsService } from '../payments/payments.service';
 import { renderBookingSummary } from '../summaries/email-templates';
@@ -356,13 +357,13 @@ export class BookingsService {
       minute: '2-digit',
     });
     const cents = args.operator.booking_fee_cents ?? 0;
-    const feeLine = args.feeCheckoutUrl
-      ? ` Please secure your slot with the $${(cents / 100).toFixed(2)} booking fee: ${args.feeCheckoutUrl}`
-      : '';
-    const body =
-      `✅ You're booked with ${args.operator.business_name} for ${friendlyTime}. ` +
-      `Add to your calendar: ${args.icsUrl}` +
-      feeLine;
+    const feeLine = args.feeCheckoutUrl ? bookingFeeLine(cents, args.feeCheckoutUrl) : '';
+    const body = bookingConfirmationSms({
+      businessName: args.operator.business_name,
+      friendlyTime,
+      icsUrl: args.icsUrl,
+      feeLine,
+    });
     const send = await this.twilio.sendSms({
       from: args.operator.twilio_number_e164,
       to: args.callerPhoneE164,

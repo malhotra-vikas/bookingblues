@@ -15,6 +15,7 @@ import { PinoLogger } from 'nestjs-pino';
 
 import { SupabaseService } from '../../common/supabase/supabase.service';
 import { TwilioService } from '../../common/twilio/twilio.service';
+import { emergencyAlertSms } from '../conversations/templates/sms-templates';
 import { WebhookIdempotencyService } from '../../common/webhooks/webhook-idempotency.service';
 import { ENV_TOKEN } from '../../config/config.module';
 import type { Env } from '../../config/env';
@@ -168,11 +169,7 @@ export class TwilioSmsController {
             const conversationId = convoFull.id;
 
             const sendAlert = (reason: string, source: 'keyword' | 'ai'): void => {
-              const alert =
-                `🚨 EMERGENCY CALL — ${businessName}\n` +
-                `Caller •••${callerLast4} reports: ${reason}.\n` +
-                `Call them back: ${callerFrom}\n` +
-                `(KeeprSteady AI is also responding to keep them engaged until you do.)`;
+              const alert = emergencyAlertSms({ businessName, callerLast4, reason, callerFrom });
               this.twilio
                 .sendSms({ from: twilioFrom, to: operatorPhone, body: alert })
                 .then((res) => {

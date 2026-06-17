@@ -1,10 +1,16 @@
 import type { PinoLogger } from 'nestjs-pino';
 import type { Tables } from '@bookingblues/db-types';
 
-import { ConflictError, ValidationError } from '../../common/errors/app-error';
 import type { BookingsService } from '../appointments/bookings.service';
 import type { CalendarService } from '../calendar/calendar.service';
 import { isBookingFeeCollectible } from './prompts';
+import {
+  escalationHandoffSms,
+  outOfScopeAreaSms,
+  outOfScopeGenericSms,
+  outOfScopeServiceSms,
+  paymentLinkSms,
+} from '../conversations/templates/sms-templates';
 import type { ConversationsService } from '../conversations/conversations.service';
 import type { PaymentsService } from '../payments/payments.service';
 import type { EscalationsService } from '../slack/escalations.service';
@@ -145,7 +151,7 @@ export async function requestPaymentLink(
       // SMS the caller the link directly — the model SHOULD also acknowledge
       // it conversationally, but we send it here so we never lose it to a
       // hallucinated paraphrase.
-      outboundMessage: `Reserve your slot with the booking fee here: ${session.url}`,
+      outboundMessage: paymentLinkSms(session.url),
     };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -188,11 +194,11 @@ export function markOutOfScope(args: MarkOutOfScopeArgs, ctx: ToolContext): Tool
       zips.length <= 6
         ? zips.join(', ')
         : `${zips.slice(0, 6).join(', ')} and ${zips.length - 6} more`;
-    closing = `Thanks for reaching out! ${ctx.operator.business_name} only services ZIP codes ${zipList}. Your address is outside our area — best of luck finding a local pro.`;
+    closing = outOfScopeAreaSms(ctx.operator.business_name, zipList);
   } else if (services) {
-    closing = `Thanks for reaching out! ${ctx.operator.business_name} handles ${services}. What you described is outside that — we're not the right fit, but best of luck finding the right pro.`;
+    closing = outOfScopeServiceSms(ctx.operator.business_name, services);
   } else {
-    closing = `Thanks for reaching out — what you described is outside what ${ctx.operator.business_name} handles. Best of luck finding the right pro.`;
+    closing = outOfScopeGenericSms(ctx.operator.business_name);
   }
 
   return {
@@ -245,8 +251,7 @@ export async function escalateToHuman(
   return {
     content: { acknowledged: true, reason: args.reason },
     state: 'escalated',
-    outboundMessage:
-      "I've passed your message to the team — someone will reach out shortly.",
+    outboundMessage: escalationHandoffSms(),
   };
 }
 

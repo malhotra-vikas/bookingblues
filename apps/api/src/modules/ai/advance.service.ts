@@ -9,6 +9,7 @@ import { SupabaseService } from '../../common/supabase/supabase.service';
 import { TwilioService } from '../../common/twilio/twilio.service';
 import { CalendarService } from '../calendar/calendar.service';
 import { ConversationsService } from '../conversations/conversations.service';
+import { DEGRADED_HANDOFF_MARKER, degradedHandoffSms } from '../conversations/templates/sms-templates';
 import { BookingsService } from '../appointments/bookings.service';
 import { PaymentsService } from '../payments/payments.service';
 import { EscalationsService } from '../slack/escalations.service';
@@ -47,19 +48,6 @@ const MAX_TOOL_ITERATIONS = 5;
  * SMS, but no AI booking and no fee collection.
  */
 const GOOD_STANDING_STATUSES: ReadonlySet<string> = new Set(['trialing', 'active']);
-
-/**
- * Stable substring present in every degraded-mode handoff SMS, used to dedupe so
- * a caller who keeps texting isn't re-notified on every turn.
- */
-const DEGRADED_HANDOFF_MARKER = "can't book online right now";
-
-function degradedHandoffMessage(businessName: string): string {
-  return (
-    `Thanks for reaching ${businessName}! We ${DEGRADED_HANDOFF_MARKER}, ` +
-    'but we have your number and will follow up with you as soon as possible.'
-  );
-}
 
 @Injectable()
 export class AdvanceService {
@@ -195,7 +183,7 @@ export class AdvanceService {
           operator.twilio_number_e164,
           callerPhoneE164,
           conversation.id,
-          degradedHandoffMessage(operator.business_name),
+          degradedHandoffSms(operator.business_name),
         );
       }
       this.logger.warn(

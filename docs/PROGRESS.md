@@ -507,9 +507,30 @@ The bot escalates to a human in Slack and stays bridged. The SMS channel never c
 - [x] `docs/slack-app-manifest.yaml` (paste into api.slack.com)
 
 ### Slice 10: Notifications + polish
-- [ ] Resend wrapper, transactional email templates
-- [ ] SMS templates module (no inline strings — §9.6)
-- [ ] 1-hour reminder cron via pg-boss
+- [x] Resend wrapper, transactional email templates — already shipped
+  (`common/email/email.service.ts` + `summaries/email-templates`; booking
+  confirmations + daily summaries use it).
+- [x] **SMS templates module** (✅ 2026-06-17) — `modules/conversations/templates/sms-templates.ts`
+  now holds every outbound SMS body (§9.6). Extracted 7 inline strings from
+  `twilio-voice.controller` (opening), `bookings.service` (confirmation +
+  fee line), `advance.service` (degraded handoff + marker),
+  `tool-handlers` (payment link, 3 out-of-scope variants, escalation),
+  `twilio-sms.controller` (emergency alert). Behavior-preserving; removed a
+  dead `ConflictError/ValidationError` import in tool-handlers. API typecheck clean.
+- [x] **1-hour reminder cron** (✅ 2026-06-17) — implemented as **HTTP cron**
+  (not pg-boss — matches the existing daily-summaries pattern; ADR 0006's
+  pg-boss is still unrealized). `modules/reminders/`: `POST
+  /internal/appointment-reminders/run` (`@SkipThrottle`, `X-Cron-Secret`
+  guard) → `AppointmentRemindersService.runDue()` sends `appointmentReminderSms`
+  to confirmed, upcoming (≤60 min), not-yet-reminded appointments and stamps
+  `appointments.reminder_sent_at` (idempotent). Migration
+  `20260617000001_appointment_reminder_sent.sql` adds the column + a partial
+  index; db-types hand-patched.
+  - **Action required (infra, you):** (1) run the migration on prod
+    (`pnpm db:migrate` / Railway pre-deploy). (2) Add a Railway cron (or external
+    scheduler) hitting `POST https://api.keeprsteady.com/internal/appointment-reminders/run`
+    every ~15 min with header `X-Cron-Secret: <CRON_SHARED_SECRET>`. Until then
+    no reminders fire (same wiring the daily-summary cron needs).
 - [ ] Smoke checklist `apps/api/test/SMOKE.md`
 
 ### Slice 11: Observability — Sentry

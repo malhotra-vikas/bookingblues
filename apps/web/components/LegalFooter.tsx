@@ -55,6 +55,9 @@ export function LegalFooter({ variant }: { variant: 'marketing' | 'auth' }): JSX
           <Link href="/terms" className="no-underline hover:text-ink dark:hover:text-slate-100">
             Terms of Service
           </Link>
+          <Link href="/messaging" className="no-underline hover:text-ink dark:hover:text-slate-100">
+            SMS Program
+          </Link>
           <span className="inline-flex items-center gap-3">
             <SocialLink href={BRAND.linkedinUrl} label="KeeprSteady on LinkedIn">
               <LinkedinIcon />
