@@ -1,0 +1,98 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# Cancel superseded runs on the same ref (saves minutes on rapid pushes).
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Typecheck · Build · Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # corepack provisions pnpm from the root `packageManager` field. We do NOT
+      # use pnpm/action-setup with a pinned version — that collides with
+      # packageManager and is a documented footgun (hardening Phase 2).
+      - name: Enable corepack
+        run: corepack enable
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      # Blocking gates — these are known-green and protect every deploy.
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Build
+        run: pnpm build
+        env:
+          # Placeholders only — the web bundle validates NEXT_PUBLIC_* at module
+          # load (apps/web/lib/env.ts). These are never deployed; they just let
+          # `next build` complete in CI. Real values come from Railway.
+          NEXT_PUBLIC_APP_URL: https://example.com
+          NEXT_PUBLIC_API_URL: https://api.example.com
+          NEXT_PUBLIC_SUPABASE_URL: https://example.supabase.co
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ci-placeholder-anon-key
+
+      # Report-only for now (see task: "flip CI lint/format/audit to blocking").
+      # The local toolchain has eslint declared but the gate hasn't been proven
+      # repo-clean yet; surfaces issues without blocking the first cut.
+      - name: Lint (report-only)
+        run: pnpm lint
+        continue-on-error: true
+
+      - name: Format check (report-only)
+        run: pnpm format:check
+        continue-on-error: true
+
+  audit:
+    name: Dependency audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Enable corepack
+        run: corepack enable
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # Blocking: zero critical advisories tolerated.
+      - name: Block on critical advisories
+        run: pnpm audit --audit-level=critical
+
+      # Report-only until the current transitive highs (form-data <4.0.6 via
+      # openai/twilio/axios) are remediated, then tighten to --audit-level=high
+      # per CLAUDE.md §11.19 (see remediation task).
+      - name: Report high advisories (non-blocking)
+        run: pnpm audit --audit-level=high
+        continue-on-error: true
+
+  gitleaks:
+    name: Secret scan (gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # full history so gitleaks scans all commits
+
+      # Bare binary, NOT gitleaks-action — the action fails on Dependabot's
+      # read-only token (hardening Phase 2 gotcha).
+      - name: Run gitleaks
+        run: |
+          set -euo pipefail
+          VERSION=8.21.2
+          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${VERSION}/gitleaks_${VERSION}_linux_x64.tar.gz" \
+            | tar -xz gitleaks
+          ./gitleaks detect --source . --redact --no-banner --config .gitleaks.toml

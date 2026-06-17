@@ -1,0 +1,26 @@
+version: 2
+updates:
+  # JS dependencies across the pnpm workspace (resolved from the root lockfile).
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
+    groups:
+      # Collapse low-risk bumps into a single PR to cut review noise; majors
+      # still come through as individual PRs.
+      minor-and-patch:
+        update-types:
+          - minor
+          - patch
+
+  # Keep the GitHub Actions in this workflow pinned + current.
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        update-types:
+          - minor
+          - patch

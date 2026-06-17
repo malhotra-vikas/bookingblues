@@ -1,0 +1,11 @@
+# Gitleaks config — extends the built-in ruleset, adds an allowlist.
+# Used by .github/workflows/ci.yml (secret scan job).
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Ignore placeholder/template files that intentionally contain key-shaped strings"
+paths = [
+  '''\.env\.example$''',
+]
