@@ -10,9 +10,17 @@ export default function MarketingLayout({ children }: { children: ReactNode }): 
   return (
     <div className="min-h-screen flex flex-col">
       <header className="px-6 py-4 border-b border-slate-200 dark:border-slate-800 flex items-center gap-6">
-        <Link href="/" className="no-underline" aria-label={`${BRAND.name} home`}>
-          <Logo />
-        </Link>
+        <div className="flex items-center gap-2">
+          <Link href="/" className="no-underline" aria-label={`${BRAND.name} home`}>
+            <Logo />
+          </Link>
+          {/* Legal-entity attribution for A2P 10DLC: ties the keeprsteady.com
+              site to the registered brand (Malhotra Consultants LLC) right in
+              the header so a reviewer sees it without scrolling to the footer. */}
+          <span className="hidden sm:inline text-xs text-muted dark:text-slate-400 leading-tight">
+            by {BRAND.legalEntity}
+          </span>
+        </div>
         <nav className="flex items-center gap-4 text-sm">
           <Link href="/pricing" className="no-underline hover:text-accent">
             Pricing
