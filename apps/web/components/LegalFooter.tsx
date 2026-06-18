@@ -17,7 +17,8 @@ export function LegalFooter({ variant }: { variant: 'marketing' | 'auth' }): JSX
           condensed ? 'max-w-3xl' : 'max-w-4xl'
         }`}
       >
-        {BRAND.name} automates SMS responses to missed calls on behalf of home service
+        {BRAND.name} is a service operated by {BRAND.legalEntity}. {BRAND.name} automates SMS
+        responses to missed calls on behalf of home service
         contractors. The AI may not always respond accurately — every conversation is monitored
         by our team, but human review is not guaranteed before delivery. Contractors are solely
         responsible for the appointments booked and deposits collected through this platform.
@@ -37,7 +38,7 @@ export function LegalFooter({ variant }: { variant: 'marketing' | 'auth' }): JSX
         <div className="flex items-center gap-2 text-muted dark:text-slate-400">
           <span className="font-semibold text-ink dark:text-slate-100">{BRAND.name}</span>
           <span>·</span>
-          <span>© {new Date().getFullYear()}</span>
+          <span>© {new Date().getFullYear()} {BRAND.legalEntity}</span>
         </div>
         <nav className="flex flex-wrap items-center gap-x-4 gap-y-2 text-muted dark:text-slate-400">
           <Link href="/pricing" className="no-underline hover:text-ink dark:hover:text-slate-100">

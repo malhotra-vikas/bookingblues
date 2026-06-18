@@ -6,6 +6,10 @@
 
 export const BRAND = {
   name: 'KeeprSteady',
+  // Registered legal entity behind the KeeprSteady product + the A2P 10DLC brand.
+  // Shown site-wide (footer) so the website visibly matches the registered brand
+  // for carrier/TCR vetting.
+  legalEntity: 'Malhotra Consultants LLC',
   domain: 'keeprsteady.com',
   salesEmail: 'sales@keeprsteady.com',
   supportEmail: 'support@keeprsteady.com',
