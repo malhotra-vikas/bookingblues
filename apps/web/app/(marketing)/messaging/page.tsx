@@ -26,6 +26,31 @@ export default function MessagingProgramPage(): JSX.Element {
         </p>
       </header>
 
+      <aside className="mt-8 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 px-5 py-4 text-[14px] text-muted">
+        <p className="font-semibold text-ink dark:text-slate-100">
+          Summary for carrier / A2P 10DLC reviewers
+        </p>
+        <ul className="mt-2 list-disc pl-5 space-y-1">
+          <li>
+            <strong>Opt-in methods:</strong> (1) a consumer-initiated phone call followed by a verbal
+            (IVR) disclosure on that same call, and (2) an explicit web opt-in form at{' '}
+            <a href="/messaging/opt-in" className="underline">keeprsteady.com/messaging/opt-in</a>{' '}
+            (name, mobile number, and an unchecked-by-default consent checkbox). No purchased or
+            rented lists, and no third-party data.
+          </li>
+          <li>
+            <strong>Consent proof:</strong> this page plus the{' '}
+            <a href="/messaging/opt-in" className="underline">opt-in form</a>. The spoken greeting and
+            the first text message quoted below are the <strong>exact, verbatim</strong> verbiage
+            used in production.
+          </li>
+          <li>
+            <strong>Message type:</strong> one-to-one, conversational customer care — not marketing,
+            promotional, or bulk.
+          </li>
+        </ul>
+      </aside>
+
       <Section title="Program name & operator">
         <p>
           <strong>Program:</strong> {BRAND.name} Appointment Booking. {BRAND.name} is operated by
@@ -51,14 +76,18 @@ export default function MessagingProgramPage(): JSX.Element {
             it to the contractor&apos;s dedicated {BRAND.name} number.
           </li>
           <li>
-            The caller hears a brief greeting stating they will receive a text to get scheduled —
-            for example: <em>&ldquo;Thanks for calling. Sorry we missed you — we&apos;ll text you
-            right now to get you scheduled.&rdquo;</em> This disclosure happens before any SMS is
-            sent.
+            Before any text is sent, the caller hears this <strong>exact</strong> spoken greeting
+            (the business name is the contractor&apos;s own):
+            <span className="mt-1.5 block rounded bg-slate-100 dark:bg-slate-800 px-3 py-2 font-mono text-[13px]">
+              &ldquo;Thanks for calling [business name]. They are with another customer right now. We
+              will send you a text message to help get you scheduled. Message and data rates may
+              apply.&rdquo;
+            </span>
           </li>
           <li>
-            {BRAND.name} then sends a single SMS to the exact number the consumer called from, to
-            help schedule the service they were calling about.
+            {BRAND.name} then sends an initial SMS to the exact number the consumer called from, to
+            help schedule the service they were calling about. The conversation continues only in
+            response to the consumer&apos;s own replies.
           </li>
         </ol>
         <p>
@@ -68,10 +97,20 @@ export default function MessagingProgramPage(): JSX.Element {
         </p>
       </Section>
 
-      <Section title="First-message disclosure">
-        <p>The first message in every conversation identifies the business and includes:</p>
+      <Section title="Sample messages">
+        <p>
+          Every conversation opens with this <strong>exact</strong> message, which identifies the
+          business and carries the opt-out and rate disclosure (<code>[Business Name]</code> is
+          replaced with the contractor&apos;s actual business name):
+        </p>
         <p className="rounded bg-slate-100 dark:bg-slate-800 px-3 py-2 font-mono text-[13px]">
-          Reply STOP to opt out, HELP for help. Msg &amp; data rates may apply.
+          Hi! Thanks for calling [Business Name]. What can we help with today? Reply here and
+          we&apos;ll get you on the schedule. Reply STOP to opt out. Msg &amp; data rates may apply.
+        </p>
+        <p>A typical follow-up, sent only after the consumer replies:</p>
+        <p className="rounded bg-slate-100 dark:bg-slate-800 px-3 py-2 font-mono text-[13px]">
+          Got it — we can do Tuesday at 9am or 2pm. Which works better, and what&apos;s the service
+          address?
         </p>
       </Section>
 

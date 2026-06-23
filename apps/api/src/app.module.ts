@@ -20,6 +20,7 @@ import { AiModule } from './modules/ai/ai.module';
 import { AppointmentsModule } from './modules/appointments/appointments.module';
 import { BillingModule } from './modules/billing/billing.module';
 import { CalendarModule } from './modules/calendar/calendar.module';
+import { ConsentModule } from './modules/consent/consent.module';
 import { ConversationsModule } from './modules/conversations/conversations.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
 import { HealthController } from './modules/health/health.controller';
@@ -68,6 +69,7 @@ import { WebhooksModule } from './modules/webhooks/webhooks.module';
     AdminModule,
     SlackModule,
     LeadsModule,
+    ConsentModule,
     SummariesModule,
     RemindersModule,
     WebhooksModule,

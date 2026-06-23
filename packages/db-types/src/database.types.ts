@@ -14,6 +14,45 @@ export type Database = {
   };
   public: {
     Tables: {
+      sms_consents: {
+        Row: {
+          consent_text: string;
+          consent_version: string;
+          created_at: string;
+          id: string;
+          ip_address: string | null;
+          name: string;
+          phone_e164: string;
+          source: string;
+          trade: string | null;
+          user_agent: string | null;
+        };
+        Insert: {
+          consent_text: string;
+          consent_version: string;
+          created_at?: string;
+          id?: string;
+          ip_address?: string | null;
+          name: string;
+          phone_e164: string;
+          source?: string;
+          trade?: string | null;
+          user_agent?: string | null;
+        };
+        Update: {
+          consent_text?: string;
+          consent_version?: string;
+          created_at?: string;
+          id?: string;
+          ip_address?: string | null;
+          name?: string;
+          phone_e164?: string;
+          source?: string;
+          trade?: string | null;
+          user_agent?: string | null;
+        };
+        Relationships: [];
+      };
       appointments: {
         Row: {
           caller_email: string | null;
