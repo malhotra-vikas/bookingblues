@@ -3,7 +3,6 @@ import type { ReactNode } from 'react';
 
 import { LegalFooter } from '../../components/LegalFooter';
 import { Logo } from '../../components/Logo';
-import { ThemeToggle } from '../../components/ThemeToggle';
 import { BRAND, TRIAL_COPY } from '../../lib/brand';
 
 export default function AuthLayout({ children }: { children: ReactNode }): JSX.Element {
@@ -25,9 +24,6 @@ export default function AuthLayout({ children }: { children: ReactNode }): JSX.E
               Contact
             </Link>
           </nav>
-          <div className="ml-auto">
-            <ThemeToggle />
-          </div>
         </div>
       </header>
 

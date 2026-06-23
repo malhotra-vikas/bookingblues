@@ -3,7 +3,6 @@ import { redirect } from 'next/navigation';
 import type { ReactNode } from 'react';
 
 import { SignOutButton } from '../../components/SignOutButton';
-import { ThemeToggle } from '../../components/ThemeToggle';
 import { getSupabaseServerClient } from '../../lib/supabase/server';
 
 /**
@@ -49,7 +48,6 @@ export default async function AdminLayout({ children }: { children: ReactNode })
             ← Exit admin
           </Link>
           <span className="hidden sm:inline dark:text-slate-400">{data.user.email}</span>
-          <ThemeToggle />
           <SignOutButton />
         </div>
       </header>

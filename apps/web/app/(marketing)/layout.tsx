@@ -3,7 +3,6 @@ import type { ReactNode } from 'react';
 
 import { LegalFooter } from '../../components/LegalFooter';
 import { Logo } from '../../components/Logo';
-import { ThemeToggle } from '../../components/ThemeToggle';
 import { BRAND } from '../../lib/brand';
 
 export default function MarketingLayout({ children }: { children: ReactNode }): JSX.Element {
@@ -33,7 +32,6 @@ export default function MarketingLayout({ children }: { children: ReactNode }): 
           </Link>
         </nav>
         <div className="ml-auto flex items-center gap-3 text-sm">
-          <ThemeToggle />
           <a
             href={BRAND.demoBookingUrl}
             target="_blank"

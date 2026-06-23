@@ -2,7 +2,6 @@ import Link from 'next/link';
 
 import { Logo } from './Logo';
 import { SignOutButton } from './SignOutButton';
-import { ThemeToggle } from './ThemeToggle';
 
 export function Nav({
   activeUser,
@@ -34,7 +33,6 @@ export function Nav({
       </nav>
       <div className="ml-auto flex items-center gap-3 text-sm text-muted">
         <span className="hidden sm:inline dark:text-slate-400">{activeUser.email}</span>
-        <ThemeToggle />
         <SignOutButton />
       </div>
     </header>
