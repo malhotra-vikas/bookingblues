@@ -22,6 +22,7 @@ import { ENV_TOKEN } from '../../config/config.module';
 import type { Env } from '../../config/env';
 import { ConversationsService } from '../conversations/conversations.service';
 import {
+  callerConsentedFromGather,
   escapeXml,
   resolveOperatorForWebhook,
   verifyTwilioSignature,
@@ -108,7 +109,7 @@ export class TwilioVoiceController {
       to: form.To,
     });
 
-    if (!this.callerConsented(form.Digits, form.SpeechResult)) {
+    if (!callerConsentedFromGather(form.Digits, form.SpeechResult)) {
       this.logger.info({ operatorId: operator.id }, 'voice: caller declined SMS opt-in');
       return this.declineTwiml();
     }
@@ -136,15 +137,6 @@ export class TwilioVoiceController {
     }
 
     return this.confirmTwiml();
-  }
-
-  /** True only on a clear affirmative — default-deny so we never text on doubt. */
-  private callerConsented(digits?: string, speech?: string): boolean {
-    if (digits?.trim() === '1') return true;
-    if (speech && /\b(yes|yeah|yep|yup|sure|okay|ok|correct|go ahead)\b/i.test(speech)) {
-      return true;
-    }
-    return false;
   }
 
   /** Spoken disclosure + affirmative prompt; <Gather> posts to the /consent callback. */

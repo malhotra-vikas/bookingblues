@@ -53,6 +53,20 @@ export function verifyTwilioSignature(args: {
   if (!ok) throw new WebhookSignatureError('twilio');
 }
 
+/**
+ * Did the caller affirmatively opt in on the <Gather>? True only on DTMF '1' or
+ * a clear affirmative spoken word. Default-deny: anything ambiguous, empty, or
+ * negative returns false, so we never send SMS without express consent
+ * (A2P 10DLC). Pure so the compliance branch is unit-testable in isolation.
+ */
+export function callerConsentedFromGather(digits?: string, speech?: string): boolean {
+  if (digits?.trim() === '1') return true;
+  if (speech && /\b(yes|yeah|yep|yup|sure|okay|ok|correct|go ahead)\b/i.test(speech)) {
+    return true;
+  }
+  return false;
+}
+
 export function escapeXml(s: string): string {
   return s
     .replaceAll('&', '&amp;')

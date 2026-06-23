@@ -64,20 +64,23 @@ function AcceptTerms(): JSX.Element {
       });
       if (updErr) throw updErr;
 
-      // Mirror onto the operators row server-side (best-effort — the
-      // user_metadata write above already satisfies the gate). The server
-      // sets its own timestamp; we only pass the version we displayed.
-      const { data } = await supabase.auth.getSession();
-      const token = data.session?.access_token;
-      if (token) {
-        await fetch(`${publicEnv.NEXT_PUBLIC_API_URL}/v1/operators/me/accept-terms`, {
+      // Mirror onto the operators row server-side — fire-and-forget, OFF the
+      // critical path. The user_metadata write above already satisfies the
+      // middleware gate, so we must NOT block the redirect on this network
+      // call: a cold-starting API would otherwise leave the user staring at
+      // the modal. `keepalive` lets the request finish after we navigate away.
+      void supabase.auth.getSession().then(({ data }) => {
+        const token = data.session?.access_token;
+        if (!token) return;
+        void fetch(`${publicEnv.NEXT_PUBLIC_API_URL}/v1/operators/me/accept-terms`, {
           method: 'POST',
           headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
           body: JSON.stringify({ version: TERMS.version }),
+          keepalive: true,
         }).catch(() => {
           // Swallowed — operators mirror is non-critical; metadata is the record.
         });
-      }
+      });
 
       router.replace(next);
       router.refresh();
