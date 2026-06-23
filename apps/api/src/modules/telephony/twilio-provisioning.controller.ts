@@ -45,6 +45,7 @@ export class TwilioProvisioningController {
     return this.service.provision(user.userId, {
       ...(body.area_code ? { areaCode: body.area_code } : {}),
       ...(body.phone_number_e164 ? { phoneNumberE164: body.phone_number_e164 } : {}),
+      ...(body.toll_free ? { tollFree: true } : {}),
     });
   }
 

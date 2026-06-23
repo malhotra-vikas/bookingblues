@@ -6,6 +6,10 @@ export const ProvisionNumberSchema = z
     // Operator-picked candidate from GET /candidates. If absent, server
     // auto-picks the first vanity hit (or plain area-code match).
     phone_number_e164: z.string().regex(/^\+[1-9]\d{6,15}$/).optional(),
+    // Provision a toll-free number instead of a local one. Toll-free uses a
+    // separate (often faster) Twilio verification path — useful as a parallel
+    // A2P 10DLC unblock. Ignores area_code / vanity (toll-free has neither).
+    toll_free: z.boolean().optional(),
   })
   .strict();
 export type ProvisionNumber = z.infer<typeof ProvisionNumberSchema>;

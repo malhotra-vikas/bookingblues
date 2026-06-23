@@ -37,6 +37,7 @@ export class TwilioProvisioningService {
     userId: string;
     areaCode?: string;
     limit?: number;
+    tollFree?: boolean;
   }): Promise<ReadonlyArray<CandidateNumber>> {
     const limit = Math.max(1, Math.min(8, args.limit ?? 4));
     const { data: operator, error } = await this.supabase
@@ -47,6 +48,27 @@ export class TwilioProvisioningService {
       .maybeSingle();
     if (error) throw error;
     if (!operator) throw new NotFoundError('Operator not found for this user');
+
+    // Toll-free path: no area code, no vanity (toll-free prefixes are fixed).
+    // Just return available SMS+voice-capable toll-free numbers.
+    if (args.tollFree) {
+      const hits = await this.twilio.client().availablePhoneNumbers('US').tollFree.list({
+        smsEnabled: true,
+        voiceEnabled: true,
+        limit,
+      });
+      const tollFreeOut: CandidateNumber[] = hits.map((h) => ({
+        phone_number_e164: h.phoneNumber,
+        friendly_name: h.friendlyName ?? h.phoneNumber,
+        vanity_match: null,
+        locality: null,
+        region: null,
+      }));
+      if (tollFreeOut.length === 0) {
+        throw new ExternalServiceError('twilio', 'No toll-free US numbers available');
+      }
+      return tollFreeOut;
+    }
 
     const slugs = vanitySlugs({
       businessName: operator.business_name,
@@ -131,7 +153,7 @@ export class TwilioProvisioningService {
    */
   async provision(
     userId: string,
-    args: { areaCode?: string; phoneNumberE164?: string } = {},
+    args: { areaCode?: string; phoneNumberE164?: string; tollFree?: boolean } = {},
   ): Promise<ProvisionNumberResponse> {
     const { data: operator, error: lookupErr } = await this.supabase
       .db()
@@ -154,8 +176,13 @@ export class TwilioProvisioningService {
       // the number is no longer available or doesn't pass capability checks.
       candidate = args.phoneNumberE164;
     } else {
-      // Auto-pick: first hit from the vanity-first cascading search.
-      const candidates = await this.findCandidates({ userId, ...(args.areaCode ? { areaCode: args.areaCode } : {}), limit: 1 });
+      // Auto-pick: first hit from the (vanity-first local, or toll-free) search.
+      const candidates = await this.findCandidates({
+        userId,
+        ...(args.areaCode ? { areaCode: args.areaCode } : {}),
+        ...(args.tollFree ? { tollFree: true } : {}),
+        limit: 1,
+      });
       candidate = candidates[0]!.phone_number_e164;
     }
 

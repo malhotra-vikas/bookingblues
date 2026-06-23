@@ -15,6 +15,7 @@ import { PinoLogger } from 'nestjs-pino';
 
 import { SupabaseService } from '../../common/supabase/supabase.service';
 import { TwilioService } from '../../common/twilio/twilio.service';
+import { VOICE_CONSENT_TEXT, VOICE_CONSENT_VERSION } from '../consent/sms-consent.dto';
 import { openingSms } from '../conversations/templates/sms-templates';
 import { WebhookIdempotencyService } from '../../common/webhooks/webhook-idempotency.service';
 import { ENV_TOKEN } from '../../config/config.module';
@@ -31,6 +32,13 @@ interface TwilioVoiceForm {
   readonly From?: string;
   readonly To?: string;
   readonly [k: string]: string | undefined;
+}
+
+interface TwilioVoiceConsentForm extends TwilioVoiceForm {
+  /** DTMF keypad input from <Gather>. '1' = affirmative consent. */
+  readonly Digits?: string;
+  /** Transcribed speech from <Gather input="speech">, e.g. "yes". */
+  readonly SpeechResult?: string;
 }
 
 @Controller('webhooks/twilio/voice')
@@ -68,6 +76,43 @@ export class TwilioVoiceController {
       to: form.To,
     });
 
+    // No side effects here: A2P 10DLC requires affirmative opt-in before we
+    // text. We disclose + ask the caller to press 1 / say yes; the SMS is only
+    // sent from the /consent callback once they affirm.
+    return this.consentGatherTwiml(operator.id, operator.business_name);
+  }
+
+  /**
+   * <Gather> action target. Twilio POSTs the caller's DTMF/speech here. We text
+   * only on an affirmative ("1" or "yes"); otherwise we end the call politely
+   * and send nothing.
+   */
+  @Post(':operatorId/consent')
+  @HttpCode(200)
+  @Header('content-type', 'text/xml')
+  async consent(
+    @Req() req: Request,
+    @Param('operatorId') operatorId: string,
+    @Body() form: TwilioVoiceConsentForm,
+  ): Promise<string> {
+    verifyTwilioSignature({
+      twilio: this.twilio,
+      apiUrl: this.env.API_URL,
+      req,
+      formBody: form as Record<string, string>,
+    });
+
+    const operator = await resolveOperatorForWebhook({
+      supabase: this.supabase,
+      operatorId,
+      to: form.To,
+    });
+
+    if (!this.callerConsented(form.Digits, form.SpeechResult)) {
+      this.logger.info({ operatorId: operator.id }, 'voice: caller declined SMS opt-in');
+      return this.declineTwiml();
+    }
+
     if (form.CallSid) {
       const recorded = await this.idempotency.record({
         source: 'twilio',
@@ -76,32 +121,104 @@ export class TwilioVoiceController {
         signatureVerified: true,
       });
       if (recorded.status === 'duplicate') {
-        return this.greetingTwiml(operator.business_name);
+        return this.confirmTwiml();
       }
       try {
+        await this.recordVoiceConsent(operator.id, form);
         await this.startConversationFromCall(operator, form.From);
         await this.idempotency.markProcessed(recorded.id);
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         await this.idempotency.markFailed(recorded.id, msg);
-        // Fall through to TwiML — the caller still gets the greeting; a queue
-        // worker (Slice 7) can retry the conversation/SMS side effects later.
+        // Caller still hears the confirmation; a worker can retry side effects.
         this.logger.error({ err: msg, operatorId: operator.id }, 'voice side-effect failed');
       }
     }
 
-    return this.greetingTwiml(operator.business_name);
+    return this.confirmTwiml();
   }
 
-  private greetingTwiml(businessName: string): string {
+  /** True only on a clear affirmative — default-deny so we never text on doubt. */
+  private callerConsented(digits?: string, speech?: string): boolean {
+    if (digits?.trim() === '1') return true;
+    if (speech && /\b(yes|yeah|yep|yup|sure|okay|ok|correct|go ahead)\b/i.test(speech)) {
+      return true;
+    }
+    return false;
+  }
+
+  /** Spoken disclosure + affirmative prompt; <Gather> posts to the /consent callback. */
+  private consentGatherTwiml(operatorId: string, businessName: string): string {
+    const disclosure = VOICE_CONSENT_TEXT.replace('[business name]', businessName);
+    const action = `${this.env.API_URL}/webhooks/twilio/voice/${operatorId}/consent`;
     return (
       `<?xml version="1.0" encoding="UTF-8"?>` +
       `<Response>` +
-      `<Say voice="Polly.Joanna">Thanks for calling ${escapeXml(businessName)}. ` +
-      `They are with another customer. We will text you right away to schedule.</Say>` +
+      `<Gather input="dtmf speech" numDigits="1" timeout="6" speechTimeout="auto" ` +
+      `language="en-US" hints="yes, yeah, yep, sure, okay, correct" ` +
+      `actionOnEmptyResult="true" method="POST" action="${escapeXml(action)}">` +
+      `<Say voice="Polly.Joanna">${escapeXml(disclosure)}</Say>` +
+      `</Gather>` +
+      `</Response>`
+    );
+  }
+
+  private confirmTwiml(): string {
+    return (
+      `<?xml version="1.0" encoding="UTF-8"?>` +
+      `<Response>` +
+      `<Say voice="Polly.Joanna">Great! We will text you right now to help get you scheduled. ` +
+      `Talk soon.</Say>` +
       `<Hangup/>` +
       `</Response>`
     );
+  }
+
+  private declineTwiml(): string {
+    return (
+      `<?xml version="1.0" encoding="UTF-8"?>` +
+      `<Response>` +
+      `<Say voice="Polly.Joanna">No problem, we will not text you. ` +
+      `If you change your mind, just call again. Goodbye.</Say>` +
+      `<Hangup/>` +
+      `</Response>`
+    );
+  }
+
+  /**
+   * Persist durable proof of verbal opt-in (source 'voice_ivr'). Stores the
+   * exact disclosure the caller heard + how they affirmed. Best-effort row:
+   * the disclosure text is also the carrier-submitted transcript, so this is
+   * the audit trail behind that claim. `name` is null for voice (no name
+   * collected) — see migration 20260623000001.
+   */
+  private async recordVoiceConsent(
+    operatorId: string,
+    form: TwilioVoiceConsentForm,
+  ): Promise<void> {
+    if (!form.From) return;
+    const affirmation =
+      form.Digits?.trim() === '1' ? 'pressed 1' : `said "${form.SpeechResult ?? ''}"`;
+    const { error } = await this.supabase
+      .db()
+      .from('sms_consents')
+      .insert({
+        name: null,
+        phone_e164: form.From,
+        trade: null,
+        source: 'voice_ivr',
+        consent_version: VOICE_CONSENT_VERSION,
+        consent_text: VOICE_CONSENT_TEXT,
+        ip_address: null,
+        user_agent: `twilio-voice-ivr (${affirmation})`,
+      });
+    if (error) {
+      // Loud, but don't block the SMS the caller just consented to.
+      this.logger.error(
+        { err: error.message, operatorId },
+        'voice: verbal consent insert failed',
+      );
+    }
   }
 
   private async startConversationFromCall(
