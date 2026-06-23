@@ -21,7 +21,7 @@ export type Database = {
           created_at: string;
           id: string;
           ip_address: string | null;
-          name: string;
+          name: string | null;
           phone_e164: string;
           source: string;
           trade: string | null;
@@ -33,7 +33,7 @@ export type Database = {
           created_at?: string;
           id?: string;
           ip_address?: string | null;
-          name: string;
+          name?: string | null;
           phone_e164: string;
           source?: string;
           trade?: string | null;
@@ -45,7 +45,7 @@ export type Database = {
           created_at?: string;
           id?: string;
           ip_address?: string | null;
-          name?: string;
+          name?: string | null;
           phone_e164?: string;
           source?: string;
           trade?: string | null;

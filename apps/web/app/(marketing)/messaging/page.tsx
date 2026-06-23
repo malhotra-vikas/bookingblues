@@ -65,9 +65,11 @@ export default function MessagingProgramPage(): JSX.Element {
 
       <Section title="How consumers opt in (consent)">
         <p>
-          Consent is established by a <strong>consumer-initiated phone call</strong>. There is no
-          marketing list, and no number is ever purchased, rented, shared, or sold. A consumer
-          receives a text only after they themselves call the business. The flow:
+          Consent is established by <strong>affirmative opt-in on a consumer-initiated phone call</strong>
+          {' '}(or via the <a href="/messaging/opt-in" className="underline">web opt-in form</a>). There
+          is no marketing list, and no number is ever purchased, rented, shared, or sold. A consumer
+          receives a text only after they call the business <strong>and explicitly agree</strong>. The
+          call flow:
         </p>
         <ol className="list-decimal pl-6 space-y-1.5">
           <li>A consumer dials a contractor&apos;s published business phone number.</li>
@@ -76,24 +78,26 @@ export default function MessagingProgramPage(): JSX.Element {
             it to the contractor&apos;s dedicated {BRAND.name} number.
           </li>
           <li>
-            Before any text is sent, the caller hears this <strong>exact</strong> spoken greeting
-            (the business name is the contractor&apos;s own):
+            Before any text is sent, the caller hears this <strong>exact</strong> spoken disclosure
+            and is asked to opt in (the business name is the contractor&apos;s own):
             <span className="mt-1.5 block rounded bg-slate-100 dark:bg-slate-800 px-3 py-2 font-mono text-[13px]">
               &ldquo;Thanks for calling [business name]. They are with another customer right now. We
-              will send you a text message to help get you scheduled. Message and data rates may
-              apply.&rdquo;
+              can send you a text message to help get you scheduled. Message and data rates may apply.
+              Reply STOP to opt out, or HELP for help, at any time. To get that text now, press 1, or
+              say yes.&rdquo;
             </span>
           </li>
           <li>
-            {BRAND.name} then sends an initial SMS to the exact number the consumer called from, to
-            help schedule the service they were calling about. The conversation continues only in
-            response to the consumer&apos;s own replies.
+            <strong>Only if the caller presses 1 or says &ldquo;yes&rdquo;</strong> does {BRAND.name}
+            {' '}send an initial SMS to the number they called from. If they decline or hang up, no
+            text is ever sent. The conversation then continues only in response to the consumer&apos;s
+            own replies.
           </li>
         </ol>
         <p>
-          Because the consumer initiated contact and is told they will be texted, they have a clear,
-          reasonable expectation of the message. These are one-to-one, conversational customer-care
-          messages — not marketing.
+          Because the consumer initiated the call, hears a full disclosure, and must take an
+          affirmative action (press 1 / say yes) before any text is sent, consent is express and
+          documented. These are one-to-one, conversational customer-care messages — not marketing.
         </p>
       </Section>
 
