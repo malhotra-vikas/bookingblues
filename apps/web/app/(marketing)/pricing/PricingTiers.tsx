@@ -95,7 +95,7 @@ function TierCard({ plan, cadence }: { plan: Plan; cadence: Cadence }): JSX.Elem
         </p>
       ) : (
         <p className="mt-1 text-xs text-muted">
-          Or ${plan.annualPriceUsd.toLocaleString()}/yr — 2 months free
+          Prefer annual? ${plan.annualPriceUsd.toLocaleString()}/yr — 2 months free vs. monthly
         </p>
       )}
 
