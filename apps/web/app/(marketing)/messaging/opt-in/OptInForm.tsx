@@ -20,7 +20,12 @@ export function OptInForm(): JSX.Element {
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [trade, setTrade] = useState('');
-  const [consent, setConsent] = useState(false);
+  // Mutually-exclusive opt-in / opt-out choice. Null until the user picks one.
+  // Requiring an explicit choice (rather than a single forced "I agree" box)
+  // is the carrier/CTIA-compliant pattern: the user can affirmatively DECLINE
+  // and still submit — consent is never a condition of using the service.
+  const [choice, setChoice] = useState<'in' | 'out' | null>(null);
+  const consent = choice === 'in';
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
@@ -28,12 +33,14 @@ export function OptInForm(): JSX.Element {
   async function handleSubmit(e: React.FormEvent): Promise<void> {
     e.preventDefault();
     setError(null);
+    if (choice === null) {
+      setError('Please choose one of the options above to continue.');
+      return;
+    }
     setBusy(true);
     try {
-      // SMS consent is OPTIONAL — the form completes whether or not the box is
-      // checked (carrier/CTIA rule: opt-in must never gate registration). We
-      // send the actual checkbox state; the API only records consent + lets us
-      // text when it is true.
+      // Send the actual choice; the API only records consent + lets us text
+      // when it is true (an opt-out submits successfully but records nothing).
       const res = await fetch(`${publicEnv.NEXT_PUBLIC_API_URL}/v1/sms-opt-in`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -103,30 +110,42 @@ export function OptInForm(): JSX.Element {
         placeholder="e.g. water heater leak"
       />
 
-      <label className="flex items-start gap-2 text-[13px] text-ink dark:text-slate-200 leading-snug">
-        <input
-          type="checkbox"
-          checked={consent}
-          onChange={(e) => setConsent(e.target.checked)}
-          className="mt-0.5 h-4 w-4 rounded border-slate-300 dark:border-slate-700 text-accent focus:ring-accent"
-        />
-        <span>
-          I agree to receive recurring automated text messages from {BRAND.name} about scheduling my
-          service appointment. Message frequency varies. Message and data rates may apply. Reply
-          STOP to opt out, HELP for help. See our{' '}
-          <Link href="/privacy" target="_blank" className="underline">
-            Privacy Policy
-          </Link>{' '}
-          and{' '}
-          <Link href="/terms" target="_blank" className="underline">
-            Terms
-          </Link>
-          .
-        </span>
-      </label>
+      <fieldset className="space-y-3">
+        <legend className="sr-only">Text message preference</legend>
+        <label className="flex items-start gap-2 text-[13px] text-ink dark:text-slate-200 leading-snug">
+          <input
+            type="checkbox"
+            checked={choice === 'in'}
+            onChange={(e) => setChoice(e.target.checked ? 'in' : null)}
+            className="mt-0.5 h-4 w-4 rounded border-slate-300 dark:border-slate-700 text-accent focus:ring-accent"
+          />
+          <span>
+            I agree to receive recurring automated text messages from {BRAND.name} about scheduling
+            my service appointment. Message frequency varies. Message and data rates may apply.
+            Reply STOP to opt out, HELP for help. See our{' '}
+            <Link href="/privacy" target="_blank" className="underline">
+              Privacy Policy
+            </Link>{' '}
+            and{' '}
+            <Link href="/terms" target="_blank" className="underline">
+              Terms
+            </Link>
+            .
+          </span>
+        </label>
+        <label className="flex items-start gap-2 text-[13px] text-ink dark:text-slate-200 leading-snug">
+          <input
+            type="checkbox"
+            checked={choice === 'out'}
+            onChange={(e) => setChoice(e.target.checked ? 'out' : null)}
+            className="mt-0.5 h-4 w-4 rounded border-slate-300 dark:border-slate-700 text-accent focus:ring-accent"
+          />
+          <span>I do not want to receive automated text messages.</span>
+        </label>
+      </fieldset>
       <p className="text-xs text-muted dark:text-slate-400">
-        Optional. You can submit without agreeing — we just won&apos;t be able to text you. Consent
-        is never required to use our service.
+        Choose one option to continue. Agreeing to texts is optional and is never required to use
+        our service.
       </p>
 
       {error ? (
@@ -137,7 +156,7 @@ export function OptInForm(): JSX.Element {
 
       <button
         type="submit"
-        disabled={busy}
+        disabled={busy || choice === null}
         className="w-full rounded-md bg-accent px-4 py-2.5 text-base font-medium text-white shadow-sm hover:bg-accent-dark transition-colors disabled:opacity-50"
       >
         {busy ? 'Submitting…' : 'Submit'}
