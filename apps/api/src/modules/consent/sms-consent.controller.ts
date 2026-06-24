@@ -18,8 +18,10 @@ function maskPhone(e164: string): string {
  * Public SMS opt-in capture. Backs the /messaging/opt-in web form, which is the
  * consent-collection URL cited in our A2P 10DLC campaign. A consumer who wants
  * the AI scheduling assistant to text them submits their name + number and
- * explicitly checks the consent box; we persist a durable consent record (the
- * exact disclosure wording, version, timestamp, IP, and user-agent) as proof.
+ * checks the (optional, unchecked-by-default) consent box; we persist a durable
+ * consent record (the exact disclosure wording, version, timestamp, IP, and
+ * user-agent) as proof. Consent is never a condition of submitting the form —
+ * a submission without it succeeds and simply records nothing.
  *
  * No auth (consumers aren't BookingBlues users), but per-IP throttled to keep
  * the endpoint from being scripted into a spam vector. We never auto-send SMS
@@ -50,6 +52,14 @@ export class SmsConsentController {
       });
     }
     const phoneE164 = parsed.number;
+
+    // SMS consent is optional (carrier/CTIA rule — it must not gate the form).
+    // When the user didn't opt in, there's nothing to record and we must never
+    // text them, so accept the submission and stop here.
+    if (!body.consent) {
+      this.logger.info({ phone: maskPhone(phoneE164) }, 'sms-opt-in: submitted without consent');
+      return { ok: true };
+    }
 
     const ipAddress =
       (req.headers['x-forwarded-for'] as string | undefined)?.split(',')[0]?.trim() ||

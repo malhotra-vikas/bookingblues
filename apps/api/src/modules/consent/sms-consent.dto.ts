@@ -34,9 +34,10 @@ export const SmsOptInSchema = z.object({
   // Raw user input — normalized to E.164 server-side via libphonenumber-js.
   phone: z.string().trim().min(7).max(20),
   trade: z.string().trim().max(120).optional(),
-  // Must be checked. The page disables submit until it is; this is the backstop
-  // for assistive tech / form-fill tools that bypass the disabled state.
-  consent: z.literal(true),
+  // Optional by design. Carrier/CTIA rule: SMS consent must NOT be a condition
+  // of completing the form, so we accept either value. We only persist a
+  // consent record (and ever text the user) when this is true.
+  consent: z.boolean(),
 });
 
 export type SmsOptInDto = z.infer<typeof SmsOptInSchema>;

@@ -28,13 +28,12 @@ export function OptInForm(): JSX.Element {
   async function handleSubmit(e: React.FormEvent): Promise<void> {
     e.preventDefault();
     setError(null);
-    // Backstop the disabled attr — assistive tech / form-fill can bypass it.
-    if (!consent) {
-      setError('Please check the box to agree to receive text messages.');
-      return;
-    }
     setBusy(true);
     try {
+      // SMS consent is OPTIONAL — the form completes whether or not the box is
+      // checked (carrier/CTIA rule: opt-in must never gate registration). We
+      // send the actual checkbox state; the API only records consent + lets us
+      // text when it is true.
       const res = await fetch(`${publicEnv.NEXT_PUBLIC_API_URL}/v1/sms-opt-in`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -42,7 +41,7 @@ export function OptInForm(): JSX.Element {
           name: name.trim(),
           phone: phone.trim(),
           ...(trade.trim() ? { trade: trade.trim() } : {}),
-          consent: true,
+          consent,
         }),
       });
       if (!res.ok) {
@@ -66,8 +65,18 @@ export function OptInForm(): JSX.Element {
   if (done) {
     return (
       <div className="rounded-md border border-emerald-200 dark:border-emerald-900 bg-emerald-50 dark:bg-emerald-950/40 px-4 py-3 text-sm text-emerald-700 dark:text-emerald-300">
-        Thanks — you&apos;re opted in. You can reply <strong>STOP</strong> to any message to opt out
-        at any time.
+        {consent ? (
+          <>
+            Thanks — you&apos;re opted in. You can reply <strong>STOP</strong> to any message to opt
+            out at any time.
+          </>
+        ) : (
+          <>
+            Thanks — we&apos;ve got your details. We <strong>won&apos;t</strong> send you automated
+            texts since you didn&apos;t opt in. Come back and check the box anytime, or just give us
+            a call.
+          </>
+        )}
       </div>
     );
   }
@@ -99,7 +108,6 @@ export function OptInForm(): JSX.Element {
           type="checkbox"
           checked={consent}
           onChange={(e) => setConsent(e.target.checked)}
-          required
           className="mt-0.5 h-4 w-4 rounded border-slate-300 dark:border-slate-700 text-accent focus:ring-accent"
         />
         <span>
@@ -116,6 +124,10 @@ export function OptInForm(): JSX.Element {
           .
         </span>
       </label>
+      <p className="text-xs text-muted dark:text-slate-400">
+        Optional. You can submit without agreeing — we just won&apos;t be able to text you. Consent
+        is never required to use our service.
+      </p>
 
       {error ? (
         <div className="rounded-md border border-red-200 dark:border-red-900 bg-red-50 dark:bg-red-950/40 px-3 py-2 text-sm text-red-700 dark:text-red-300">
@@ -125,10 +137,10 @@ export function OptInForm(): JSX.Element {
 
       <button
         type="submit"
-        disabled={busy || !consent}
+        disabled={busy}
         className="w-full rounded-md bg-accent px-4 py-2.5 text-base font-medium text-white shadow-sm hover:bg-accent-dark transition-colors disabled:opacity-50"
       >
-        {busy ? 'Submitting…' : 'Text me'}
+        {busy ? 'Submitting…' : 'Submit'}
       </button>
     </form>
   );
