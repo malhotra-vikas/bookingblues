@@ -115,6 +115,11 @@ export async function onSubscriptionUpserted(
       stripe_subscription_id: sub.id,
       subscription_status: mapSubscriptionStatus(sub.status),
       trial_ends_at: unixToIso(sub.trial_end),
+      // Current billing cycle — usage metering counts conversations in this
+      // window (during a trial these span the trial). Falls back to calendar
+      // month in the usage query when null.
+      current_period_start: unixToIso(sub.current_period_start),
+      current_period_end: unixToIso(sub.current_period_end),
       ...(plan != null ? { plan } : {}),
       ...(cadence != null ? { plan_cadence: cadence } : {}),
       ...(stripePriceId != null ? { stripe_price_id: stripePriceId } : {}),

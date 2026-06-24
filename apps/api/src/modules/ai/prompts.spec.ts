@@ -24,6 +24,8 @@ const baseOperator: Tables<'operators'> = {
   terms_version: null,
   subscription_status: 'active',
   trial_ends_at: null,
+  current_period_start: null,
+  current_period_end: null,
   stripe_connect_account_id: null,
   stripe_connect_charges_enabled: false,
   stripe_connect_payouts_enabled: false,

@@ -10,6 +10,12 @@ interface Metrics {
   subscription_status: string | null;
   trial_ends_at: string | null;
   month_start_iso: string;
+  usage: {
+    conversations_used: number;
+    conversations_limit: number | null;
+    period_start: string;
+    period_end: string | null;
+  };
 }
 interface Conversation {
   id: string;
@@ -154,6 +160,8 @@ export default async function DashboardPage(): Promise<JSX.Element> {
         </section>
       )}
 
+      {hasMetrics ? <UsageMeter usage={metricsR.usage} /> : null}
+
       <section>
         <div className="flex items-baseline justify-between mb-3">
           <h2 className="text-lg font-semibold dark:text-slate-100">Recent conversations</h2>
@@ -250,6 +258,48 @@ export default async function DashboardPage(): Promise<JSX.Element> {
         )}
       </section>
     </div>
+  );
+}
+
+function UsageMeter({
+  usage,
+}: {
+  usage: {
+    conversations_used: number;
+    conversations_limit: number | null;
+    period_start: string;
+    period_end: string | null;
+  };
+}): JSX.Element {
+  const { conversations_used: used, conversations_limit: limit, period_end } = usage;
+  const pct = limit && limit > 0 ? Math.min(100, Math.round((used / limit) * 100)) : null;
+  const over = limit != null && used > limit;
+  const renews = period_end ? new Date(period_end).toLocaleDateString() : null;
+
+  return (
+    <section className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-4">
+      <div className="flex items-baseline justify-between">
+        <span className="text-sm font-medium text-ink dark:text-slate-100">
+          Conversations this billing period
+        </span>
+        <span className={`text-sm font-semibold ${over ? 'text-red-600 dark:text-red-400' : 'text-ink dark:text-slate-100'}`}>
+          {used}
+          {limit != null ? ` / ${limit}` : ''}
+        </span>
+      </div>
+      {pct != null ? (
+        <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
+          <span
+            className={`block h-full rounded-full ${over ? 'bg-red-500' : 'bg-accent'}`}
+            style={{ width: `${pct}%` }}
+          />
+        </div>
+      ) : null}
+      <p className="mt-2 text-[11px] text-muted dark:text-slate-400">
+        {limit == null ? 'Usage this period.' : over ? 'Over your plan’s included conversations.' : `${pct}% of your plan used.`}
+        {renews ? ` Resets ${renews}.` : ''}
+      </p>
+    </section>
   );
 }
 

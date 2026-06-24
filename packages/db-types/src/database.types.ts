@@ -500,6 +500,8 @@ export type Database = {
           timezone: string;
           trade_metadata: Json;
           trial_ends_at: string | null;
+          current_period_start: string | null;
+          current_period_end: string | null;
           twilio_number_e164: string | null;
           twilio_number_sid: string | null;
           updated_at: string;
@@ -535,6 +537,8 @@ export type Database = {
           timezone?: string;
           trade_metadata?: Json;
           trial_ends_at?: string | null;
+          current_period_start?: string | null;
+          current_period_end?: string | null;
           twilio_number_e164?: string | null;
           twilio_number_sid?: string | null;
           updated_at?: string;
@@ -570,6 +574,8 @@ export type Database = {
           timezone?: string;
           trade_metadata?: Json;
           trial_ends_at?: string | null;
+          current_period_start?: string | null;
+          current_period_end?: string | null;
           twilio_number_e164?: string | null;
           twilio_number_sid?: string | null;
           updated_at?: string;
