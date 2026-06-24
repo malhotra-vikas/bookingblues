@@ -47,6 +47,10 @@ export function AuthForm({ mode }: { mode: 'login' | 'signup' }): JSX.Element {
           email: normalizedEmail,
           password,
           options: {
+            // PKCE confirmation link must hit our server callback so the
+            // session cookie is set, then land the new user in onboarding —
+            // without this it falls back to the Supabase Site URL (home page).
+            emailRedirectTo: `${publicEnv.NEXT_PUBLIC_APP_URL}/auth/callback?next=/onboarding`,
             data: {
               business_name: trimmedName,
               personal_phone_e164: phoneE164,
@@ -80,7 +84,7 @@ export function AuthForm({ mode }: { mode: 'login' | 'signup' }): JSX.Element {
           });
         }
         setInfo(
-          "We sent a confirmation link to your email. Click it, then sign in to finish setup.",
+          'We sent a confirmation link to your email. Click it to verify and continue to setup.',
         );
         return;
       }
@@ -183,6 +187,13 @@ export function AuthForm({ mode }: { mode: 'login' | 'signup' }): JSX.Element {
       >
         {busy ? 'Working…' : mode === 'signup' ? 'Create account' : 'Sign in'}
       </button>
+      {mode === 'login' ? (
+        <p className="text-center text-sm">
+          <Link href="/forgot-password" className="text-accent">
+            Forgot password?
+          </Link>
+        </p>
+      ) : null}
       {mode === 'signup' ? (
         <p
           id="consent-help"
