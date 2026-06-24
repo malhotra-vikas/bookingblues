@@ -25,7 +25,19 @@ describe('JwtVerifierService — isAdmin derivation', () => {
       }),
     );
     const result = await svc.verify('any.jwt.token');
-    expect(result).toEqual({ userId: 'u1', email: 'staff@bb.com', isAdmin: true });
+    expect(result).toEqual({ userId: 'u1', email: 'staff@bb.com', isAdmin: true, isSales: false });
+  });
+
+  it('sets isSales = true when app_metadata.role === "sales"', async () => {
+    const svc = new JwtVerifierService(
+      makeSupabase({
+        data: { user: { id: 'u5', email: 'rep@bb.com', app_metadata: { role: 'sales' } } },
+        error: null,
+      }),
+    );
+    const result = await svc.verify('jwt');
+    expect(result.isSales).toBe(true);
+    expect(result.isAdmin).toBe(false);
   });
 
   it('sets isAdmin = false when role is missing', async () => {

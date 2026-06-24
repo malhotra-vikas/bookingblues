@@ -17,7 +17,7 @@ function makeCtx(req: Partial<AuthedRequest>): ExecutionContext {
 
 function makeAuthGuard(opts: {
   shouldAuth: boolean;
-  setUser?: { userId: string; email: string | null; isAdmin: boolean };
+  setUser?: { userId: string; email: string | null; isAdmin: boolean; isSales: boolean };
   throws?: Error;
 }): AuthGuard {
   return {
@@ -37,7 +37,7 @@ describe('AdminGuard', () => {
     const guard = new AdminGuard(
       makeAuthGuard({
         shouldAuth: true,
-        setUser: { userId: 'u1', email: 'staff@bb.com', isAdmin: true },
+        setUser: { userId: 'u1', email: 'staff@bb.com', isAdmin: true, isSales: false },
       }),
     );
     const req: Partial<AuthedRequest> = {};
@@ -48,7 +48,7 @@ describe('AdminGuard', () => {
     const guard = new AdminGuard(
       makeAuthGuard({
         shouldAuth: true,
-        setUser: { userId: 'u2', email: 'op@bb.com', isAdmin: false },
+        setUser: { userId: 'u2', email: 'op@bb.com', isAdmin: false, isSales: false },
       }),
     );
     const req: Partial<AuthedRequest> = {};

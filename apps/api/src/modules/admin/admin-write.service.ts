@@ -162,6 +162,92 @@ export class AdminWriteService {
     });
   }
 
+  /**
+   * Promote a user to role='sales' AND link their Slack identity (#4). The link
+   * lets their existing #bb-leads claims resolve to this BB account so they can
+   * "login as" the operators behind leads they claimed. Idempotent.
+   */
+  async promoteSales(args: {
+    email: string;
+    slackUserId: string;
+    slackUsername?: string;
+    actor: AdminActorContext;
+  }): Promise<{ user_id: string }> {
+    const { data: userResp, error: lookupErr } = await this.supabase
+      .db()
+      .auth.admin.listUsers({ page: 1, perPage: 200 });
+    if (lookupErr) throw lookupErr;
+    const target = userResp.users.find((u) => u.email === args.email);
+    if (!target) throw new NotFoundError(`No user with email ${args.email}`);
+
+    const next = { ...(target.app_metadata ?? {}), role: 'sales' };
+    const { error: updErr } = await this.supabase
+      .db()
+      .auth.admin.updateUserById(target.id, { app_metadata: next });
+    if (updErr) throw updErr;
+
+    const { error: linkErr } = await this.supabase
+      .db()
+      .from('sales_slack_links')
+      .upsert(
+        {
+          user_id: target.id,
+          slack_user_id: args.slackUserId,
+          slack_username: args.slackUsername ?? null,
+        },
+        { onConflict: 'user_id' },
+      );
+    if (linkErr) throw linkErr;
+
+    await this.audit.write({
+      actorUserId: args.actor.actorUserId,
+      operatorId: null,
+      action: 'sales.promote',
+      resourceType: 'auth.user',
+      resourceId: target.id,
+      metadata: { email: args.email, slack_user_id: args.slackUserId },
+      ipAddress: args.actor.ipAddress,
+      userAgent: args.actor.userAgent,
+    });
+
+    return { user_id: target.id };
+  }
+
+  /** Demote a sales rep: strip role and remove their Slack link (#4). */
+  async demoteSales(args: { userId: string; actor: AdminActorContext }): Promise<void> {
+    const { data: userResp, error: lookupErr } = await this.supabase
+      .db()
+      .auth.admin.getUserById(args.userId);
+    if (lookupErr) throw lookupErr;
+    if (!userResp.user) throw new NotFoundError('User not found');
+
+    const existing = (userResp.user.app_metadata ?? {}) as Record<string, unknown>;
+    const next: Record<string, unknown> = { ...existing };
+    delete next.role;
+    const { error: updErr } = await this.supabase
+      .db()
+      .auth.admin.updateUserById(args.userId, { app_metadata: next });
+    if (updErr) throw updErr;
+
+    const { error: delErr } = await this.supabase
+      .db()
+      .from('sales_slack_links')
+      .delete()
+      .eq('user_id', args.userId);
+    if (delErr) throw delErr;
+
+    await this.audit.write({
+      actorUserId: args.actor.actorUserId,
+      operatorId: null,
+      action: 'sales.demote',
+      resourceType: 'auth.user',
+      resourceId: args.userId,
+      metadata: {},
+      ipAddress: args.actor.ipAddress,
+      userAgent: args.actor.userAgent,
+    });
+  }
+
   // ── operator lifecycle ───────────────────────────────────────────────────
 
   async deactivateOperator(args: {

@@ -29,6 +29,7 @@ import { MeModule } from './modules/me/me.module';
 import { OperatorsModule } from './modules/operators/operators.module';
 import { PaymentsModule } from './modules/payments/payments.module';
 import { RemindersModule } from './modules/reminders/reminders.module';
+import { SalesModule } from './modules/sales/sales.module';
 import { SlackModule } from './modules/slack/slack.module';
 import { SummariesModule } from './modules/summaries/summaries.module';
 import { TelephonyModule } from './modules/telephony/telephony.module';
@@ -70,6 +71,7 @@ import { WebhooksModule } from './modules/webhooks/webhooks.module';
     SlackModule,
     LeadsModule,
     ConsentModule,
+    SalesModule,
     SummariesModule,
     RemindersModule,
     WebhooksModule,

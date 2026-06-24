@@ -23,6 +23,7 @@ import {
   ImpersonateSchema,
   MarkEmailVerifiedSchema,
   PromoteAdminSchema,
+  PromoteSalesSchema,
   RefundPaymentSchema,
   type CancelSubscription,
   type DeactivateOperator,
@@ -30,6 +31,7 @@ import {
   type Impersonate,
   type MarkEmailVerified,
   type PromoteAdmin,
+  type PromoteSales,
   type RefundPayment,
 } from './admin.dto';
 import { AdminWriteService } from './admin-write.service';
@@ -71,6 +73,37 @@ export class AdminWriteController {
   ): Promise<{ ok: true }> {
     const ctx = this.audit.fromRequest(req);
     await this.write.demoteAdmin({
+      userId,
+      actor: { actorUserId: actor.userId, ...ctx },
+    });
+    return { ok: true };
+  }
+
+  // ── sales rep management (#4) ─────────────────────────────────────────────
+
+  @Post('sales')
+  async promoteSales(
+    @Req() req: Request,
+    @CurrentUser() actor: AuthenticatedUser,
+    @Body(new ZodBodyPipe(PromoteSalesSchema)) body: PromoteSales,
+  ): Promise<{ user_id: string }> {
+    const ctx = this.audit.fromRequest(req);
+    return this.write.promoteSales({
+      email: body.user_email,
+      slackUserId: body.slack_user_id,
+      ...(body.slack_username !== undefined ? { slackUsername: body.slack_username } : {}),
+      actor: { actorUserId: actor.userId, ...ctx },
+    });
+  }
+
+  @Delete('sales/:userId')
+  async demoteSales(
+    @Req() req: Request,
+    @CurrentUser() actor: AuthenticatedUser,
+    @Param('userId', new ParseUUIDPipe()) userId: string,
+  ): Promise<{ ok: true }> {
+    const ctx = this.audit.fromRequest(req);
+    await this.write.demoteSales({
       userId,
       actor: { actorUserId: actor.userId, ...ctx },
     });

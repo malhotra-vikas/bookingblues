@@ -4,8 +4,13 @@ import type { NextRequest } from 'next/server';
 
 import { TERMS } from './lib/brand';
 
-const PROTECTED_PREFIXES = ['/dashboard', '/onboarding', '/settings', '/admin'];
+const PROTECTED_PREFIXES = ['/dashboard', '/onboarding', '/settings', '/admin', '/sales'];
 const ADMIN_PREFIXES = ['/admin'];
+// Sales-rep surface (#4): role 'sales' or 'admin' only.
+const SALES_PREFIXES = ['/sales'];
+// Operator-only app pages. Sales reps aren't operators, so we bounce them to
+// /sales if they land here (a sales login defaults to /dashboard otherwise).
+const OPERATOR_PREFIXES = ['/dashboard', '/onboarding', '/settings'];
 const AUTH_PAGES = ['/login', '/signup'];
 // Operator-app pages requiring an up-to-date terms acceptance. /admin is
 // excluded — internal staff aren't subject to the operator ToS. /accept-terms
@@ -59,6 +64,27 @@ export async function middleware(req: NextRequest) {
       return NextResponse.redirect(url);
     }
   }
+  // Role-based routing for sales reps (#4). They have no operator row, so keep
+  // them out of the operator app and on their own /sales surface; and gate
+  // /sales to sales/admin only.
+  if (isAuthed) {
+    const userRole = (data.user?.app_metadata as { role?: unknown } | undefined)?.role;
+    const wantsSales = SALES_PREFIXES.some((p) => path === p || path.startsWith(`${p}/`));
+    if (wantsSales && userRole !== 'sales' && userRole !== 'admin') {
+      const url = req.nextUrl.clone();
+      url.pathname = '/dashboard';
+      return NextResponse.redirect(url);
+    }
+    if (
+      userRole === 'sales' &&
+      OPERATOR_PREFIXES.some((p) => path === p || path.startsWith(`${p}/`))
+    ) {
+      const url = req.nextUrl.clone();
+      url.pathname = '/sales';
+      return NextResponse.redirect(url);
+    }
+  }
+
   if (wantsAuthPage && isAuthed) {
     const url = req.nextUrl.clone();
     url.pathname = '/dashboard';

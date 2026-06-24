@@ -6,6 +6,17 @@ export const PromoteAdminSchema = z.object({
 });
 export type PromoteAdmin = z.infer<typeof PromoteAdminSchema>;
 
+// ── Promote / demote sales reps (#4) ─────────────────────────────────────────
+// Promote a user to role='sales' AND link their Slack identity in one step, so
+// their existing #bb-leads claims (lead_claims.claimed_by_slack_user_id) resolve
+// to this BB account for scoped impersonation.
+export const PromoteSalesSchema = z.object({
+  user_email: z.string().email(),
+  slack_user_id: z.string().trim().min(1).max(64),
+  slack_username: z.string().trim().max(120).optional(),
+});
+export type PromoteSales = z.infer<typeof PromoteSalesSchema>;
+
 // ── Operator-list filters ────────────────────────────────────────────────────
 export const ListOperatorsQuerySchema = z.object({
   cursor: z.string().optional(),

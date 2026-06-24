@@ -13,6 +13,12 @@ export interface AuthenticatedUser {
    * See ADR 0009.
    */
   readonly isAdmin: boolean;
+  /**
+   * True iff `auth.users.app_metadata.role === 'sales'`. Sales reps get access
+   * to /v1/sales/* (their claimed leads + scoped impersonation). Set server-side
+   * via the Admin SDK, same trust model as `isAdmin` (#4).
+   */
+  readonly isSales: boolean;
 }
 
 /**
@@ -39,6 +45,7 @@ export class JwtVerifierService {
       userId: data.user.id,
       email: data.user.email ?? null,
       isAdmin: role === 'admin',
+      isSales: role === 'sales',
     };
   }
 }

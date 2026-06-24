@@ -14,6 +14,57 @@ export type Database = {
   };
   public: {
     Tables: {
+      lead_claims: {
+        Row: {
+          claim_note: string | null;
+          claimed_at: string;
+          claimed_by_slack_user_id: string;
+          claimed_by_slack_username: string | null;
+          created_at: string;
+          updated_at: string;
+          user_id: string;
+        };
+        Insert: {
+          claim_note?: string | null;
+          claimed_at?: string;
+          claimed_by_slack_user_id: string;
+          claimed_by_slack_username?: string | null;
+          created_at?: string;
+          updated_at?: string;
+          user_id: string;
+        };
+        Update: {
+          claim_note?: string | null;
+          claimed_at?: string;
+          claimed_by_slack_user_id?: string;
+          claimed_by_slack_username?: string | null;
+          created_at?: string;
+          updated_at?: string;
+          user_id?: string;
+        };
+        Relationships: [];
+      };
+      sales_slack_links: {
+        Row: {
+          created_at: string;
+          slack_user_id: string;
+          slack_username: string | null;
+          user_id: string;
+        };
+        Insert: {
+          created_at?: string;
+          slack_user_id: string;
+          slack_username?: string | null;
+          user_id: string;
+        };
+        Update: {
+          created_at?: string;
+          slack_user_id?: string;
+          slack_username?: string | null;
+          user_id?: string;
+        };
+        Relationships: [];
+      };
       sms_consents: {
         Row: {
           consent_text: string;
