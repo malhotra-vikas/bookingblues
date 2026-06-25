@@ -5,7 +5,7 @@ import { useState } from 'react';
 
 import { getSupabaseBrowserClient } from '../lib/supabase/browser';
 import { publicEnv } from '../lib/env';
-import { PLANS } from '../lib/brand';
+import { PLANS, depositLabel } from '../lib/brand';
 
 interface Operator {
   id: string;
@@ -54,16 +54,26 @@ export function SettingsPanel({ operator }: { operator: Operator }): JSX.Element
 
   const [businessName, setBusinessName] = useState(operator.business_name);
   const [timezone, setTimezone] = useState(operator.timezone);
-  const [feeEnabled, setFeeEnabled] = useState(operator.booking_fee_enabled);
+  const [feeEnabled, setFeeEnabled] = useState(
+    PLANS.find((p) => p.slug === operator.plan)?.depositMode === 'mandatory'
+      ? true
+      : operator.booking_fee_enabled,
+  );
   const [feeDollars, setFeeDollars] = useState(
     operator.booking_fee_cents != null ? (operator.booking_fee_cents / 100).toFixed(2) : '',
   );
 
-  const takeBps = publicEnv.NEXT_PUBLIC_PLATFORM_TAKE_RATE_BPS;
+  // Per-plan take rate (Solo 10% / Crew 15% / Fleet 20%), charged ON TOP of the
+  // deposit and paid by the customer. Mirrors computeBookingFeeCharge on the API.
+  const currentPlan = PLANS.find((p) => p.slug === operator.plan);
+  const platformFeePct = currentPlan?.platformFeePct ?? 10;
+  const depositMandatory = currentPlan?.depositMode === 'mandatory';
+  const takeBps = platformFeePct * 100;
   const feeCents = Math.max(0, Math.round(Number(feeDollars || '0') * 100));
-  const platformCents = Math.max(Math.round((feeCents * takeBps) / 10_000), feeCents > 0 ? 100 : 0);
-  const stripeProcessingCents = feeCents > 0 ? Math.round(feeCents * 0.029) + 30 : 0;
-  const operatorTakeCents = Math.max(0, feeCents - platformCents - stripeProcessingCents);
+  const platformCents = feeCents > 0 ? Math.max(Math.floor((feeCents * takeBps) / 10_000), 100) : 0;
+  const customerPaysCents = feeCents + platformCents;
+  const stripeProcessingCents = customerPaysCents > 0 ? Math.ceil(customerPaysCents * 0.029) + 30 : 0;
+  const operatorTakeCents = Math.max(0, customerPaysCents - platformCents - stripeProcessingCents);
 
   const connectStatus: ConnectStatus =
     !operator.stripe_connect_account_id
@@ -179,13 +189,22 @@ export function SettingsPanel({ operator }: { operator: Operator }): JSX.Element
         title="Booking fee"
         description="Charge a non-refundable deposit before confirming the slot. Cuts down on no-shows."
       >
+        {currentPlan ? (
+          <p className="text-xs text-muted dark:text-slate-400 mb-2">
+            <span className="font-medium text-ink dark:text-slate-200">{currentPlan.name} plan:</span>{' '}
+            {depositLabel(currentPlan.depositMode)}. Platform fee is{' '}
+            <span className="font-medium text-ink dark:text-slate-200">{currentPlan.platformFeePct}% on top of your deposit</span>,
+            charged to the customer.
+          </p>
+        ) : null}
         <label className="flex items-center gap-2 text-sm font-medium">
           <input
             type="checkbox"
             checked={feeEnabled}
+            disabled={depositMandatory}
             onChange={(e) => setFeeEnabled(e.target.checked)}
           />
-          Collect a booking fee
+          Collect a booking fee{depositMandatory ? ' (required on Fleet)' : ''}
         </label>
         {feeEnabled && (
           <>
@@ -205,10 +224,14 @@ export function SettingsPanel({ operator }: { operator: Operator }): JSX.Element
                 <div className="text-xs text-muted dark:text-slate-400 uppercase tracking-wide mb-2">
                   For a ${(feeCents / 100).toFixed(2)} deposit
                 </div>
-                <EconomicsRow label="Card processing (2.9% + 30¢)" amount={-stripeProcessingCents} />
-                <EconomicsRow label={`KeeprSteady fee (${(takeBps / 100).toFixed(0)}%)`} amount={-platformCents} />
+                <EconomicsRow label="Your deposit" amount={feeCents} />
+                <EconomicsRow label={`KeeprSteady fee (${platformFeePct}%, on top)`} amount={platformCents} />
                 <div className="border-t border-slate-200 dark:border-slate-700 mt-2 pt-2">
-                  <EconomicsRow label="You get" amount={operatorTakeCents} bold />
+                  <EconomicsRow label="Customer pays" amount={customerPaysCents} bold />
+                </div>
+                <EconomicsRow label="Card processing (2.9% + 30¢)" amount={-stripeProcessingCents} />
+                <div className="border-t border-slate-200 dark:border-slate-700 mt-2 pt-2">
+                  <EconomicsRow label="You receive" amount={operatorTakeCents} bold />
                 </div>
               </div>
             )}

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 
 import { publicEnv } from '../../lib/env';
 import { getSupabaseBrowserClient } from '../../lib/supabase/browser';
@@ -11,6 +12,7 @@ import { getSupabaseBrowserClient } from '../../lib/supabase/browser';
  * (lead_claims.claimed_by_slack_user_id) so the rep's claimed leads resolve.
  */
 export function PromoteSalesForm(): JSX.Element {
+  const router = useRouter();
   const [email, setEmail] = useState('');
   const [slackUserId, setSlackUserId] = useState('');
   const [slackUsername, setSlackUsername] = useState('');
@@ -47,6 +49,7 @@ export function PromoteSalesForm(): JSX.Element {
       setEmail('');
       setSlackUserId('');
       setSlackUsername('');
+      router.refresh(); // re-fetch the rep list on the server component
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong');
     } finally {

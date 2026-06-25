@@ -1,4 +1,4 @@
-import { computeApplicationFee } from './pricing';
+import { computeApplicationFee, computeBookingFeeCharge } from './pricing';
 
 describe('computeApplicationFee', () => {
   it('takes the larger of percent and floor', () => {
@@ -47,5 +47,49 @@ describe('computeApplicationFee', () => {
       minPlatformFeeCents: 100,
     });
     expect(r.applicationFeeCents).toBe(500);
+  });
+});
+
+describe('computeBookingFeeCharge (fee on top, paid by caller)', () => {
+  it('Solo: charges deposit + 10% on top', () => {
+    // $50 deposit, 10% → $5 fee. Caller pays $55, platform fee $5.
+    const r = computeBookingFeeCharge({
+      depositCents: 5000,
+      takeRateBps: 1000,
+      minPlatformFeeCents: 100,
+    });
+    expect(r.applicationFeeCents).toBe(500);
+    expect(r.chargeCents).toBe(5500);
+  });
+
+  it('Crew: 15% on top', () => {
+    const r = computeBookingFeeCharge({ depositCents: 5000, takeRateBps: 1500, minPlatformFeeCents: 100 });
+    expect(r.applicationFeeCents).toBe(750);
+    expect(r.chargeCents).toBe(5750);
+  });
+
+  it('Fleet: 20% on top', () => {
+    const r = computeBookingFeeCharge({ depositCents: 5000, takeRateBps: 2000, minPlatformFeeCents: 100 });
+    expect(r.applicationFeeCents).toBe(1000);
+    expect(r.chargeCents).toBe(6000);
+  });
+
+  it('floors the platform fee at minPlatformFeeCents', () => {
+    // $5 deposit, 10% = 50¢, floored to $1. Caller pays $6.
+    const r = computeBookingFeeCharge({ depositCents: 500, takeRateBps: 1000, minPlatformFeeCents: 100 });
+    expect(r.applicationFeeCents).toBe(100);
+    expect(r.chargeCents).toBe(600);
+  });
+
+  it('app fee never exceeds charge minus Stripe processing (no rejection)', () => {
+    // Even at the floor on a tiny deposit, the on-top charge keeps the fee valid.
+    const r = computeBookingFeeCharge({ depositCents: 50, takeRateBps: 2000, minPlatformFeeCents: 100 });
+    const stripeProcessing = Math.ceil(r.chargeCents * 0.029) + 30;
+    expect(r.applicationFeeCents).toBeLessThanOrEqual(r.chargeCents - stripeProcessing);
+  });
+
+  it('returns 0 when the deposit is 0 or negative', () => {
+    expect(computeBookingFeeCharge({ depositCents: 0, takeRateBps: 1000, minPlatformFeeCents: 100 }).chargeCents).toBe(0);
+    expect(computeBookingFeeCharge({ depositCents: -10, takeRateBps: 1000, minPlatformFeeCents: 100 }).applicationFeeCents).toBe(0);
   });
 });

@@ -4,6 +4,7 @@ import type Stripe from 'stripe';
 import type { Database } from '@bookingblues/db-types';
 
 import { AuditLogService } from '../../common/audit/audit-log.service';
+import { impersonationConfirmLink } from '../../common/auth/impersonation-link';
 import {
   AppError,
   ConflictError,
@@ -511,7 +512,7 @@ export class AdminWriteService {
           redirectTo: `${this.env.APP_URL}/dashboard?impersonating=1`,
         },
       });
-    if (error || !data?.properties?.action_link) {
+    if (error || !data?.properties?.hashed_token) {
       throw new AppError({
         code: 'admin.impersonate_failed',
         status: 502,
@@ -530,7 +531,7 @@ export class AdminWriteService {
       userAgent: args.actor.userAgent,
     });
 
-    return { action_link: data.properties.action_link };
+    return { action_link: impersonationConfirmLink(this.env.APP_URL, data.properties.hashed_token) };
   }
 
   // ── internals ────────────────────────────────────────────────────────────

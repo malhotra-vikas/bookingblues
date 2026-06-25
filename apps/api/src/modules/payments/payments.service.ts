@@ -11,7 +11,8 @@ import { StripeService } from '../../common/stripe/stripe.service';
 import { SupabaseService } from '../../common/supabase/supabase.service';
 import { ENV_TOKEN } from '../../config/config.module';
 import type { Env } from '../../config/env';
-import { computeApplicationFee } from './pricing';
+import { platformTakeRateBpsForPlan } from '../billing/plan-policy';
+import { computeBookingFeeCharge } from './pricing';
 
 @Injectable()
 export class PaymentsService {
@@ -32,13 +33,14 @@ export class PaymentsService {
   async ensureFeeEligible(operatorId: string): Promise<{
     operatorId: string;
     feeCents: number;
+    plan: string | null;
     connectAccountId: string;
   }> {
     const { data: op, error } = await this.supabase
       .db()
       .from('operators')
       .select(
-        'id, booking_fee_enabled, booking_fee_cents, subscription_status, stripe_connect_account_id, stripe_connect_charges_enabled, stripe_connect_payouts_enabled',
+        'id, plan, booking_fee_enabled, booking_fee_cents, subscription_status, stripe_connect_account_id, stripe_connect_charges_enabled, stripe_connect_payouts_enabled',
       )
       .eq('id', operatorId)
       .maybeSingle();
@@ -60,6 +62,7 @@ export class PaymentsService {
     return {
       operatorId: op.id,
       feeCents: op.booking_fee_cents,
+      plan: op.plan,
       connectAccountId: op.stripe_connect_account_id,
     };
   }
@@ -74,9 +77,14 @@ export class PaymentsService {
     appointmentId: string;
   }): Promise<{ url: string; paymentId: string }> {
     const eligibility = await this.ensureFeeEligible(args.operatorId);
-    const pricing = computeApplicationFee({
-      amountCents: eligibility.feeCents,
-      takeRateBps: this.env.PLATFORM_TAKE_RATE_BPS,
+    // Take rate is per-plan (Solo 10% / Crew 15% / Fleet 20%), charged on top of
+    // the deposit and paid by the caller. Legacy/null plans fall back to the env
+    // default so a missing plan never blocks fee collection.
+    const takeRateBps =
+      platformTakeRateBpsForPlan(eligibility.plan) ?? this.env.PLATFORM_TAKE_RATE_BPS;
+    const pricing = computeBookingFeeCharge({
+      depositCents: eligibility.feeCents,
+      takeRateBps,
       minPlatformFeeCents: this.env.MIN_PLATFORM_FEE_CENTS,
     });
 
@@ -89,7 +97,7 @@ export class PaymentsService {
             price_data: {
               currency: 'usd',
               product_data: { name: 'Booking fee' },
-              unit_amount: eligibility.feeCents,
+              unit_amount: pricing.chargeCents,
             },
             quantity: 1,
           },
@@ -122,7 +130,7 @@ export class PaymentsService {
         type: 'booking_fee',
         stripe_connected_account_id: eligibility.connectAccountId,
         stripe_payment_intent_id: paymentIntentId,
-        amount_cents: eligibility.feeCents,
+        amount_cents: pricing.chargeCents,
         application_fee_cents: pricing.applicationFeeCents,
         currency: 'usd',
         status: 'pending',

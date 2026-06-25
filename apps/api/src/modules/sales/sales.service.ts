@@ -1,6 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 
 import { AuditLogService } from '../../common/audit/audit-log.service';
+import { impersonationConfirmLink } from '../../common/auth/impersonation-link';
 import { AppError, ConflictError, ForbiddenError, NotFoundError } from '../../common/errors/app-error';
 import { SupabaseService } from '../../common/supabase/supabase.service';
 import { ENV_TOKEN } from '../../config/config.module';
@@ -138,7 +139,7 @@ export class SalesService {
       email,
       options: { redirectTo: `${this.env.APP_URL}/dashboard?impersonating=1` },
     });
-    if (linkErr || !data?.properties?.action_link) {
+    if (linkErr || !data?.properties?.hashed_token) {
       throw new AppError({
         code: 'sales.impersonate_failed',
         status: 502,
@@ -157,6 +158,6 @@ export class SalesService {
       userAgent: args.actor.userAgent,
     });
 
-    return { action_link: data.properties.action_link };
+    return { action_link: impersonationConfirmLink(this.env.APP_URL, data.properties.hashed_token) };
   }
 }

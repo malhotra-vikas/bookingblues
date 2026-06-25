@@ -7,6 +7,7 @@ import { ENV_TOKEN } from '../../config/config.module';
 import type { Env } from '../../config/env';
 import { SupabaseService } from '../../common/supabase/supabase.service';
 import { ConflictError, NotFoundError, ValidationError } from '../../common/errors/app-error';
+import { depositModeForPlan } from '../billing/plan-policy';
 import type { UpdateOperator } from './operators.dto';
 
 export type OperatorRow = Tables<'operators'>;
@@ -144,6 +145,15 @@ export class OperatorsService {
       throw new ValidationError(
         'booking_fee_cents must be set before enabling fee collection',
         { path: ['booking_fee_cents'] },
+      );
+    }
+
+    // Fleet mandates deposit collection (#booking-fee) — block turning it off,
+    // matching the UI which locks the toggle on. Mirrors depositModeForPlan.
+    if (depositModeForPlan(existing.plan) === 'mandatory' && willEnable === false) {
+      throw new ValidationError(
+        'Your plan requires deposit collection and it cannot be disabled.',
+        { path: ['booking_fee_enabled'] },
       );
     }
 

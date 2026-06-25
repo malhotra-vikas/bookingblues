@@ -5,7 +5,7 @@ import { useEffect, useState } from 'react';
 
 import { ConfirmModal } from '../ConfirmModal';
 import { getSupabaseBrowserClient } from '../../lib/supabase/browser';
-import { PLANS, type PlanSlug } from '../../lib/brand';
+import { PLANS, depositLabel, type PlanSlug } from '../../lib/brand';
 import { publicEnv } from '../../lib/env';
 import { CarrierForwarding } from './CarrierForwarding';
 import { StepCard } from './StepCard';
@@ -137,7 +137,18 @@ export function Wizard({
   const [pendingCategory, setPendingCategory] = useState(op?.category ?? '');
   const [pendingAreaCode, setPendingAreaCode] = useState('');
   const [candidates, setCandidates] = useState<TwilioCandidate[] | null>(null);
-  const [pendingFeeEnabled, setPendingFeeEnabled] = useState(op?.booking_fee_enabled ?? false);
+  // Deposit default depends on the plan's policy when the operator hasn't
+  // configured a fee yet: Solo off, Crew on, Fleet mandatory (#booking-fee).
+  const initialDepositMode = PLANS.find((p) => p.slug === op?.plan)?.depositMode;
+  const [pendingFeeEnabled, setPendingFeeEnabled] = useState(
+    initialDepositMode === 'mandatory'
+      ? true
+      : op?.booking_fee_enabled
+        ? true
+        : op?.booking_fee_cents != null
+          ? false
+          : initialDepositMode === 'on-by-default',
+  );
   const [pendingFeeDollars, setPendingFeeDollars] = useState(
     op?.booking_fee_cents != null
       ? (op.booking_fee_cents / 100).toFixed(2)
@@ -370,6 +381,7 @@ export function Wizard({
 
   const subscribed = op?.subscription_status === 'trialing' || op?.subscription_status === 'active';
   const currentPlan = subscribed ? PLANS.find((p) => p.slug === op?.plan) : undefined;
+  const depositMandatory = currentPlan?.depositMode === 'mandatory';
   const subscribeDescription = subscribed
     ? currentPlan
       ? `You're on the ${currentPlan.name} plan — ${currentPlan.conversationsPerMonth.toLocaleString()} conversations/mo included. Change or cancel anytime in Settings.`
@@ -818,14 +830,23 @@ export function Wizard({
         done={feeDecided}
       >
         <div className="space-y-3">
+          {currentPlan ? (
+            <p className="text-xs text-muted dark:text-slate-400">
+              <span className="font-medium text-ink dark:text-slate-200">{currentPlan.name} plan:</span>{' '}
+              {depositLabel(currentPlan.depositMode)}. Platform fee is{' '}
+              <span className="font-medium text-ink dark:text-slate-200">{currentPlan.platformFeePct}% on top of your deposit</span>,
+              charged to the customer.
+            </p>
+          ) : null}
           <div className="flex items-end gap-3">
             <label className="flex items-center gap-2 text-sm">
               <input
                 type="checkbox"
                 checked={pendingFeeEnabled}
+                disabled={depositMandatory}
                 onChange={(e) => setPendingFeeEnabled(e.target.checked)}
               />
-              Collect a booking fee
+              Collect a booking fee{depositMandatory ? ' (required on Fleet)' : ''}
             </label>
             {pendingFeeEnabled ? (
               <div>
@@ -851,7 +872,10 @@ export function Wizard({
             </button>
           </div>
           {pendingFeeEnabled && Number(pendingFeeDollars) > 0 ? (
-            <FeeBreakdown depositDollars={Number(pendingFeeDollars)} />
+            <FeeBreakdown
+              depositDollars={Number(pendingFeeDollars)}
+              platformFeePct={currentPlan?.platformFeePct ?? 10}
+            />
           ) : null}
         </div>
       </StepCard>
@@ -934,30 +958,39 @@ export function Wizard({
  * The server is authoritative — this is just for the wizard's "what do I keep"
  * preview. Values clamp the same way the server clamps.
  */
-function FeeBreakdown({ depositDollars }: { depositDollars: number }): JSX.Element {
+function FeeBreakdown({
+  depositDollars,
+  platformFeePct,
+}: {
+  depositDollars: number;
+  platformFeePct: number;
+}): JSX.Element {
   const depositCents = Math.round(depositDollars * 100);
-  const takeRateBps = publicEnv.NEXT_PUBLIC_PLATFORM_TAKE_RATE_BPS;
+  const takeRateBps = platformFeePct * 100;
 
-  // Stripe US standard: 2.9% + 30¢ per charge.
-  const stripeFeeCents = Math.ceil(depositCents * 0.029) + 30;
-  const requestedAppFee = Math.max(
+  // Platform fee is charged ON TOP of the deposit and paid by the customer; the
+  // operator keeps the full deposit (less Stripe card processing). Mirrors
+  // computeBookingFeeCharge on the API.
+  const platformFeeCents = Math.max(
     Math.floor((depositCents * takeRateBps) / 10_000),
     100, // mirrors MIN_PLATFORM_FEE_CENTS default
   );
-  const cap = Math.max(0, depositCents - stripeFeeCents);
-  const platformFeeCents = Math.min(requestedAppFee, cap);
-  const operatorKeepsCents = depositCents - stripeFeeCents - platformFeeCents;
+  const customerPaysCents = depositCents + platformFeeCents;
+  // Stripe US standard (2.9% + 30¢) is billed to the connected account on the full charge.
+  const stripeFeeCents = Math.ceil(customerPaysCents * 0.029) + 30;
+  const operatorKeepsCents = customerPaysCents - platformFeeCents - stripeFeeCents;
 
   const fmt = (c: number): string => `$${(c / 100).toFixed(2)}`;
-  const ratePct = (takeRateBps / 100).toFixed(0);
 
   return (
     <div className="rounded-md border bg-slate-50 p-3 text-xs">
       <div className="font-medium mb-2">For a {fmt(depositCents)} deposit:</div>
       <ul className="space-y-1 text-muted">
-        <li className="flex justify-between"><span>Card processing fee (2.9% + 30¢)</span><span className="font-mono">−{fmt(stripeFeeCents)}</span></li>
-        <li className="flex justify-between"><span>KeeprSteady fee ({ratePct}%)</span><span className="font-mono">−{fmt(platformFeeCents)}</span></li>
-        <li className="flex justify-between font-medium text-ink border-t pt-1"><span>You get</span><span className="font-mono">{fmt(operatorKeepsCents)}</span></li>
+        <li className="flex justify-between"><span>Your deposit</span><span className="font-mono">{fmt(depositCents)}</span></li>
+        <li className="flex justify-between"><span>KeeprSteady fee ({platformFeePct}%, on top)</span><span className="font-mono">+{fmt(platformFeeCents)}</span></li>
+        <li className="flex justify-between font-medium text-ink border-t pt-1"><span>Customer pays</span><span className="font-mono">{fmt(customerPaysCents)}</span></li>
+        <li className="flex justify-between"><span>Card processing (2.9% + 30¢)</span><span className="font-mono">−{fmt(stripeFeeCents)}</span></li>
+        <li className="flex justify-between font-medium text-ink border-t pt-1"><span>You receive</span><span className="font-mono">{fmt(operatorKeepsCents)}</span></li>
       </ul>
     </div>
   );

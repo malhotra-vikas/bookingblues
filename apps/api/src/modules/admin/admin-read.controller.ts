@@ -38,6 +38,11 @@ export class AdminReadController {
     return this.read.listLeads({ page, perPage });
   }
 
+  @Get('sales')
+  async listSalesReps() {
+    return this.read.listSalesReps();
+  }
+
   @Get('operators')
   async listOperators(
     @Query('q') q?: string,

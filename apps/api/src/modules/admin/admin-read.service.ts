@@ -57,6 +57,14 @@ export interface ListLeadsResult {
   readonly next_page: string | null;
 }
 
+export interface SalesRepListItem {
+  readonly user_id: string;
+  readonly email: string | null;
+  readonly slack_user_id: string;
+  readonly slack_username: string | null;
+  readonly linked_at: string;
+}
+
 export interface GlobalMetrics {
   readonly operators: {
     readonly total: number;
@@ -236,6 +244,35 @@ export class AdminReadService {
     // full page back (Supabase doesn't always set total reliably).
     const nextPage = users.length === args.perPage ? String(args.page + 1) : null;
     return { items, next_page: nextPage };
+  }
+
+  /**
+   * List all sales reps and their linked Slack identity (#4). Joins
+   * `sales_slack_links` to auth.users for the rep's email so admins can see
+   * who is promoted and which Slack ID each is attached to.
+   */
+  async listSalesReps(): Promise<{ items: SalesRepListItem[] }> {
+    const { data: links, error } = await this.supabase
+      .db()
+      .from('sales_slack_links')
+      .select('user_id, slack_user_id, slack_username, created_at')
+      .order('created_at', { ascending: true });
+    if (error) throw error;
+    if (!links || links.length === 0) return { items: [] };
+
+    const items = await Promise.all(
+      links.map(async (l): Promise<SalesRepListItem> => {
+        const { data: u } = await this.supabase.db().auth.admin.getUserById(l.user_id);
+        return {
+          user_id: l.user_id,
+          email: u?.user?.email ?? null,
+          slack_user_id: l.slack_user_id,
+          slack_username: l.slack_username ?? null,
+          linked_at: l.created_at,
+        };
+      }),
+    );
+    return { items };
   }
 
   async getOperatorDossier(operatorId: string): Promise<OperatorDossier> {
