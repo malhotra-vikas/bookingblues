@@ -26,6 +26,7 @@ interface Operator {
   service_zip_codes: string[];
   service_radius_zones: Array<{ center_zip: string; radius_miles: number }>;
   subscription_status: string | null;
+  plan: string | null;
   onboarding_completed_at: string | null;
 }
 
@@ -335,6 +336,12 @@ export function Wizard({
   }
 
   const subscribed = op?.subscription_status === 'trialing' || op?.subscription_status === 'active';
+  const currentPlan = subscribed ? PLANS.find((p) => p.slug === op?.plan) : undefined;
+  const subscribeDescription = subscribed
+    ? currentPlan
+      ? `You're on the ${currentPlan.name} plan — ${currentPlan.conversationsPerMonth.toLocaleString()} conversations/mo included. Change or cancel anytime in Settings.`
+      : "You're subscribed. Change or cancel your plan anytime in Settings."
+    : "7-day free trial. We need a card up front, but you won't be charged until day 8.";
   const categoryDone = !!op?.category;
   const twilioDone = !!op?.twilio_number_e164;
   const googleDone = !!op?.google_calendar_id;
@@ -407,7 +414,7 @@ export function Wizard({
       <StepCard
         number={1}
         title="Subscribe"
-        description="7-day free trial. We need a card up front, but you won't be charged until day 8."
+        description={subscribeDescription}
         done={!!subscribed}
       >
         {!subscribed ? (

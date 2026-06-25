@@ -1,4 +1,4 @@
-import { Controller, Headers, HttpCode, Post, Req } from '@nestjs/common';
+import { Controller, Headers, HttpCode, Inject, Post, Req } from '@nestjs/common';
 import type { RawBodyRequest } from '@nestjs/common';
 import { SkipThrottle } from '@nestjs/throttler';
 import type { Request } from 'express';
@@ -10,18 +10,25 @@ import { AppError, WebhookSignatureError } from '../../common/errors/app-error';
 import { StripeService } from '../../common/stripe/stripe.service';
 import { SupabaseService } from '../../common/supabase/supabase.service';
 import { WebhookIdempotencyService } from '../../common/webhooks/webhook-idempotency.service';
+import { ENV_TOKEN } from '../../config/config.module';
+import type { Env } from '../../config/env';
+import { type PlanAndCadence, buildPricePlanMap } from '../billing/plan-pricing';
 import { dispatchPlatformEvent } from './stripe-event-handlers';
 
 @Controller('webhooks/stripe')
 @SkipThrottle()
 export class StripePlatformController {
+  private readonly priceMap: ReadonlyMap<string, PlanAndCadence>;
+
   constructor(
     private readonly stripe: StripeService,
     private readonly supabase: SupabaseService,
     private readonly idempotency: WebhookIdempotencyService,
     private readonly logger: PinoLogger,
+    @Inject(ENV_TOKEN) env: Env,
   ) {
     this.logger.setContext(StripePlatformController.name);
+    this.priceMap = buildPricePlanMap(env);
   }
 
   @Post()
@@ -59,6 +66,7 @@ export class StripePlatformController {
       await dispatchPlatformEvent(event, {
         db: this.supabase.db(),
         logger: this.logger,
+        priceMap: this.priceMap,
       });
       await this.idempotency.markProcessed(recordResult.id);
     } catch (err) {

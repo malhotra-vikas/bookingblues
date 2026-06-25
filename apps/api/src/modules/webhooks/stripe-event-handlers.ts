@@ -3,6 +3,8 @@ import type Stripe from 'stripe';
 import type { Database } from '@bookingblues/db-types';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
+import { type PlanAndCadence, planCadenceForPrice } from '../billing/plan-pricing';
+
 type SubscriptionStatus = Database['public']['Enums']['subscription_status'];
 
 /**
@@ -39,6 +41,12 @@ function unixToIso(unix: number | null | undefined): string | null {
 export interface HandlerDeps {
   readonly db: SupabaseClient<Database>;
   readonly logger: PinoLogger;
+  /**
+   * Stripe price ID -> {plan, cadence}, built from env. Lets the subscription
+   * handler derive the operator's plan from Stripe's source-of-truth active
+   * price rather than the (mutable, sometimes-absent) checkout metadata.
+   */
+  readonly priceMap?: ReadonlyMap<string, PlanAndCadence>;
 }
 
 export async function onCheckoutCompleted(
@@ -102,12 +110,15 @@ export async function onSubscriptionUpserted(
     return;
   }
 
-  // Stripe is the source of truth for the active price ID — pull it off
-  // the subscription item rather than trusting metadata, which a user
-  // could mutate through the Customer Portal when switching plans.
+  // Stripe is the source of truth for the active price ID — pull it off the
+  // subscription item rather than trusting metadata, which a user can mutate
+  // (or which is simply absent on legacy / third-party subs) through the
+  // Customer Portal when switching plans. Derive plan + cadence from that price;
+  // fall back to checkout metadata only for prices we don't recognise.
   const stripePriceId = sub.items.data[0]?.price.id ?? null;
-  const plan = planFromMetadata(sub.metadata);
-  const cadence = cadenceFromMetadata(sub.metadata);
+  const fromPrice = deps.priceMap ? planCadenceForPrice(stripePriceId, deps.priceMap) : null;
+  const plan = fromPrice?.plan ?? planFromMetadata(sub.metadata);
+  const cadence = fromPrice?.cadence ?? cadenceFromMetadata(sub.metadata);
 
   const { error } = await deps.db
     .from('operators')

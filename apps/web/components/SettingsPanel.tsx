@@ -5,6 +5,7 @@ import { useState } from 'react';
 
 import { getSupabaseBrowserClient } from '../lib/supabase/browser';
 import { publicEnv } from '../lib/env';
+import { PLANS } from '../lib/brand';
 
 interface Operator {
   id: string;
@@ -17,6 +18,8 @@ interface Operator {
   booking_fee_enabled: boolean;
   booking_fee_cents: number | null;
   subscription_status: string | null;
+  plan: string | null;
+  plan_cadence: string | null;
   trial_ends_at: string | null;
   stripe_connect_account_id: string | null;
   stripe_connect_charges_enabled: boolean;
@@ -295,24 +298,27 @@ export function SettingsPanel({ operator }: { operator: Operator }): JSX.Element
         description="Your KeeprSteady plan. Manage card, change plans, or cancel via the customer portal."
       >
         <div className="flex items-center justify-between">
-          <div className="text-sm">
-            Status:{' '}
-            <span
-              className={`font-medium ${
-                operator.subscription_status === 'active'
-                  ? 'text-emerald-700 dark:text-emerald-400'
-                  : operator.subscription_status === 'trialing'
-                    ? 'text-amber-700 dark:text-amber-400'
-                    : 'text-red-700 dark:text-red-400'
-              }`}
-            >
-              {operator.subscription_status ?? 'none'}
-            </span>
-            {operator.trial_ends_at && operator.subscription_status === 'trialing' && (
-              <span className="ml-2 text-xs text-muted dark:text-slate-400">
-                ends {new Date(operator.trial_ends_at).toLocaleDateString()}
+          <div>
+            <div className="text-sm">
+              Status:{' '}
+              <span
+                className={`font-medium ${
+                  operator.subscription_status === 'active'
+                    ? 'text-emerald-700 dark:text-emerald-400'
+                    : operator.subscription_status === 'trialing'
+                      ? 'text-amber-700 dark:text-amber-400'
+                      : 'text-red-700 dark:text-red-400'
+                }`}
+              >
+                {operator.subscription_status ?? 'none'}
               </span>
-            )}
+              {operator.trial_ends_at && operator.subscription_status === 'trialing' && (
+                <span className="ml-2 text-xs text-muted dark:text-slate-400">
+                  ends {new Date(operator.trial_ends_at).toLocaleDateString()}
+                </span>
+              )}
+            </div>
+            <PlanLine plan={operator.plan} cadence={operator.plan_cadence} />
           </div>
           <button
             type="button"
@@ -329,6 +335,19 @@ export function SettingsPanel({ operator }: { operator: Operator }): JSX.Element
 }
 
 // ── Subcomponents ──────────────────────────────────────────────────────
+
+/** Shows the operator's current plan name, cadence, and included conversations
+ *  inline, so they don't have to open the Stripe portal to see what they're on. */
+function PlanLine({ plan, cadence }: { plan: string | null; cadence: string | null }): JSX.Element | null {
+  const match = PLANS.find((p) => p.slug === plan);
+  if (!match) return null;
+  return (
+    <div className="mt-1 text-xs text-muted dark:text-slate-400">
+      {match.name} plan · {cadence === 'annual' ? 'billed annually' : 'billed monthly'} ·{' '}
+      {match.conversationsPerMonth.toLocaleString()} conversations/mo included
+    </div>
+  );
+}
 
 type ConnectStatus = 'not_started' | 'pending' | 'active';
 

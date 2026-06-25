@@ -14,6 +14,8 @@ interface Operator {
   booking_fee_enabled: boolean;
   booking_fee_cents: number | null;
   subscription_status: string | null;
+  plan: string | null;
+  plan_cadence: string | null;
   trial_ends_at: string | null;
   stripe_connect_account_id: string | null;
   stripe_connect_charges_enabled: boolean;
