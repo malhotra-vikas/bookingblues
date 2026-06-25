@@ -501,7 +501,7 @@ function ConnectStatusNotice({
         : status === 'pending'
           ? 'Stripe is still verifying your payout account.'
           : 'check your subscription status.'}{' '}
-      Until then, the bot books appointments without a fee.
+      .
     </div>
   );
 }

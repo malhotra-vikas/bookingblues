@@ -25,6 +25,7 @@ import {
   PromoteAdminSchema,
   PromoteSalesSchema,
   RefundPaymentSchema,
+  ReleaseSalesLeadsSchema,
   type CancelSubscription,
   type DeactivateOperator,
   type ForceEndConversation,
@@ -33,6 +34,7 @@ import {
   type PromoteAdmin,
   type PromoteSales,
   type RefundPayment,
+  type ReleaseSalesLeads,
 } from './admin.dto';
 import { AdminWriteService } from './admin-write.service';
 
@@ -108,6 +110,22 @@ export class AdminWriteController {
       actor: { actorUserId: actor.userId, ...ctx },
     });
     return { ok: true };
+  }
+
+  @Post('sales/:userId/release-leads')
+  async releaseSalesLeads(
+    @Req() req: Request,
+    @CurrentUser() actor: AuthenticatedUser,
+    @Param('userId', new ParseUUIDPipe()) userId: string,
+    @Body(new ZodBodyPipe(ReleaseSalesLeadsSchema)) body: ReleaseSalesLeads,
+  ): Promise<{ ok: true; released_leads: number }> {
+    const ctx = this.audit.fromRequest(req);
+    const { released_leads } = await this.write.releaseSalesLeads({
+      userId,
+      leadUserIds: body.lead_user_ids,
+      actor: { actorUserId: actor.userId, ...ctx },
+    });
+    return { ok: true, released_leads };
   }
 
   // ── lead actions ───────────────────────────────────────────────────────

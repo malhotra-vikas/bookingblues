@@ -57,12 +57,21 @@ export interface ListLeadsResult {
   readonly next_page: string | null;
 }
 
+export interface SalesRepClaimedLead {
+  readonly lead_user_id: string;
+  readonly email: string | null;
+  readonly business_name: string | null;
+  readonly operator_id: string | null;
+  readonly claimed_at: string | null;
+}
+
 export interface SalesRepListItem {
   readonly user_id: string;
   readonly email: string | null;
   readonly slack_user_id: string;
   readonly slack_username: string | null;
   readonly linked_at: string;
+  readonly claimed_leads: ReadonlyArray<SalesRepClaimedLead>;
 }
 
 export interface GlobalMetrics {
@@ -269,10 +278,45 @@ export class AdminReadService {
           slack_user_id: l.slack_user_id,
           slack_username: l.slack_username ?? null,
           linked_at: l.created_at,
+          claimed_leads: await this.claimedLeadsForSlackId(l.slack_user_id),
         };
       }),
     );
     return { items };
+  }
+
+  /** Leads currently claimed by a Slack ID, with operator + email for display. */
+  private async claimedLeadsForSlackId(slackUserId: string): Promise<SalesRepClaimedLead[]> {
+    const { data: claims, error } = await this.supabase
+      .db()
+      .from('lead_claims')
+      .select('user_id, claimed_at')
+      .eq('claimed_by_slack_user_id', slackUserId)
+      .order('claimed_at', { ascending: false });
+    if (error) throw error;
+    if (!claims || claims.length === 0) return [];
+
+    const userIds = claims.map((c) => c.user_id);
+    const { data: ops } = await this.supabase
+      .db()
+      .from('operators')
+      .select('id, user_id, business_name')
+      .in('user_id', userIds);
+    const opByUser = new Map((ops ?? []).map((o) => [o.user_id, o]));
+
+    return Promise.all(
+      claims.map(async (c): Promise<SalesRepClaimedLead> => {
+        const op = opByUser.get(c.user_id);
+        const { data: u } = await this.supabase.db().auth.admin.getUserById(c.user_id);
+        return {
+          lead_user_id: c.user_id,
+          email: u?.user?.email ?? null,
+          business_name: op?.business_name ?? null,
+          operator_id: op?.id ?? null,
+          claimed_at: c.claimed_at,
+        };
+      }),
+    );
   }
 
   async getOperatorDossier(operatorId: string): Promise<OperatorDossier> {

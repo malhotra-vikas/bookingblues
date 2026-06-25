@@ -34,13 +34,15 @@ export function buildLeadBlocks(args: {
   businessName: string;
   phoneE164: string;
   adminUrl: string;
+  /** Override the header line (e.g. when a lead is re-released for claiming). */
+  headline?: string;
 }): ReadonlyArray<unknown> {
   return [
     {
       type: 'section',
       text: {
         type: 'mrkdwn',
-        text: `:tada: *New lead* — *${args.businessName}*`,
+        text: args.headline ?? `:tada: *New lead* — *${args.businessName}*`,
       },
     },
     {

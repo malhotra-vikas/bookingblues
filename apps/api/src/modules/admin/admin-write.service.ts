@@ -14,6 +14,8 @@ import {
 import { StripeService } from '../../common/stripe/stripe.service';
 import { SupabaseService } from '../../common/supabase/supabase.service';
 import { TwilioService } from '../../common/twilio/twilio.service';
+import { buildLeadBlocks } from '../leads/leads.controller';
+import { SlackApiClient } from '../slack/slack-api.client';
 import { ENV_TOKEN } from '../../config/config.module';
 import type { Env } from '../../config/env';
 import { PaymentsService } from '../payments/payments.service';
@@ -34,6 +36,7 @@ export class AdminWriteService {
     private readonly twilio: TwilioService,
     private readonly payments: PaymentsService,
     private readonly audit: AuditLogService,
+    private readonly slack: SlackApiClient,
     private readonly logger: PinoLogger,
     @Inject(ENV_TOKEN) private readonly env: Env,
   ) {
@@ -214,13 +217,25 @@ export class AdminWriteService {
     return { user_id: target.id };
   }
 
-  /** Demote a sales rep: strip role and remove their Slack link (#4). */
+  /**
+   * Demote a sales rep (#4): strip the sales role and remove their email↔Slack
+   * link. Does NOT touch their claimed leads — claims are keyed on the Slack
+   * identity, so they persist (and would resolve again if the same Slack ID is
+   * re-linked to a BB account). Release leads separately via {@link releaseSalesLeads}.
+   */
   async demoteSales(args: { userId: string; actor: AdminActorContext }): Promise<void> {
     const { data: userResp, error: lookupErr } = await this.supabase
       .db()
       .auth.admin.getUserById(args.userId);
     if (lookupErr) throw lookupErr;
     if (!userResp.user) throw new NotFoundError('User not found');
+
+    const { data: link } = await this.supabase
+      .db()
+      .from('sales_slack_links')
+      .select('slack_user_id')
+      .eq('user_id', args.userId)
+      .maybeSingle();
 
     const existing = (userResp.user.app_metadata ?? {}) as Record<string, unknown>;
     const next: Record<string, unknown> = { ...existing };
@@ -243,10 +258,120 @@ export class AdminWriteService {
       action: 'sales.demote',
       resourceType: 'auth.user',
       resourceId: args.userId,
-      metadata: {},
+      metadata: { slack_user_id: link?.slack_user_id ?? null },
       ipAddress: args.actor.ipAddress,
       userAgent: args.actor.userAgent,
     });
+  }
+
+  /**
+   * Selectively release leads claimed by a sales rep (#4) back to the #bb-leads
+   * pool — one, several, or all. Deletes the matching `lead_claims` rows (so the
+   * leads show unclaimed in /admin/leads) and re-posts each to #bb-leads as
+   * available to claim. Independent of the sales role: the rep stays promoted.
+   * Only leads actually claimed by this rep's Slack ID are released. Returns the
+   * number released.
+   */
+  async releaseSalesLeads(args: {
+    userId: string;
+    leadUserIds: ReadonlyArray<string>;
+    actor: AdminActorContext;
+  }): Promise<{ released_leads: number }> {
+    const { data: link, error: linkErr } = await this.supabase
+      .db()
+      .from('sales_slack_links')
+      .select('slack_user_id')
+      .eq('user_id', args.userId)
+      .maybeSingle();
+    if (linkErr) throw linkErr;
+    if (!link?.slack_user_id) {
+      throw new NotFoundError('That user is not a linked sales rep');
+    }
+    const slackUserId = link.slack_user_id;
+
+    // Scope to claims actually owned by this rep's Slack ID, so a stray id in
+    // the request can't release someone else's lead.
+    const { data: claims, error } = await this.supabase
+      .db()
+      .from('lead_claims')
+      .select('user_id')
+      .eq('claimed_by_slack_user_id', slackUserId)
+      .in('user_id', [...args.leadUserIds]);
+    if (error) throw error;
+    const userIds = (claims ?? []).map((c) => c.user_id);
+    if (userIds.length === 0) return { released_leads: 0 };
+
+    const { error: delErr } = await this.supabase
+      .db()
+      .from('lead_claims')
+      .delete()
+      .eq('claimed_by_slack_user_id', slackUserId)
+      .in('user_id', userIds);
+    if (delErr) throw delErr;
+
+    await this.repostLeadsAsAvailable(userIds);
+
+    await this.audit.write({
+      actorUserId: args.actor.actorUserId,
+      operatorId: null,
+      action: 'sales.release_leads',
+      resourceType: 'auth.user',
+      resourceId: args.userId,
+      metadata: { slack_user_id: slackUserId, released_lead_user_ids: userIds },
+      ipAddress: args.actor.ipAddress,
+      userAgent: args.actor.userAgent,
+    });
+
+    return { released_leads: userIds.length };
+  }
+
+  /**
+   * Re-post released leads to #bb-leads as available to claim, reusing the same
+   * Claim button so the team can re-file them. Best-effort: a Slack failure for
+   * one lead is logged and skipped, never thrown.
+   */
+  private async repostLeadsAsAvailable(userIds: ReadonlyArray<string>): Promise<void> {
+    const channel = this.slack.leadsChannelId();
+    if (!this.slack.isConfigured() || !channel || userIds.length === 0) return;
+
+    const { data: ops } = await this.supabase
+      .db()
+      .from('operators')
+      .select('user_id, business_name, personal_phone_e164')
+      .in('user_id', [...userIds]);
+    const opByUser = new Map((ops ?? []).map((o) => [o.user_id, o]));
+    const adminUrl = `${this.env.APP_URL.replace(/\/$/, '')}/admin/leads`;
+
+    for (const userId of userIds) {
+      try {
+        const { data: u } = await this.supabase.db().auth.admin.getUserById(userId);
+        const op = opByUser.get(userId);
+        const meta = (u?.user?.user_metadata ?? {}) as {
+          business_name?: string;
+          personal_phone_e164?: string;
+        };
+        const email = u?.user?.email ?? '(no email)';
+        const businessName = op?.business_name ?? meta.business_name ?? '(unnamed)';
+        const phoneE164 = op?.personal_phone_e164 ?? meta.personal_phone_e164 ?? '+10000000000';
+        await this.slack.postMessage({
+          channel,
+          text: `Lead available to claim: ${businessName} · ${email}`,
+          blocks: buildLeadBlocks({
+            userId,
+            email,
+            businessName,
+            phoneE164,
+            adminUrl,
+            headline: `:arrows_counterclockwise: *Lead available to claim* — *${businessName}*`,
+          }),
+        });
+      } catch (err) {
+        this.logger.warn(
+          { userId, err: (err as Error).message },
+          'repostLeadsAsAvailable: Slack re-post failed for lead',
+        );
+      }
+    }
   }
 
   // ── operator lifecycle ───────────────────────────────────────────────────

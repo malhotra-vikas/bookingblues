@@ -17,6 +17,15 @@ export const PromoteSalesSchema = z.object({
 });
 export type PromoteSales = z.infer<typeof PromoteSalesSchema>;
 
+// Release specific claimed leads from a sales rep back to the #bb-leads pool
+// (#4). Selective: pass the lead user-ids to release (one / several / all). This
+// is independent of demotion — releasing leads does NOT remove the sales role,
+// and demoting does NOT release leads.
+export const ReleaseSalesLeadsSchema = z.object({
+  lead_user_ids: z.array(z.string().uuid()).min(1).max(500),
+});
+export type ReleaseSalesLeads = z.infer<typeof ReleaseSalesLeadsSchema>;
+
 // ── Operator-list filters ────────────────────────────────────────────────────
 export const ListOperatorsQuerySchema = z.object({
   cursor: z.string().optional(),
