@@ -31,8 +31,8 @@ export const BRAND = {
  * actually saw.
  */
 export const TERMS = {
-  version: '2026-05-26',
-  effectiveDate: 'May 26, 2026',
+  version: '2026-06-25',
+  effectiveDate: 'June 25, 2026',
 } as const;
 
 export const TRIAL_COPY = {
