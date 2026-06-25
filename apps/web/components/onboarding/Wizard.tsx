@@ -67,6 +67,39 @@ function formatE164(e164: string): string {
   return m ? `(${m[1]}) ${m[2]}-${m[3]}` : e164;
 }
 
+/** Phone-keypad letter→digit map (Twilio maps vanity letters the same way). */
+const KEYPAD: Record<string, string> = {
+  A: '2', B: '2', C: '2', D: '3', E: '3', F: '3', G: '4', H: '4', I: '4',
+  J: '5', K: '5', L: '5', M: '6', N: '6', O: '6', P: '7', Q: '7', R: '7',
+  S: '7', T: '8', U: '8', V: '8', W: '9', X: '9', Y: '9', Z: '9',
+};
+
+/**
+ * Render the number with the vanity slug shown as letters in the digit run it
+ * matched, e.g. (+14252442536, "CHICKEN") → "425-CHICKEN". Returns null when the
+ * slug's keypad digits aren't present in the national number, so the caller can
+ * fall back to the plain "Contains X" label.
+ */
+function vanityEmbed(e164: string, slug: string | null): string | null {
+  if (!slug) return null;
+  const m = e164.match(/^\+1(\d{10})$/);
+  const national = m?.[1];
+  if (!national) return null;
+  const letters = slug.toUpperCase().replace(/[^A-Z]/g, '');
+  let digits = '';
+  for (const ch of letters) {
+    const d = KEYPAD[ch];
+    if (!d) return null;
+    digits += d;
+  }
+  if (!digits) return null;
+  const idx = national.indexOf(digits);
+  if (idx === -1) return null;
+  const embedded = national.slice(0, idx) + letters + national.slice(idx + digits.length);
+  // Dash after the area code for readability: 425-CHICKEN, 385-317ZEUS.
+  return `${embedded.slice(0, 3)}-${embedded.slice(3)}`;
+}
+
 async function authedFetch(path: string, init?: RequestInit): Promise<Response> {
   const supabase = getSupabaseBrowserClient();
   const { data } = await supabase.auth.getSession();
@@ -666,31 +699,33 @@ export function Wizard({
 
             {candidates && candidates.length > 0 && (
               <ul className="flex flex-col gap-2">
-                {candidates.map((c) => (
-                  <li key={c.phone_number_e164}>
-                    <button
-                      type="button"
-                      onClick={() => provisionTwilio(c.phone_number_e164)}
-                      disabled={isBusy(c.phone_number_e164)}
-                      className="w-full text-left rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 dark:text-slate-100 px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-50 flex items-center justify-between"
-                    >
-                      <span className="font-mono">{formatE164(c.phone_number_e164)}</span>
-                      <span className="text-xs text-slate-500 flex items-center gap-2">
-                        {c.vanity_match && (
-                          <span className="rounded bg-emerald-50 text-emerald-700 px-1.5 py-0.5 font-medium">
-                            Contains {c.vanity_match}
-                          </span>
-                        )}
-                        {c.locality && c.region && (
-                          <span>
-                            {c.locality}, {c.region}
-                          </span>
-                        )}
-                        {isBusy(c.phone_number_e164) ? 'Buying…' : ''}
-                      </span>
-                    </button>
-                  </li>
-                ))}
+                {candidates.map((c) => {
+                  const vanity = vanityEmbed(c.phone_number_e164, c.vanity_match);
+                  return (
+                    <li key={c.phone_number_e164}>
+                      <button
+                        type="button"
+                        onClick={() => provisionTwilio(c.phone_number_e164)}
+                        disabled={isBusy(c.phone_number_e164)}
+                        className="w-full text-left rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 dark:text-slate-100 px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-50 flex items-center justify-between"
+                      >
+                        <span className="font-mono">{formatE164(c.phone_number_e164)}</span>
+                        <span className="text-xs text-slate-500 flex items-center gap-2">
+                          {vanity ? (
+                            <span className="rounded bg-emerald-50 text-emerald-700 px-1.5 py-0.5 font-medium font-mono">
+                              {vanity}
+                            </span>
+                          ) : c.vanity_match ? (
+                            <span className="rounded bg-emerald-50 text-emerald-700 px-1.5 py-0.5 font-medium">
+                              Contains {c.vanity_match}
+                            </span>
+                          ) : null}
+                          {isBusy(c.phone_number_e164) ? 'Buying…' : ''}
+                        </span>
+                      </button>
+                    </li>
+                  );
+                })}
               </ul>
             )}
             {candidates && candidates.length === 0 && (
