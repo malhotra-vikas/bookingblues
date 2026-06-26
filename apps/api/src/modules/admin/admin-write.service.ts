@@ -1,6 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { PinoLogger } from 'nestjs-pino';
-import type Stripe from 'stripe';
 import type { Database } from '@bookingblues/db-types';
 
 import { AuditLogService } from '../../common/audit/audit-log.service';
@@ -407,7 +406,18 @@ export class AdminWriteService {
       }
     }
 
-    // 2. Mark conversations escalated/closed so the bot won't reply on them.
+    // 2. Authoritatively mark the operator canceled in our DB. Deactivate is an
+    // admin kill switch — it must take effect immediately and NOT depend on the
+    // Stripe `customer.subscription.deleted` webhook (which never fires if the
+    // operator has no live subscription, e.g. a stale/deleted sub id).
+    const { error: statusErr } = await this.supabase
+      .db()
+      .from('operators')
+      .update({ subscription_status: 'canceled' })
+      .eq('id', operator.id);
+    if (statusErr) throw statusErr;
+
+    // 3. Mark conversations escalated/closed so the bot won't reply on them.
     await this.supabase
       .db()
       .from('conversations')
@@ -415,7 +425,7 @@ export class AdminWriteService {
       .eq('operator_id', operator.id)
       .in('status', ['awaiting_caller', 'awaiting_bot', 'active', 'escalated']);
 
-    // 3. Note: Twilio number release happens via a separate endpoint to keep
+    // 4. Note: Twilio number release happens via a separate endpoint to keep
     // the audit trail clear and so the admin can decide grace period.
 
     await this.audit.write({
@@ -444,21 +454,46 @@ export class AdminWriteService {
     if (!operator.stripe_subscription_id) {
       throw new ValidationError('Operator has no active subscription');
     }
-    let updated: Stripe.Subscription;
-    if (args.immediate) {
-      updated = await this.stripe
-        .client()
-        .subscriptions.cancel(operator.stripe_subscription_id, {
-          invoice_now: false,
-          prorate: false,
-        });
-    } else {
-      updated = await this.stripe
-        .client()
-        .subscriptions.update(operator.stripe_subscription_id, {
-          cancel_at_period_end: true,
-        });
+
+    // Stripe is the billing source of truth, but we reconcile our DB directly so
+    // the change is visible immediately (and so a stale/deleted sub id doesn't
+    // leave the operator looking active forever, with no webhook to fix it).
+    let stripeStatus = 'canceled';
+    try {
+      const updated = args.immediate
+        ? await this.stripe.client().subscriptions.cancel(operator.stripe_subscription_id, {
+            invoice_now: false,
+            prorate: false,
+          })
+        : await this.stripe.client().subscriptions.update(operator.stripe_subscription_id, {
+            cancel_at_period_end: true,
+          });
+      stripeStatus = updated.status;
+    } catch (err) {
+      // A deleted/unknown subscription means there is nothing left to cancel —
+      // reconcile to canceled rather than failing the admin action.
+      if ((err as { code?: string }).code === 'resource_missing') {
+        this.logger.warn(
+          { operatorId: operator.id, sub: operator.stripe_subscription_id },
+          'cancelSubscription: Stripe subscription missing; reconciling DB to canceled',
+        );
+        stripeStatus = 'canceled';
+      } else {
+        throw err;
+      }
     }
+
+    // Immediate cancel (or a sub already gone on Stripe) takes effect now; a
+    // period-end cancel keeps the operator active until Stripe's webhook flips it.
+    if (args.immediate || stripeStatus === 'canceled') {
+      const { error: statusErr } = await this.supabase
+        .db()
+        .from('operators')
+        .update({ subscription_status: 'canceled' })
+        .eq('id', operator.id);
+      if (statusErr) throw statusErr;
+    }
+
     await this.audit.write({
       actorUserId: args.actor.actorUserId,
       operatorId: operator.id,
@@ -468,7 +503,7 @@ export class AdminWriteService {
       metadata: {
         reason: args.reason,
         immediate: args.immediate,
-        stripe_status: updated.status,
+        stripe_status: stripeStatus,
       },
       ipAddress: args.actor.ipAddress,
       userAgent: args.actor.userAgent,
