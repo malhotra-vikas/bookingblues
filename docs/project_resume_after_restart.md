@@ -9,10 +9,25 @@ Quick-start brief for the next session. Read this first, then `docs/PROGRESS.md`
 ## Resume brief — Monday 2026-06-29 (after 2026-06-26 session, Mac restarted)
 
 **Where we are:** mid manual-test **§11** (the full booking/fee value loop). §1–§10 all
-pass (a few non-blocking deferrals). **All this session's code is committed + pushed**
-(latest `f904613`); working tree is just docs/scripts (committed at end-of-day).
-OpenAI works again (the prod key was out of quota → "AI never replies"; new funded key
-deployed). `gpt-4.1`.
+pass (a few non-blocking deferrals). **All code committed + pushed** (latest `42627dd
+"Improved UX"`); working tree clean. OpenAI works again (the prod key was out of quota →
+"AI never replies"; new funded key deployed). `gpt-4.1`. Also landed this session:
+emergency visit fee (17e: setting + pricing), business hours editor, footer on all pages,
+AI-failure fallback + Slack alert, and a **big UI/UX design pass** (see below).
+
+### UI/UX design pass — status (shipped this session, deployed)
+Design system (Space Grotesk + Inter fonts, brand-purple gradient/glow/shadow tokens,
+`Reveal` scroll-motion component, `card-lift`, reduced-motion safety) + global display-font
+headings + global accented gradient background w/ ambient blobs on every page. Polished:
+homepage (gradient hero, elevated/numbered cards, scroll reveal), pricing (fanmaker-style
+tier cards), contact cards, and shared app primitives (SettingsPanel Card, onboarding
+StepCard, dashboard Stat tile, Nav glass header, AuthForm gradient button, auth card).
+**Verified the 9 PUBLIC pages via Playwright screenshots — polished + uniform.** **NOT yet
+eyeballed: the authed pages** (dashboard/settings/onboarding/admin) — a sandbox netns quirk
+blocked screenshotting them HERE, but **Playwright is installed** and works on the real Mac,
+so Monday: run the authed-page screenshots (mint a session via the magic-link/`/auth/confirm`
+flow — script pattern in `scratchpad/authshot.js` from this session) OR just eyeball them in
+a browser. **Still to do:** per-page polish on dashboard/onboarding/admin buttons + layouts.
 
 ### Monday — ordered priorities
 1. **Finish §11 — the value loop (the main thing left).** Test operator
@@ -32,7 +47,9 @@ deployed). `gpt-4.1`.
 - **17d** Slack "Send payment request" button — this is what actually CHARGES the emergency fee (17e only shipped the setting + pricing). Then **17b** unify emergency (alert operator + #hitl), **17c** collect name/address before handoff.
 - Plan upgrade/downgrade (self-serve, prorated refund).
 - **2b** multi-truck capacity booking (concurrency + duration config).
-- Slack app rebrand → KeeprSteady. Global audit-log report. UI revamp (fanmaker vibe). SuiteCRM + Square (post-launch).
+- **UI revamp finish** — eyeball/polish authed pages (dashboard/onboarding/admin).
+- **Cal.com demo form** — add a required Phone question (Cal dashboard, no code; fix "Host | Host" title).
+- Slack app rebrand → KeeprSteady. Global audit-log report. SuiteCRM + Square (post-launch).
 
 ### Known bug (not blocking, debug later)
 Opening SMS lands in a SEPARATE phone thread from bot replies — Twilio-layer (our code sends both from `operator.twilio_number_e164`); + duplicate-opening observed. See PROGRESS "Known issue."
