@@ -10,7 +10,9 @@ When a section is wrong or stale, fix it in the same commit as the change.
 ## Status
 
 - **Phase**: Pre-launch (KeeprSteady rebrand + Solo/Crew/Fleet billing landed; infra verified live, functional E2E still pending)
-- **Last updated**: 2026-06-16
+- **Last updated**: 2026-06-25 (Twilio A2P 10DLC campaign **APPROVED** — SMS delivery now live; TERMS.version bumped to 2026-06-25 for §5 re-accept test)
+- **🟢 A2P 10DLC APPROVED (2026-06-25)** — the campaign cleared. **US SMS now delivers** for real. This was the launch gate. Implications: manual-test §9 can be judged by actually receiving texts (not just Twilio/DB attempt logs); the full missed-call → SMS → booking loop is live-testable E2E for the first time; the Toll-Free track is no longer needed as the unblock (keep only if a redundant sender is wanted).
+- **🔴 LAUNCH BLOCKER — Google OAuth sensitive-scope verification (in progress, see `docs/google-oauth-verification.md`).** Real operators can't connect Google Calendar (onboarding step 4 / §9.4) until the consent screen is verified for the sensitive `calendar.events` + `calendar.readonly` scopes; non-test-users see "Google hasn't verified this app." Progress as of 2026-06-26: ✅ **branding verified**; ✅ homepage reachable (root cause of 3 rejections was a **Cloudflare blanket challenge on `keeprsteady.com`** blocking Google's crawler — web root must stay un-challenged, `curl -sI` → 200 no `cf-mitigated`); ✅ scopes declared in Data Access; ⬜ **demo video** + ⬜ **submit for verification** (justifications + script all in the doc — user recording the video after finishing manual tests). Project `bookingblues-staging` / client `670004772057`, redirect `api.keeprsteady.com`. Interim: keep the test Google account in Test users (≤100). Review ≈ days–weeks once submitted.
 - **Active slice**: none — launch-prep infra now verified against prod; remaining work is functional E2E testing + finishing the domain cutover.
 - **Production target**: EC2 (Slice 14). Railway is staging only (Slice 13).
 - **HITL**: Slack-based (Slice 7.5) — **shipped** (code, manifest, docs; needs the Slack app created in api.slack.com to function end-to-end).
@@ -165,6 +167,63 @@ voice-greeting disclosure as a pre-SMS consent touchpoint — the key lever):
 Customer Care framing, and/or stand up a Toll-Free verified number to start
 testing while 10DLC iterates (§17).
 
+#### Campaign rejection #2 + mitigations (2026-06-17)
+
+Resubmission rejected again — but **only 30909** this time (the 30886 description
+error cleared, so the description fix worked). 30909 is the call-deflection wall:
+carriers can't *verify* a call-only opt-in (no webform/checkbox to inspect; the
+sub-codes 30924/30925 describe a webform-style active opt-in we don't have).
+Iterating the same copy a third time will likely fail again. Three parallel
+mitigations shipped/queued 2026-06-17:
+
+- ✅ **Public opt-in artifact** — `apps/web/app/(marketing)/messaging/page.tsx`
+  (`/messaging`, linked in the footer): a carrier-inspectable page documenting
+  the consumer-initiated call→text opt-in workflow, exact disclosure, frequency,
+  rates, HELP/STOP, no-purchased-lists framing. **Cite this URL in the Message
+  Flow** on the next resubmit.
+- ✅ **Toll-Free provisioning** — `twilio-provisioning.service` now supports
+  `toll_free: true` (search/buy a toll-free number, attach to the Messaging
+  Service, same webhooks). TFN verification is a separate, often-faster Twilio
+  path — the real way to start sending while 10DLC iterates. **Action (user):**
+  provision a TFN and submit toll-free verification in the console.
+- 📝 **Twilio Support ticket** — drafted (in chat); open it for human review of
+  the call-deflection use case after two auto-rejections.
+
+Tighter Message Flow copy (cites `/messaging`) was also drafted in chat for the
+next 10DLC resubmit.
+
+**Decision (2026-06-17):** leave the **Opt-in Keyword / Opt-in Message blank**
+this round. The product is **missed-call-triggered** — it does not expect a
+texted keyword from the consumer — so registering a "text START to opt in" path
+would misrepresent the actual flow. Plan: resubmit with the tightened Message
+Flow + live `/messaging` URL only. **If 30909 fails a third time, THEN** evaluate
+adding a keyword opt-in (`START` + a compliant opt-in message) as a secondary
+verifiable path, and decide whether to operate it for real (Advanced Opt-Out).
+
+#### Campaign rejection #3 — website/brand mismatch (2026-06-18)
+
+**Consent (30909) cleared** — new rejection: *"the provided website URL does not
+match the Brand and Campaign registered."* The brand is registered as **Malhotra
+Consultants LLC** (`BUec4b108…`, Low Volume Standard, Registered) but the website
+is `keeprsteady.com`, and the site didn't visibly tie the two together. Fixes:
+- ✅ **Code (web), deployed + LIVE:** added `BRAND.legalEntity = 'Malhotra
+  Consultants LLC'`. The site-wide **footer** (commit `97ec41c`) reads
+  "KeeprSteady is a service operated by Malhotra Consultants LLC" + "© <yr>
+  Malhotra Consultants LLC", and the marketing **header** (commit `7641061`) now
+  shows "by Malhotra Consultants LLC" next to the logo — so the entity appears
+  top AND bottom of every page (home, pricing, faq, contact, /messaging, /terms,
+  /privacy). Verified live on keeprsteady.com (6 occurrences incl. RSC payload).
+- ✅ **Console (user):** brand's registered website field confirmed =
+  `https://keeprsteady.com`.
+- **STATUS: resubmit-ready.** All known gates addressed (description ✅, consent
+  ✅, website-identity ✅). On the next resubmit, optionally lead the campaign
+  description with "Malhotra Consultants LLC … at https://keeprsteady.com" so the
+  legal name + exact brand URL appear together (drafted in chat).
+- **If it bounces a 3rd time on the SAME reason** with entity now in header +
+  footer + brand field: it's a reviewer-standard quirk, not a copy problem —
+  escalate via the Twilio support ticket (ask point-blank what "website matches
+  brand" requires for product-under-LLC) and run **Toll-Free** (#12) in parallel.
+
 **Follow-up — STOP/HELP keyword support (tracked):** we promised HELP/STOP in
 the legal pages; need to (1) confirm whether Twilio intercepts STOP/HELP/START
 vs forwards to our webhook, (2) handle Twilio error 21610 (opted-out) in the
@@ -172,6 +231,181 @@ send path instead of throwing loudly, (3) choose branded HELP/STOP copy that
 preserves per-operator `from` identity, (4) add DB-level opt-out tracking
 (deferred from Slice 16) so the bot stops messaging opted-out callers. See the
 "DB-level opt-out tracking deferred" note under Slice 16.
+
+#### Campaign rejection #4 + affirmative opt-in build (2026-06-22 → deployed 2026-06-23)
+
+Rejection email (Nayana, Onboarding & Compliance). Three reasons:
+1. The **consent form URL is missing** from the submission.
+2. **All consent methods must be present + proven** via screenshots or links.
+3. **Verbal consent must include the specific opt-in verbiage** (their example
+   shows a full IVR disclosure + an affirmative "yes").
+
+Decision (user-chosen): stop relying on a one-way call disclosure and build a
+**real affirmative opt-in** on both channels, so each method is verifiable.
+
+- ✅ **Web opt-in form (functional, records consent)** — `/messaging/opt-in`
+  (`apps/web/.../messaging/opt-in/{page,OptInForm}.tsx`). Name + mobile + an
+  **unchecked-by-default** consent checkbox with full CTIA disclosure. Posts to
+  new public API `POST /v1/sms-opt-in` (`apps/api/src/modules/consent/`), which
+  validates+normalizes the phone (E.164) and writes a durable consent row.
+  **Fails loudly** if the row can't be written (no silent fallback, §2).
+- ✅ **Affirmative IVR** — `twilio-voice.controller.ts` no longer texts on the
+  inbound call. It plays a full disclosure (rates, STOP, HELP) and asks the
+  caller to **press 1 / say "yes"** (`<Gather>` dtmf+speech). New
+  `POST :operatorId/consent` callback sends the opening SMS **only on a clear
+  affirmative**; decline/hang-up → polite goodbye, no text. Default-deny logic
+  extracted to pure `callerConsentedFromGather()` + unit-tested
+  (`twilio-helpers.spec.ts`, 6 tests green).
+- ✅ **Consent log** — `sms_consents` table (migration `20260622000001`) stores
+  web opt-ins; voice opt-ins recorded too (`source='voice_ivr'`, stores the exact
+  spoken disclosure + how they affirmed). Migration `20260623000001` makes
+  `name` nullable (voice has no name). `VOICE_CONSENT_TEXT`/`CONSENT_TEXT` in
+  `sms-consent.dto.ts` are the single source for spoken text = stored proof =
+  carrier transcript.
+- ✅ **`/messaging` page** updated to quote the new disclosure verbatim and
+  describe the affirmative opt-in (both channels).
+
+**Deploy status:** user deployed the IVR + form + endpoint + first migration
+(2026-06-23). **Still to confirm:** apply migration `20260623000001` (name
+nullable) to prod — if it lags, SMS still sends (consent-row insert is
+best-effort/loud-log only). The `callerConsentedFromGather` extraction + test
+are behavior-identical and **not yet redeployed** (land with next push).
+
+**Pre-resubmit gate:** place one live test call — press 1 → SMS arrives;
+hang up → no SMS. Verifies the `/consent` callback signature validates against
+prod `API_URL`.
+
+**Resubmission materials (drafted in chat 2026-06-22):** consent form URL =
+`https://keeprsteady.com/messaging/opt-in`; a Google-Drive-hosted consent doc
+(both methods + a verbal IVR transcript in Twilio's format) for the "How do end
+users consent" field; screenshots of `/messaging/opt-in` + `/messaging`; use
+case = Customer Care / Conversational.
+
+### Account/auth + sales-role + infra session — 2026-06-23
+
+Batch of fixes + one feature. All typecheck clean; **uncommitted** (land with next push). Several depend on prod config (noted).
+
+- ✅ **Affirmative voice IVR opt-in (A2P)** — caller must press 1 / say "yes" before any SMS; `/consent` callback + `callerConsentedFromGather` (unit-tested). Web `/messaging/opt-in` consent form + `POST /v1/sms-opt-in` + `sms_consents` log (migrations `20260622000001`, `20260623000001` name-nullable). `/messaging` quotes the verbatim disclosure.
+- ✅ **Dark mode removed** — deleted the no-flash script + `ThemeToggle`; site is light-only. (`dark:` utility classes left inert.)
+- ✅ **Terms re-accept latency fix** — `accept-terms` no longer awaits the best-effort operators-mirror POST (cold API was stalling the modal close).
+- ✅ **Forgot/reset password** — `/forgot-password` + `/reset-password` + `/auth/callback` PKCE route; "Forgot password?" on login.
+- ✅ **Signup email-confirm landing** — signup sets `emailRedirectTo=/auth/callback?next=/onboarding` (was falling back to Site URL = home). **Prod Supabase: add `https://keeprsteady.com/auth/callback` to Redirect URLs; set `NEXT_PUBLIC_APP_URL`.**
+- 📝 **(1) Confirmation email still says "BookingBlues"** — hosted Supabase dashboard → Auth → Emails templates (Confirm signup / Reset / Magic Link / Invite). Not in repo.
+- ✅ **#4 Sales role (backend + web)** — `role='sales'` (admin-set), `SalesGuard`, `sales_slack_links` (`20260623000002`), `lead_claims` added to db-types. Endpoints: `POST/DELETE /v1/admin/sales` (promote+link / demote), `GET /v1/sales/leads`, `POST /v1/sales/operators/:id/impersonate` (scoped to claimed leads, audited `sales.impersonate`). Web: `/sales` rep surface + "Login as", `/admin/sales` promote form, middleware routes reps to `/sales`. Tests: SalesGuard + jwt verifier `isSales`.
+- ✅ **#5 admin "login as"** — already existed (`OperatorActions` Impersonate); was only blocked by the Cloudflare issue below.
+- ✅ **Usage metering (conversations / billing cycle)** — count **every conversation row** in the operator's **current billing period** (trial window for trials), display-only. Migration `20260623000003` adds `operators.current_period_start/end`, mirrored from the Stripe subscription webhook (`onSubscriptionUpserted`). `billing/plan-limits.ts` maps plan→limit (solo 80 / crew 500 / fleet 1500, mirrors web brand.ts). `dashboard.service.metrics` returns a `usage` block (falls back to calendar month if period unsynced); dashboard shows a usage meter. **Note:** existing operators show calendar-month fallback until their next subscription webhook populates the period — a one-time Stripe backfill would make it exact immediately.
+
+**🔴 Prod infra — Cloudflare was 403-challenging the API** (`api.keeprsteady.com`, `cf-mitigated: challenge`), breaking ALL dashboard/admin XHR **and every Twilio/Stripe/Google webhook**. Resolved by flipping the `api` DNS record to **grey/DNS-only** (2026-06-23). Verify: `curl -i https://api.keeprsteady.com/v1/health` returns JSON 200, not the CF "Just a moment" page.
+
+**Migrations to apply (prod, in order):** `20260622000001`, `20260623000001`, `20260623000002`, `20260623000003`.
+
+### Manual-test findings — 2026-06-24 (running docs/manual-test-2026-06-23.md on prod)
+Passing so far: §1 dark-mode removed, §2 pricing copy, §3 signup→confirm→onboarding
+(lead lands in Slack new-leads, claim works, pre-verify login blocked, verify link →
+/onboarding, admin mark-verified path works, email is KeeprSteady-branded), §4 forgot/reset
+password (after Resend SMTP fix), §5 terms re-accept latency (2026-06-25: bumped
+TERMS.version → 2026-06-25, every account saw the re-accept popup, Accept landed on
+/dashboard immediately — no hang).
+
+- [x] **✅ RESOLVED 2026-06-24 — Supabase auth emails were hitting "email rate limit
+  exceeded"** (found at §4 forgot-password). Root cause: prod was using Supabase's
+  built-in email sender (~3–4 emails/hr, testing-only); §3 signup confirmations
+  exhausted it. **Fix applied:** configured **custom SMTP → Resend** in Supabase →
+  Auth → SMTP Settings (host `smtp.resend.com`, port 465, user `resend`, password =
+  Resend API key, sender `no-reply@keeprsteady.com` / "KeeprSteady"; `keeprsteady.com`
+  verified in Resend) and raised the Auth email rate limit. Verified: §4 forgot →
+  reset email delivered via Resend, password reset + login with new password worked,
+  old password rejected. All auth emails (confirm/reset/magic-link) now go through
+  Resend, same as app transactional email.
+- [ ] **Rotate the Resend API key** — the sending key was exposed in-session on
+  2026-06-24; rotate in Resend + update `RESEND_API_KEY` on Railway (api) and the
+  Supabase SMTP password. Low urgency (restricted sending-only key).
+
+### §6 findings + fixes — 2026-06-25 (dashboard usage + plan surfacing)
+Running §6 on prod (operator `malhotra.vikas+1`, Zeus Electrical, status=active) surfaced
+that the operator's `plan` / `plan_cadence` / `current_period_*` columns were never
+populated — root cause: the subscription webhook derived `plan` ONLY from
+`sub.metadata.plan` (set once at checkout), so any sub whose metadata is absent/stale
+(legacy, or a Customer-Portal plan switch) keeps `plan = null` forever. Three symptoms,
+all fixed this session (uncommitted):
+- **(A)** `stripe-event-handlers.ts` now derives plan+cadence from Stripe's **active
+  price ID** (source of truth), metadata only as fallback. New
+  `modules/billing/plan-pricing.ts` (`buildPricePlanMap` from the 6 `STRIPE_PRICE_*`
+  env vars + `planCadenceForPrice`), threaded via `HandlerDeps.priceMap` from
+  `stripe-platform.controller.ts`. Unit-tested (`plan-pricing.spec.ts`).
+- **(B)** Backfill script `apps/api/scripts/backfill-operator-plans.mjs` — re-syncs
+  plan/cadence/price/current_period_* from the live Stripe sub for every operator.
+  **Dry-run by default; `--apply` to write.** RUN THIS ON PROD after deploying A so
+  the existing operator's usage meter gets its limit + reset date.
+- **(C)** Onboarding "Subscribe" step description no longer shows trial copy once
+  subscribed — reads "You're on the {Plan} plan — N conversations/mo included…".
+- **(D)** Settings → Subscription now shows the plan inline (name · cadence · convos/mo)
+  via a new `PlanLine`, so you don't have to open the Stripe portal to see the plan.
+The usage-meter UI (dashboard) was already correct — it only hid the limit/bar/reset
+because the API returned `conversations_limit`/`period_end` null. No dashboard change.
+**Status:** typecheck clean, 112 API tests pass. Deploy api+web, then run the backfill.
+
+**§6 re-test — 2026-06-25 (RESOLVED, meter verified live).** After deploying A and running
+the backfill, new signups metered correctly but the three *existing* operators still showed
+no limit. Root cause #2: their Stripe subs were on the **retired "BookingBlues Starter" price**
+(`price_1TUVwJBrlSqhHprpJGztuOPN`, $49/mo) — predates the Solo/Crew/Fleet rename, so it's not in
+any `STRIPE_PRICE_*` env var. The backfill correctly leaves `plan` null for unmapped prices (by
+design — see `plan-pricing.spec.ts:37`), so the meter had no limit. Fix: new script
+**`apps/api/scripts/migrate-legacy-subscriptions.mjs`** (dry-run default, `--apply`) swaps legacy
+subs to the equivalent current price (`LEGACY_MAP`: Starter→Solo monthly, same $49 →
+`proration_behavior:'none'`), then re-run the backfill. Applied on prod: Zeus Electrical (`+1`),
+Vikas Zeus, Medusa HVAC now `plan=solo/monthly`, meter shows **X / 80** with the real reset date.
+(Note: backfill retrieve has Stripe read-after-write lag — run it twice after a migration; the
+2nd pass picks up the new price.) **§6 PASSES.** Both scripts still uncommitted.
+**Open follow-up:** operator `malhotra.vikas+2` points at a deleted Stripe sub
+(`sub_1TWKIh…` → "No such subscription"); can't backfill/migrate — needs resubscribe or sub re-point
+before it meters.
+
+### §8 admin actions — PASS (2026-06-26)
+Impersonate / force-end / release-Twilio verified earlier; the two bugs are fixed + **verified on
+prod**: **Deactivate** now writes `subscription_status='canceled'` directly (was webhook-only, so
+it never flipped for operators with a stale/deleted Stripe sub), and **Cancel Subscription**
+reconciles the DB to canceled and tolerates a deleted Stripe sub (`resource_missing`) instead of
+erroring. Per-operator login-block on deactivate was deliberately NOT added (status-only; operator
+can still log in to a degraded dashboard). Verifier script: `apps/api/scripts/verify-admin-actions.mjs`.
+**No "Reactivate operator" admin action exists** (deactivate is reversible in data but has no undo
+button) — candidate follow-up. **§8 PASSES.**
+
+### §9 voice IVR + consent — PASS (2026-06-26)
+Voice IVR verified on prod: press-1 AND speech ("yes/yeah/sure") capture `sms_consents`
+`source='voice_ivr'`, the opening SMS fires with real Twilio delivery (sids present), the AI
+conversation advances, and default-deny works (random speech like "Oh God" → no consent, call
+ends). Verifier: `apps/api/scripts/verify-consent-flow.mjs`. **Known design facts (not bugs):**
+(a) `sms_consents` is **write-only** — recorded for both web_opt_in + voice_ivr but **read
+nowhere**; it's an A2P evidence record, NOT a send-gate. Real enforcement = the in-call press-1
+gate (`callerConsentedFromGather`) + Twilio's automatic STOP suppression. The `/messaging/opt-in`
+web form just writes the evidence row; nothing reads it / no send is triggered by it. (b) The
+speech matcher accepts the words `okay/ok/sure`, so a polite decline containing one ("no, that's
+okay") would be logged as consent — narrow edge, optional 2-line decline-override offered, deferred.
+**§9 PASSES.**
+
+### §10 webhooks — Twilio PASS; Stripe deferred (2026-06-26)
+(1) **Twilio webhooks through Cloudflare** — ✅ proven implicitly by the §9 live call reaching the
+API (consent + opening SMS only happen if Twilio voice/SMS webhooks pass through the DNS-only
+`api` record). (2) **Stripe subscription-update webhook** (`/webhooks/stripe` → operator update +
+`current_period_*`) — **deferred** to the plan upgrade/downgrade build/test; **not launch-blocking**.
+
+**🐞 Known issue — opening SMS lands in a SEPARATE phone thread (found 2026-06-26, debug later).**
+After a call, the caller sees the first/opening SMS in a different message thread from the
+subsequent bot replies. In code this shouldn't happen: both the opening
+(`twilio-voice.controller` `startConversationFromCall`) and bot replies (`advance.service`
+`sendBotSms`) send via `twilio.sendSms` with `from: operator.twilio_number_e164` — the SAME
+number, and `sendSms` uses an explicit `from`, never the Messaging Service SID. So the split is
+at the Twilio/delivery layer. Debug: compare the actual `From` of the two messages in Twilio
+Console (or via `messages.twilio_message_sid` → Twilio API). Suspects: (a) the number's BB
+**Messaging Service** membership presenting a different sender; (b) the **duplicate-opening**
+behavior (the "Hi! Thanks for calling…" opener was observed sent twice) routing one copy
+differently. Not launch-blocking but hurts the conversation UX.
+
+**Deferred (not launch-blocking), to test later:** subscription Update / upgrade / downgrade
+(ties to the self-serve plan-change feature) and the remaining §8 operator cancel/deactivate edge
+cases (live-sub immediate B1, period-end B2 — only the dead-sub +2 case was verified). Remaining
+big E2E: **§11 full SMS booking + fee loop** (needs Stripe Connect onboarding).
 
 ### Launch-readiness session — 2026-06-17 (while A2P campaign in review)
 
@@ -323,7 +557,7 @@ call:
 ### Slice 9-followup
 - [ ] Dashboard `/conversations/:id` view (full transcript)
 - [ ] Appointments `PATCH /v1/appointments/:id` + cancel UI
-- [ ] Business hours editor (per-day intervals; current settings page only shows timezone)
+- [x] **Business hours editor** (✅ 2026-06-26) — `SettingsPanel` "Business hours" card: per-day open/close toggle + start/end `<input type=time>`, one interval/day, PATCHes `business_hours` to `/v1/operators/me`. Closed days omitted. Unblocks `check_availability` (operators with empty `business_hours: {}` got no slots).
 - [ ] Carrier-specific conditional-forwarding instructions in onboarding step 3 (CLAUDE.md §17 carriers vary)
 - [ ] Marketing pages design polish, real copy, OG images
 
@@ -451,6 +685,48 @@ OSM. Less accurate but acceptable for occasional operator setup.
 - [x] **Duplicate-checkout dedup** (✅ 2026-06-17) — `BillingService.createCheckoutSession` now refuses when the operator has a live subscription (`stripe_subscription_id` set AND status in trialing/active/past_due/incomplete) with a `ConflictError` pointing to the billing portal. Re-subscribe is allowed only from terminal states (canceled / incomplete_expired / none). Prevents the double-bill from clicking "Start Trial" again after subscribing.
 - [x] **Past-due degraded mode** (✅ 2026-06-17) — `AdvanceService.advance` now gates the AI loop on subscription standing. When status is not trialing/active, it sends ONE polite handoff SMS (deduped via a marker substring so repeat caller turns aren't re-notified) and skips booking + fee collection entirely (CLAUDE.md §9.5 Flow A). Voice greeting + opening SMS are unaffected (voice-side).
 - [ ] **Trial reminder emails** — day 3 (us, via pg-boss) + day 6 (us OR `customer.subscription.trial_will_end` via Stripe). Currently the webhook just logs; Slice 10 wires Resend.
+- [ ] **Self-serve plan upgrade / downgrade (NET-NEW, requested 2026-06-25)** — operator
+  changes plan (Solo ⇄ Crew ⇄ Fleet, and/or cadence) from the dashboard. Requirements:
+  **(a) effective immediately** — swap the subscription item to the new price right away
+  (not at period end); **(b) prorated refund of the earlier plan** — credit/refund the
+  unused portion of the current plan for the remainder of the billing period.
+  Implementation notes: Stripe `subscriptions.update` with `proration_behavior:'create_prorations'`
+  (or `'always_invoice'`) computes the proration automatically; a downgrade yields a credit
+  balance — decide refund-to-card vs credit-toward-next-invoice (user asked for a *refund* of
+  the prorated earlier-plan fee, so issue the credit back to the card rather than just holding
+  it). The active price ID already drives `plan`/`plan_cadence` via `planCadenceForPrice` +
+  the `onSubscriptionUpserted` webhook, so the usage meter limit (`conversationLimitForPlan`),
+  per-plan deposit policy, and platform take rate (`plan-policy.ts`) all re-resolve correctly
+  on the next webhook with no extra work. Gate against the duplicate-checkout guard. Surface
+  in Settings → Subscription (alongside the existing `PlanLine`). Mandatory-deposit rule
+  (Fleet) must be re-applied on upgrade *into* Fleet (auto-enable booking fee) and is fine to
+  leave enabled on downgrade.
+
+### Monetization completeness (flagged 2026-06-24 during manual test §2) — VERIFY + BUILD
+Three revenue mechanics to validate end-to-end and, where missing, build:
+- [ ] **Deposit / booking-fee collection works E2E** — Stripe Connect Direct Charge
+  (Slice 8) from `request_payment_link` → Checkout on connected account → caller pays
+  → `payment_intent.succeeded` on `/webhooks/stripe/connect` → `appointments.fee_status='paid'`.
+  Code exists; needs a real prod test (gated on Connect onboarding + the four eligibility
+  gates, CLAUDE.md §9.5).
+- [ ] **Platform fee (our cut) is computed AND collected** — the `application_fee_amount`
+  on each Direct Charge. **Changed 2026-06-25:** the fee is now **per-plan (Solo 10% / Crew 15%
+  / Fleet 20%, `plan-policy.ts`) charged ON TOP of the deposit and paid by the caller** — the
+  caller pays `deposit + fee`, the operator keeps the full deposit, our fee is the
+  `application_fee` (`computeBookingFeeCharge` in `payments/pricing.ts`; legacy/null plans fall
+  back to env `PLATFORM_TAKE_RATE_BPS`). `MIN_PLATFORM_FEE_CENTS` floor $1.00 still applies.
+  Onboarding Wizard + SettingsPanel breakdowns reflect this. **Still to verify in prod:** the
+  amount is computed correctly per booking AND actually lands on the platform Stripe balance
+  (not just the operator's connected account) after a test booking-fee payment.
+- [ ] **AI-conversation metering is accurate** — current meter (2026-06-23) counts every
+  conversation row in the operator's billing period, **display-only**, with a calendar-month
+  fallback until `current_period_*` syncs from the Stripe webhook. Confirm the count matches
+  reality and the period boundaries are correct after a subscription webhook fires.
+- [ ] **Overage conversations: compute → communicate → bill (NET-NEW, likely unbuilt)** —
+  when an operator exceeds their plan's included conversations (Solo 80 / Crew 500 /
+  Fleet 1500), there is currently **no** overage computation, no operator-facing warning,
+  and no billing. Needs: overage rate per plan, metered usage reporting to Stripe (usage
+  records / metered price), threshold alerts to the operator, and dashboard surfacing.
 
 ### Slice 7-followup: pg-boss queue + delayed jobs (deferred from Slice 7)
 - [ ] pg-boss setup, worker registration via `OnModuleInit`
@@ -483,6 +759,7 @@ The bot escalates to a human in Slack and stays bridged. The SMS channel never c
 - [x] Manifest YAML (`docs/slack-app-manifest.yaml`) with bot scopes, slash command, event subscriptions, interactivity URL, OAuth redirect URL
 - [x] Per-operator workspace install flow (`/v1/operators/me/slack/install` → Slack OAuth → `/webhooks/slack/oauth/callback` → encrypted token written to `slack_connections`); state HMAC binds operator id so a third party can't redirect-attack the callback
 - [ ] Channel picker UI on install — MVP uses the `incoming_webhook.channel` from the OAuth grant; explicit picker deferred to follow-up
+- [ ] **Rebrand + re-own the Slack app "BookingBlues" → KeeprSteady (requested 2026-06-25, pre-launch).** The single BB-team Slack app (ADR 0010 single-workspace model — bot token in env, not per-operator OAuth) is still named **"BookingBlues"** and lives under the wrong/legacy Slack account. Move it to a **Slack workspace/account that KeeprSteady owns** and rebrand fully: app name, icon/logo, description, and any user-visible bot display name → **KeeprSteady**. Steps: create the app under the KeeprSteady-owned workspace from `docs/slack-app-manifest.yaml` (update the app name/branding in the manifest first), re-issue `SLACK_BOT_TOKEN` + `SLACK_SIGNING_SECRET` and the channel IDs (`SLACK_DEFAULT_CHANNEL_ID` #hitl, `SLACK_CONVOS_CHANNEL_ID` #convos, `SLACK_CHANNEL_LEADS_ID` #bb-leads), update prod env on Railway, re-point event/interactivity/command request URLs to `api.keeprsteady.com`, and update `docs/SLACK_SETUP.md`. Verify escalations, #convos monitoring, and #bb-leads claim buttons still work end-to-end after the move.
 
 **Bot ↔ Slack bridge**
 - [x] `escalate_to_human` now opens a Slack escalation via `EscalationsService.openEscalation`: parent message (header + context + transcript) + action buttons `[Resume AI] [Mark spam] [Close] [Show number]`, captures `thread_ts` on `escalations`
@@ -520,17 +797,27 @@ The bot escalates to a human in Slack and stays bridged. The SMS channel never c
 - [x] **1-hour reminder cron** (✅ 2026-06-17) — implemented as **HTTP cron**
   (not pg-boss — matches the existing daily-summaries pattern; ADR 0006's
   pg-boss is still unrealized). `modules/reminders/`: `POST
-  /internal/appointment-reminders/run` (`@SkipThrottle`, `X-Cron-Secret`
+  /v1/internal/appointment-reminders/run` (NOTE the `/v1` global prefix — only
+  `webhooks/*` is excluded in main.ts) (`@SkipThrottle`, `X-Cron-Secret`
   guard) → `AppointmentRemindersService.runDue()` sends `appointmentReminderSms`
   to confirmed, upcoming (≤60 min), not-yet-reminded appointments and stamps
   `appointments.reminder_sent_at` (idempotent). Migration
   `20260617000001_appointment_reminder_sent.sql` adds the column + a partial
   index; db-types hand-patched.
-  - **Action required (infra, you):** (1) run the migration on prod
-    (`pnpm db:migrate` / Railway pre-deploy). (2) Add a Railway cron (or external
-    scheduler) hitting `POST https://api.keeprsteady.com/internal/appointment-reminders/run`
-    every ~15 min with header `X-Cron-Secret: <CRON_SHARED_SECRET>`. Until then
-    no reminders fire (same wiring the daily-summary cron needs).
+  - **Infra:** (1) migration — ✅ applied on prod (verified `reminder_sent_at`
+    exists; confirms Railway pre-deploy migrate runs). (2) Railway cron —
+    ✅ **WIRED + VERIFIED 2026-06-18.** A "Reminder-CRON" service (BookingBlues
+    project, `alpine:latest` image, start command
+    `apk add --no-cache curl && curl -fsS -X POST "$API_URL/v1/internal/appointment-reminders/run" -H "X-Cron-Secret: $CRON_SHARED_SECRET"`,
+    schedule `*/5 * * * *`, vars `API_URL` + `CRON_SHARED_SECRET`) fires every
+    5 min and returns `{"window_minutes":60,"attempted":0,...}` (200). Note the
+    `/v1` prefix on the path (only `webhooks/*` is excluded from the global
+    prefix) — earlier 404s were a missing `/v1`, the 403 was a stale pre-secret
+    run. Cron-service gotcha: it needs a **Source image connected + an actual
+    Deploy** — a saved schedule alone shows "No deployments found" and never runs.
+  - **Still TODO:** the **daily-summaries** cron was never wired either (coded
+    but dormant). Same recipe, URL `/v1/internal/daily-summaries/run`, daily
+    schedule (e.g. `0 13 * * *`). Only matters once there are live operators.
 - [ ] Smoke checklist `apps/api/test/SMOKE.md`
 
 ### Slice 11: Observability — Sentry
@@ -703,6 +990,7 @@ operators can't self-promote). Derived at JWT-verify time and surfaced on
 
 **Operational**
 - [x] First admin: `admin_promote(text)` SQL function (SECURITY DEFINER, search_path pinned). Operator runs `select admin_promote('me@bb.com');` once from Supabase SQL editor; subsequent admins use the API
+- [ ] **Global audit-log report (NET-NEW, requested 2026-06-25)** — today audit logs are only viewable per-operator (`GET /v1/admin/operators/:id/audit-log` + the dossier tab). Add an **exhaustive `/admin` audit-log view** across ALL actors/operators: a new `GET /v1/admin/audit-log` (cursor-paginated, newest-first) with filters (action type, actor user, operator, resource type, date range) and a searchable `/admin/audit-log` page. Surfaces every `audit_log` row — admin writes (deactivate, refund, cancel, impersonate, force-end, promote/demote, **sales.release_leads**), escalation actions, calendar/Twilio events. Read-only; respects the same `AdminGuard`. Consider CSV export for compliance.
 - [ ] Audit log retention policy — deferred to Slice 14 (production go-live)
 - [x] Pre-launch hardening — AdminGuard tested for 403 on non-admin, 401 on bad token, true on isAdmin. JwtVerifierService tested for role derivation including the `user_metadata.role='admin'` injection attempt (correctly rejected — only `app_metadata.role` is trusted)
 
@@ -725,7 +1013,18 @@ Migration target when we're ready to leave Railway and serve real traffic.
 
 ## 🪠 Plumbing-vertical pivot (2026-05-13 — captured from user roadmap)
 
-Strategic narrowing: every signup from a non-plumbing trade is a wasted lead until
+> ⚠️ **REVERSED — product is multi-trade Home Services (directive 2026-06-17).**
+> The plumbing-only narrowing below (Slice 16) was undone by the multi-trade
+> reversal (shipped 2026-05-29): all 5 trades — plumbing, HVAC, electrical,
+> roofing, garage door — are live. KeeprSteady is **Home Services, not
+> plumber-only**, at launch. The Slices 17–22 roadmap below is still written in
+> legacy plumber-only language; when building any of them, **generalize copy, AI
+> prompts, job-type lists, and examples across all trades** — do not ship
+> plumber-only wording. (The category-driven system prompt + `SERVICES_BY_CATEGORY`
+> are already multi-trade; match that breadth.) See memory
+> `project_home_services_not_plumber_only`.
+
+Strategic narrowing (historical): every signup from a non-plumbing trade is a wasted lead until
 the product is dialed in. **Hide all non-plumbing categories, double down on the
 plumber wedge, then expand.** No code is being deleted — non-plumbing trades come
 back behind a feature flag once plumbing converts well.
@@ -1007,6 +1306,24 @@ than "leaky faucet, can wait."
       appointment is 90 min. Compute drive time between consecutive jobs on
       the operator's calendar (Google Distance Matrix API) and pad slot
       offerings accordingly so back-to-back jobs don't overrun.
+- [ ] **(2b) Multi-truck capacity-based booking (requested 2026-06-26)** — today
+      availability is **single-resource**: `check_availability` uses the operator's
+      Google Calendar free/busy and `book_appointment` takes an advisory lock on
+      `(operator_id, slot_start)` so **one** appointment can exist per slot. Many
+      operators run **multiple trucks/crews** and can serve **N concurrent jobs**.
+      Change availability + booking to be **capacity-aware**: a slot is bookable
+      while the number of overlapping confirmed appointments is **< truck_count**.
+      **Operator-configurable fields:** `truck_count` (concurrency, default 1) and a
+      **service window / appointment duration** (default **120 min** per the user;
+      note this conflicts with the current 60-min `book_appointment` and the "90-min"
+      copy in (2)/(3) — reconcile to one source). Design considerations: (a) replace
+      the single-slot advisory lock with a **count-overlaps-then-allow-if-<capacity**
+      check (still race-safe via a transaction / `SELECT … FOR UPDATE` or advisory
+      lock on `operator_id`); (b) Google Calendar single-primary free/busy can't model
+      capacity — decide between a **capacity counter from the `appointments` table**
+      (count overlaps in the window) vs **per-truck calendars**; (c) the AI prompt /
+      `check_availability` must surface remaining capacity per window, not just
+      free/busy; (d) drive-time padding (2) interacts with per-truck scheduling.
 - [ ] **(3) Emergency vs urgent vs scheduled routing** — AI classifies each
       call into one of three buckets:
       - *Emergency*: next available 90-min slot today, override standard
@@ -1024,6 +1341,53 @@ than "leaky faucet, can wait."
       parallel — no 60s timeout / fallback. Cost ~$0.0005 per
       AI-classified non-emergency call; $0 when the keyword path
       triggers.
+- [ ] **(17b) Unify the two emergency paths — emergency does BOTH (requested 2026-06-26)** —
+      emergency *detection* (alerts the OPERATOR's phone, `twilio-sms.controller`)
+      and the AI's *escalation* (`escalate_to_human`, prompt-driven → BB #hitl) are
+      decoupled today and use different definitions. **Decision made: on any
+      detected emergency, do BOTH** — alert the operator's phone AND open a #hitl
+      escalation (so a human can engage). Reconcile to one trade-aware definition
+      feeding both. Implementation note: the classifier is fire-and-forget/async and
+      the advance loop runs in parallel — opening the escalation needs to race-safely
+      suppress/await the AI advance (keyword path is sync, AI-classifier path is
+      async). Also tighten the `escalate_to_human` reason enum so emergencies log
+      `emergency`, not `caller_requested`.
+- [ ] **(17c) Collect name + address + validate service area BEFORE any handoff
+      (requested 2026-06-26)** — today the AI can `escalate_to_human` (e.g. on an
+      emergency) without capturing the caller's name/address or running the
+      service-area ZIP check, so the human inherits a thin handoff. Change the
+      prompt + `escalate_to_human` to gather name + address and validate the
+      address is in the operator's service area first. Provide a FAST variant for
+      true emergencies (name + address only) so it doesn't delay the human
+      callback.
+- [ ] **(17d) Slack button to send the payment request when a HUMAN books (requested 2026-06-26)** —
+      HITL + payments gap: the booking fee link only fires from the AI's
+      `book_appointment`. When a human books via the Slack **Booking Action**
+      (`esc_book`) — common after an emergency handoff — **no fee is collected**.
+      Add a Slack **"Send payment request"** button (and/or auto-send on `esc_book`)
+      that texts the caller the booking-fee Checkout link (reuse
+      `createBookingFeeCheckout`, same 4-gate eligibility) so they can pay. Must
+      include the emergency visit fee (17e) when the conversation is an emergency.
+- [ ] **(17e) Emergency visit fee — operator-set, charged on every emergency (requested 2026-06-26)** —
+      a NEW operator setting `emergency_visit_fee_cents` (migration + Settings UI),
+      charged to the caller **in addition to** the booking deposit when the
+      conversation is classified as an emergency (applies to ALL emergencies). Folds
+      into the same Stripe Connect Checkout as the deposit. **Decisions (2026-06-26):**
+      (a) **platform take rate DOES apply** to the emergency fee, same per-plan rate,
+      added on top and charged to the caller — i.e. extend `computeBookingFeeCharge`'s
+      deposit base to `booking_fee_cents + emergency_visit_fee_cents` on emergencies;
+      (b) **auto-applies on ALL emergencies** when an amount is set (no per-call opt-in);
+      (c) **same checkout** as the deposit (one charge). **Partially shipped
+      2026-06-26:** ✅ migration `20260626000001_operator_emergency_visit_fee.sql`
+      (`operators.emergency_visit_fee_cents`) + db-types + DTO + operators.service +
+      Settings UI (field in the Booking fee card) + `computeBookingFeeCharge` now
+      accepts `emergencyFeeCents` (adds to the deposit base, platform take applies;
+      +2 unit tests). ⬜ **The actual charge wiring is deferred to 17d** — emergencies
+      escalate to a human, so the fee gets charged via the human-booking / Slack
+      "Send payment request" flow (which passes the emergency amount). Appointments
+      don't persist an emergency flag today (`urgency` is only embedded in the
+      calendar description), so 17d will also need to flag emergency at charge time.
+      So: operators can CONFIGURE the emergency fee now; it CHARGES once 17d ships.
 - [ ] **(19) Repeat caller recognition** — if a number has called before, AI
       greets by name and references previous job: `Hi [name], welcome back.
       Last time we helped you with [job]. What's going on today?`
@@ -1068,16 +1432,35 @@ formatted enough to forward to a spouse who handles bookkeeping — is sticky.
       faucet replacement", "water heater swap", etc.). AI quotes price
       ranges to callers, who self-select on price before the plumber
       arrives. Huge for caller-side conversion.
-- [ ] **(10) Parts pre-pull / job summary email** — on booking, plumber gets
-      a SMS/email: `Job booked for [time] at [address]. Customer reports:
-      [diagnostic summary]. Likely parts: [list]. Estimated price quoted:
-      $X-Y.` Lets plumber load the truck before driving. "The feature that
-      gets posted about on Reddit."
-- [ ] **(11) Daily summary email upgrade** — current daily summary is
-      basic. Rebuild as a business report: `Yesterday: 4 calls received, 3
-      booked, 1 marked spam, $1,200 in estimated revenue. This week: 18
-      bookings, $5,400. Last week: $4,800. You're up 12%.` Forwardable to
-      spouse / bookkeeper.
+- [ ] **(10) "What you get after every call" — per-booking job summary email**
+      (spec refined 2026-06-25) — on every booking, the operator gets a SMS/email
+      card so they can **load the truck before driving**. Trade-agnostic (home
+      services, not plumbing-only). Card fields, per the agreed mockup:
+      ```
+      New booking · {business_name}
+      Caller   {caller_first_name} · {masked_phone}
+      When     {date} {time} ({duration})
+      Job      {AI job summary — issue + key detail}
+      Likely parts   {AI-inferred parts list for the trade}
+      Quoted   {callout fee} + {repair range $X–$Y}
+      Deposit  {deposit} secured · payout to your Stripe
+      ```
+      Data sources: caller/when/job from the `appointments` + conversation
+      summary; **Likely parts** and **Quoted range** need (9) job-type pricing
+      intelligence + a per-trade parts model (gate this part on (9)); **Deposit
+      secured / payout** from the `payments` row (booking-fee flow). The job-card
+      itself can ship without (9) by omitting parts/quote. "The feature that gets
+      posted about on Reddit."
+- [ ] **(11) Daily summary email to the operator — "how the platform helped your
+      business"** (spec refined 2026-06-25) — a daily digest emailed to the
+      operator: how many calls were caught, how many booked, deposits secured,
+      estimated revenue, and a plain-language "KeeprSteady answered N missed calls
+      you'd otherwise have lost" framing that makes the platform's value obvious.
+      Rebuild the current basic daily summary as a forwardable business report:
+      `Yesterday: 4 calls caught, 3 booked, 1 spam, $1,200 booked revenue, $225
+      deposits secured. This week: 18 bookings, $5,400. Last week: $4,800 — up 12%.`
+      Forwardable to a spouse / bookkeeper. (Distinct from the existing internal
+      `daily-summaries.service`, which is an ops digest — this is operator-facing.)
 - [ ] **(21) Bookings analytics dashboard** — bookings by day of week,
       average job value over time, call-to-booked conversion rate, no-show
       rate, deposit collection rate. Data the plumber has never had access
@@ -1151,6 +1534,36 @@ The investments that compound.
   starts driving signups.
 
 ---
+
+## 🎨 Design / UX backlog
+
+- [ ] **UI revamp — make it dynamic & polished (requested 2026-06-26)** — the
+  current operator dashboard / marketing UI is functional but plain. Revamp for a
+  more modern, dynamic, "amazing" feel — reference: **https://fanmaker.com/**
+  (motion, depth, vibrant visual design). Scope: marketing pages + dashboard +
+  onboarding wizard. Likely a design pass (tokens, motion/transitions, richer
+  components, illustrations/imagery) rather than functional change. Big,
+  cross-cutting; schedule as a dedicated effort, not piecemeal. (Note: dark mode
+  was deliberately removed earlier — keep light-only unless revisited.)
+
+---
+
+## 🏢 Post-launch — internal tooling / back-office
+
+Not part of the missed-call→booking loop; build after launch once revenue ops need it.
+
+- [ ] **SuiteCRM ↔ Square Payroll integration (requested 2026-06-25)** — stand up
+  **SuiteCRM at `crm.keeprsteady.com`** (self-hosted) as the back-office CRM, and
+  integrate it with **Square Payroll**. Goal: run the sales/revenue ops + team
+  payroll off SuiteCRM rather than ad-hoc tooling. Open questions to resolve when
+  scoped: (a) hosting for SuiteCRM (separate box/Railway service + its own
+  MySQL); (b) direction + scope of the Square Payroll sync — e.g. push sales-rep
+  commission/comp data (from `lead_claims` / impersonation activity / closed
+  deals) into Square Payroll, and/or pull payroll status back into CRM; (c) which
+  Square API (Payroll API availability + OAuth/app registration); (d) how this
+  relates to the existing in-app sales-rep model (`sales_slack_links`,
+  `lead_claims`) — likely the CRM is the system of record for comp while the app
+  stays the system of record for claims/impersonation. Net-new; no code today.
 
 ## 🚫 Out of scope (post-MVP) — per CLAUDE.md §16
 
