@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 
+import { Reveal } from '../../components/Reveal';
 import { BRAND, TRIAL_COPY } from '../../lib/brand';
 
 export const metadata: Metadata = {
@@ -14,30 +15,36 @@ export const metadata: Metadata = {
 export default function HomePage(): JSX.Element {
   return (
     <div>
-      {/* ── Hero (full-bleed soft band) ────────────────────────────────── */}
-      <section className="border-b border-slate-200 bg-gradient-to-b from-slate-50 to-white">
-        <div className="max-w-5xl mx-auto px-6 py-16 sm:py-20 grid lg:grid-cols-2 gap-12 items-center">
-          <div>
-            <p className="inline-block text-[11px] font-semibold tracking-[0.18em] uppercase text-accent bg-accent/10 border border-accent/20 rounded-full px-3 py-1 mb-5">
+      {/* ── Hero ───────────────────────────────────────────────────────── */}
+      <section className="relative overflow-hidden border-b border-slate-200/70 bg-gradient-to-b from-accent-soft via-white to-white">
+        {/* Animated brand-purple blobs for ambient depth + motion. */}
+        <div aria-hidden className="blob h-72 w-72 bg-accent-glow/30 -top-16 -left-10 animate-blob" />
+        <div aria-hidden className="blob h-96 w-96 bg-accent-violet/25 -top-24 right-0 animate-blob [animation-delay:4s]" />
+        <div aria-hidden className="blob h-72 w-72 bg-accent/15 top-48 left-1/2 animate-blob [animation-delay:8s]" />
+
+        <div className="relative max-w-6xl mx-auto px-6 py-20 sm:py-28 grid lg:grid-cols-2 gap-12 items-center">
+          <div className="reveal">
+            <p className="inline-flex items-center gap-2 text-[11px] font-semibold tracking-[0.16em] uppercase text-accent bg-white/70 backdrop-blur ring-1 ring-accent/15 rounded-full px-3 py-1.5 mb-6 shadow-sm">
+              <span className="h-1.5 w-1.5 rounded-full bg-accent animate-pulse" />
               AI lead recovery for home service pros
             </p>
-            <h1 className="text-4xl sm:text-5xl font-semibold leading-[1.1] text-ink tracking-tight mb-5">
+            <h1 className="font-display text-4xl sm:text-6xl font-semibold leading-[1.04] text-ink tracking-tight mb-6">
               Home service pros:
               <br />
-              <span className="text-red-600">never miss another emergency call.</span>
+              <span className="text-gradient animate-sheen">never miss another emergency call.</span>
             </h1>
-            <p className="text-lg text-muted leading-relaxed mb-3 max-w-md">
-              <strong className="font-medium text-ink">{BRAND.name} is an AI assistant for
+            <p className="text-lg text-muted leading-relaxed mb-4 max-w-md">
+              <strong className="font-semibold text-ink">{BRAND.name} is an AI assistant for
               home-service businesses.</strong> When you can&apos;t answer a call, it texts the
               caller back within 10 seconds, answers their questions, books the appointment, and
-              adds it to your <strong className="font-medium text-ink">Google Calendar</strong> —
+              adds it to your <strong className="font-semibold text-ink">Google Calendar</strong> —
               so you don&apos;t lose the customer to the next contractor.
             </p>
-            <p className="text-sm text-muted mb-7 max-w-md">
+            <p className="text-sm text-muted mb-8 max-w-md">
               {BRAND.name} connects to your Google Calendar to read your availability and create the
               booking. Works for plumbers, HVAC techs, roofers, electricians, and locksmiths.
             </p>
-            <div className="flex flex-wrap gap-3 mb-3">
+            <div className="flex flex-wrap gap-3 mb-4">
               <CtaPrimary href="/signup">Start free 7-day trial</CtaPrimary>
               <CtaSecondary href={BRAND.demoBookingUrl} external>
                 Book a 15-min demo
@@ -49,8 +56,13 @@ export default function HomePage(): JSX.Element {
             </p>
           </div>
 
-          {/* Inline SMS-conversation mockup (no asset; pure markup) */}
-          <SmsMockup />
+          {/* Inline SMS-conversation mockup — floated over a soft brand glow. */}
+          <div className="relative reveal [animation-delay:150ms]">
+            <div aria-hidden className="absolute -inset-6 bg-brand-sheen opacity-20 blur-3xl rounded-[2.5rem]" />
+            <div className="relative animate-float">
+              <SmsMockup />
+            </div>
+          </div>
         </div>
       </section>
 
@@ -60,27 +72,35 @@ export default function HomePage(): JSX.Element {
           <SectionLabel>What we do</SectionLabel>
           <SectionHeading>Your 24/7 AI dispatcher — without the payroll</SectionHeading>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-8">
-            <FeatureCard
-              title="Instant text-back"
-              body="Responds in <10 seconds. Homeowner feels heard before they dial the next contractor in the search results."
-              icon={<IconBolt />}
-            />
-            <FeatureCard
-              title="Trade-specific vetting"
-              body="Asks the right questions for your trade — leak vs install, system age, storm damage, owner vs tenant, ZIP — so you show up to the right jobs first."
-              icon={<IconClipboard />}
-            />
-            <FeatureCard
-              title="Emergency alerts"
-              body="Burst pipe, gas smell, no AC at 95°, sewage backup — you get an SMS the moment those words come through. Call them back in 30 seconds, win the job."
-              icon={<IconBolt />}
-            />
-            <FeatureCard
-              title="Calendar + deposit"
-              body="Books a 90-min slot on your Google Calendar. Optional non-refundable deposit via Stripe — kills no-shows before you drive out."
-              icon={<IconCalendar />}
-            />
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-8 items-stretch">
+            <Reveal delay={0} className="h-full">
+              <FeatureCard
+                title="Instant text-back"
+                body="Responds in <10 seconds. Homeowner feels heard before they dial the next contractor in the search results."
+                icon={<IconBolt />}
+              />
+            </Reveal>
+            <Reveal delay={90} className="h-full">
+              <FeatureCard
+                title="Trade-specific vetting"
+                body="Asks the right questions for your trade — leak vs install, system age, storm damage, owner vs tenant, ZIP — so you show up to the right jobs first."
+                icon={<IconClipboard />}
+              />
+            </Reveal>
+            <Reveal delay={180} className="h-full">
+              <FeatureCard
+                title="Emergency alerts"
+                body="Burst pipe, gas smell, no AC at 95°, sewage backup — you get an SMS the moment those words come through. Call them back in 30 seconds, win the job."
+                icon={<IconBolt />}
+              />
+            </Reveal>
+            <Reveal delay={270} className="h-full">
+              <FeatureCard
+                title="Calendar + deposit"
+                body="Books a 90-min slot on your Google Calendar. Optional non-refundable deposit via Stripe — kills no-shows before you drive out."
+                icon={<IconCalendar />}
+              />
+            </Reveal>
           </div>
         </div>
       </section>
@@ -116,7 +136,7 @@ export default function HomePage(): JSX.Element {
                 same as yours: book more jobs.
               </p>
             </div>
-            <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
+            <div className="card-lift rounded-2xl border border-slate-200/70 bg-white p-6 shadow-card">
               <p className="text-xs font-semibold tracking-[0.16em] uppercase text-accent mb-3">
                 What you get after every call
               </p>
@@ -238,9 +258,10 @@ function CtaPrimary({ href, children }: { href: string; children: ReactNode }): 
   return (
     <Link
       href={href}
-      className="inline-block rounded-md bg-accent text-white px-6 py-3 text-base font-medium no-underline shadow-sm hover:bg-accent-dark transition-colors"
+      className="group inline-flex items-center gap-2 rounded-xl bg-brand-sheen text-white px-6 py-3.5 text-base font-semibold no-underline shadow-glow transition-all duration-300 hover:-translate-y-0.5 hover:shadow-card-hover"
     >
       {children}
+      <span aria-hidden className="transition-transform duration-300 group-hover:translate-x-0.5">→</span>
     </Link>
   );
 }
@@ -260,7 +281,7 @@ function CtaSecondary({
         href={href}
         target="_blank"
         rel="noopener noreferrer"
-        className="inline-block rounded-md border border-slate-300 bg-white text-ink px-6 py-3 text-base font-medium no-underline hover:border-slate-400 transition-colors"
+        className="inline-flex items-center rounded-xl border border-slate-300 bg-white/80 backdrop-blur text-ink px-6 py-3.5 text-base font-semibold no-underline transition-all duration-300 hover:border-accent/40 hover:-translate-y-0.5 hover:shadow-card"
       >
         {children}
       </a>
@@ -278,14 +299,15 @@ function CtaSecondary({
 
 function SectionLabel({ children }: { children: ReactNode }): JSX.Element {
   return (
-    <p className="text-xs font-semibold tracking-[0.16em] uppercase text-accent mb-3">
+    <span className="inline-flex items-center gap-2 rounded-full bg-accent-soft text-accent text-[11px] font-semibold tracking-[0.16em] uppercase px-3 py-1 mb-4">
+      <span className="h-1.5 w-1.5 rounded-full bg-accent" />
       {children}
-    </p>
+    </span>
   );
 }
 function SectionHeading({ children }: { children: ReactNode }): JSX.Element {
   return (
-    <h2 className="text-2xl sm:text-3xl font-semibold text-ink tracking-tight leading-tight max-w-2xl">
+    <h2 className="font-display text-3xl sm:text-4xl font-semibold text-ink tracking-tight leading-[1.1] max-w-2xl">
       {children}
     </h2>
   );
@@ -301,9 +323,11 @@ function FeatureCard({
   icon: ReactNode;
 }): JSX.Element {
   return (
-    <div className="rounded-lg bg-white border border-slate-200 p-5 hover:border-slate-300 hover:shadow-sm transition-all">
-      <div className="text-accent mb-3">{icon}</div>
-      <p className="text-[15px] font-medium text-ink mb-1.5">{title}</p>
+    <div className="card-lift h-full rounded-2xl bg-white border border-slate-200/70 p-6 shadow-card">
+      <div className="inline-flex h-11 w-11 items-center justify-center rounded-xl bg-brand-sheen text-white mb-4 shadow-sm">
+        {icon}
+      </div>
+      <p className="font-display text-base font-semibold text-ink mb-1.5">{title}</p>
       <p className="text-[13px] text-muted leading-relaxed">{body}</p>
     </div>
   );
@@ -311,20 +335,20 @@ function FeatureCard({
 
 function ProofStat({ num, label }: { num: string; label: string }): JSX.Element {
   return (
-    <div className="rounded-lg bg-white border border-slate-200 p-4 text-center">
-      <span className="block text-3xl font-semibold text-accent tracking-tight">{num}</span>
-      <span className="block text-xs text-muted mt-1">{label}</span>
+    <div className="card-lift rounded-2xl bg-white border border-slate-200/70 p-5 text-center shadow-card">
+      <span className="block font-display text-4xl font-bold text-gradient tracking-tight">{num}</span>
+      <span className="block text-xs text-muted mt-1.5">{label}</span>
     </div>
   );
 }
 
 function Step({ n, title, body }: { n: number; title: string; body: string }): JSX.Element {
   return (
-    <li className="flex flex-col items-start">
-      <div className="w-12 h-12 rounded-full bg-accent text-white text-lg font-semibold flex items-center justify-center mb-4 shadow-sm">
+    <li className="card-lift relative flex flex-col items-start rounded-2xl border border-slate-200/70 bg-white p-6 shadow-card">
+      <div className="w-12 h-12 rounded-2xl bg-brand-sheen text-white font-display text-xl font-bold flex items-center justify-center mb-4 shadow-glow">
         {n}
       </div>
-      <p className="text-lg font-medium text-ink mb-2">{title}</p>
+      <p className="font-display text-lg font-semibold text-ink mb-2">{title}</p>
       <p className="text-sm text-muted leading-relaxed">{body}</p>
     </li>
   );
@@ -464,7 +488,7 @@ function AppointmentEmailMockup(): JSX.Element {
 
 function DashboardMockup(): JSX.Element {
   return (
-    <div className="rounded-lg border border-slate-200 bg-white overflow-hidden shadow-sm">
+    <div className="card-lift rounded-2xl border border-slate-200/70 bg-white overflow-hidden shadow-card">
       <div className="border-b border-slate-200 px-4 py-3 flex items-center gap-2 text-xs text-muted">
         <span className="font-semibold text-ink">Dashboard</span>
         <span>·</span>
@@ -502,7 +526,7 @@ function DashboardMockup(): JSX.Element {
 
 function JobBriefMockup(): JSX.Element {
   return (
-    <div className="rounded-lg border border-slate-200 bg-white overflow-hidden shadow-sm">
+    <div className="card-lift rounded-2xl border border-slate-200/70 bg-white overflow-hidden shadow-card">
       <div className="border-b border-slate-200 px-4 py-3 flex items-center gap-2 text-xs text-muted">
         <span className="font-semibold text-ink">Job brief email</span>
         <span>·</span>

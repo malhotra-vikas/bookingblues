@@ -11,7 +11,7 @@ export function Nav({
   isAdmin?: boolean;
 }): JSX.Element {
   return (
-    <header className="px-6 py-3 border-b border-slate-200 dark:border-slate-800 bg-paper dark:bg-slate-900 flex items-center gap-6">
+    <header className="sticky top-0 z-30 px-6 py-3 border-b border-slate-200/70 dark:border-slate-800 bg-white/70 dark:bg-slate-900/70 backdrop-blur flex items-center gap-6">
       <Link href="/dashboard" className="no-underline" aria-label="KeeprSteady dashboard">
         <Logo />
       </Link>

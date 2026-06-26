@@ -318,13 +318,13 @@ function Stat({
     default: 'bg-slate-300',
     success: 'bg-emerald-500',
     info: 'bg-blue-500',
-    accent: 'bg-accent',
+    accent: 'bg-brand-sheen',
   }[tone];
   return (
-    <div className="relative rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-4 overflow-hidden">
-      <span className={`absolute top-0 left-0 right-0 h-0.5 ${bar}`} />
+    <div className="card-lift relative rounded-2xl border border-slate-200/70 dark:border-slate-700 bg-white/80 dark:bg-slate-900/80 backdrop-blur shadow-card p-5 overflow-hidden">
+      <span className={`absolute top-0 left-0 right-0 h-1 ${bar}`} />
       <div className="text-[11px] text-muted dark:text-slate-400 uppercase tracking-wide font-medium">{label}</div>
-      <div className="text-3xl font-semibold text-ink dark:text-slate-100 tracking-tight mt-1">{value}</div>
+      <div className="font-display text-3xl font-bold text-ink dark:text-slate-100 tracking-tight mt-1">{value}</div>
       {sublabel ? <div className="text-[11px] text-muted dark:text-slate-400 mt-1">{sublabel}</div> : null}
     </div>
   );

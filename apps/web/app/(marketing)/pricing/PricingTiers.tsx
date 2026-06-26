@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useState, type ReactNode } from 'react';
 
+import { Reveal } from '../../../components/Reveal';
 import { PLANS, depositLabel, type Plan } from '../../../lib/brand';
 
 type Cadence = 'monthly' | 'annual';
@@ -27,9 +28,11 @@ export function PricingTiers(): JSX.Element {
         </div>
       </div>
 
-      <div className="mt-8 grid gap-4 lg:grid-cols-3">
-        {PLANS.map((plan) => (
-          <TierCard key={plan.slug} plan={plan} cadence={cadence} />
+      <div className="mt-8 grid gap-5 lg:grid-cols-3 items-stretch">
+        {PLANS.map((plan, i) => (
+          <Reveal key={plan.slug} delay={i * 110} className="h-full">
+            <TierCard plan={plan} cadence={cadence} />
+          </Reveal>
         ))}
       </div>
     </>
@@ -51,9 +54,9 @@ function CadenceTab({
       role="tab"
       aria-selected={active}
       onClick={onClick}
-      className={`rounded-full px-4 py-1.5 transition-colors ${
+      className={`rounded-full px-4 py-1.5 transition-all duration-300 ${
         active
-          ? 'bg-accent text-white shadow-sm'
+          ? 'bg-brand-sheen text-white shadow-glow'
           : 'text-muted hover:text-ink dark:hover:text-slate-100'
       }`}
     >
@@ -70,21 +73,26 @@ function TierCard({ plan, cadence }: { plan: Plan; cadence: Cadence }): JSX.Elem
 
   return (
     <div
-      className={`relative rounded-xl border bg-white dark:bg-slate-900 p-6 flex flex-col ${
-        recommended
-          ? 'border-accent shadow-md ring-1 ring-accent/30'
-          : 'border-slate-200 dark:border-slate-800'
+      className={`card-lift relative h-full rounded-2xl bg-white dark:bg-slate-900 p-6 flex flex-col shadow-card ${
+        recommended ? 'ring-2 ring-accent/50 shadow-glow' : 'border border-slate-200/70 dark:border-slate-800'
       }`}
     >
       {recommended ? (
-        <span className="absolute -top-3 left-1/2 -translate-x-1/2 inline-block rounded-full bg-accent text-white text-[11px] font-semibold tracking-wide uppercase px-3 py-1 shadow-sm">
-          Most popular
-        </span>
+        <>
+          <div aria-hidden className="absolute inset-x-0 top-0 h-1.5 rounded-t-2xl bg-brand-sheen" />
+          <span className="absolute -top-3 left-1/2 -translate-x-1/2 inline-block rounded-full bg-brand-sheen text-white text-[11px] font-semibold tracking-wide uppercase px-3 py-1 shadow-glow">
+            Most popular
+          </span>
+        </>
       ) : null}
 
-      <div className="text-sm uppercase tracking-wide text-muted">{plan.name}</div>
+      <div className="font-display text-sm uppercase tracking-wide text-accent">{plan.name}</div>
       <div className="mt-2 flex items-baseline gap-1">
-        <span className="text-4xl font-semibold text-ink dark:text-slate-100">
+        <span
+          className={`font-display text-4xl font-bold tracking-tight ${
+            recommended ? 'text-gradient' : 'text-ink dark:text-slate-100'
+          }`}
+        >
           ${cadence === 'annual' ? monthlyEquivalent.toLocaleString() : plan.monthlyPriceUsd.toLocaleString()}
         </span>
         <span className="text-base text-muted">/mo</span>
@@ -127,10 +135,10 @@ function TierCard({ plan, cadence }: { plan: Plan; cadence: Cadence }): JSX.Elem
 
       <Link
         href="/signup"
-        className={`mt-6 inline-block text-center rounded-md px-4 py-2.5 text-base font-medium no-underline transition-colors ${
+        className={`mt-6 inline-flex items-center justify-center gap-2 rounded-xl px-4 py-3 text-base font-semibold no-underline transition-all duration-300 hover:-translate-y-0.5 ${
           recommended
-            ? 'bg-accent text-white hover:bg-accent-dark'
-            : 'border border-slate-300 dark:border-slate-700 text-ink dark:text-slate-100 hover:border-slate-400'
+            ? 'bg-brand-sheen text-white shadow-glow hover:shadow-card-hover'
+            : 'border border-slate-300 dark:border-slate-700 text-ink dark:text-slate-100 hover:border-accent/40 hover:bg-accent-soft'
         }`}
       >
         Start free trial
@@ -174,7 +182,7 @@ function Bullet({ children }: { children: ReactNode }): JSX.Element {
         strokeWidth="2.4"
         strokeLinecap="round"
         strokeLinejoin="round"
-        className="text-emerald-600 mt-1 shrink-0"
+        className="text-accent mt-1 shrink-0"
         aria-hidden="true"
       >
         <path d="m5 12 5 5L20 7" />

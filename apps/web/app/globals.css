@@ -11,9 +11,65 @@ body {
   @apply bg-paper text-ink antialiased;
 }
 
+/* Headings use the display font site-wide (marketing + app) for a cohesive,
+   human-designed feel. Per-element size/tracking still come from utilities. */
+@layer base {
+  h1,
+  h2,
+  h3 {
+    @apply font-display;
+  }
+}
+
 a {
   @apply text-accent underline-offset-2;
 }
 a:hover {
   @apply underline;
+}
+
+@layer components {
+  /* Vibrant brand gradient clipped to text — for headline emphasis words. */
+  .text-gradient {
+    @apply bg-brand-sheen bg-clip-text text-transparent;
+    background-size: 200% 200%;
+  }
+
+  /* Frosted panel — depth over the gradient hero without hard edges. */
+  .glass {
+    background: rgba(255, 255, 255, 0.72);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+  }
+
+  /* Soft colored orb used as floating background depth in heroes/CTAs. */
+  .blob {
+    @apply pointer-events-none absolute rounded-full blur-3xl;
+  }
+
+  /* Card that lifts + glows on hover — replaces flat bordered cards. */
+  .card-lift {
+    @apply transition-all duration-300 ease-out hover:-translate-y-1 hover:shadow-card-hover;
+  }
+}
+
+@layer utilities {
+  /* Staggered entrance — add .reveal + an inline animation-delay on children. */
+  .reveal {
+    @apply animate-fade-up;
+  }
+}
+
+/* Respect reduced-motion: kill the ambient + entrance animations. */
+@media (prefers-reduced-motion: reduce) {
+  .animate-fade-up,
+  .animate-float,
+  .animate-blob,
+  .animate-sheen,
+  .reveal {
+    animation: none !important;
+  }
+  .card-lift {
+    @apply transition-none;
+  }
 }

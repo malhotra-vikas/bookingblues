@@ -548,7 +548,7 @@ function Card({
   children: React.ReactNode;
 }): JSX.Element {
   return (
-    <section className="rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 space-y-4">
+    <section className="rounded-2xl border border-slate-200/70 dark:border-slate-800 bg-white/80 dark:bg-slate-900/80 backdrop-blur shadow-card p-6 space-y-4">
       <header>
         <h2 className="text-base font-semibold text-ink dark:text-slate-100">{title}</h2>
         {description ? <p className="text-xs text-muted dark:text-slate-400 mt-0.5">{description}</p> : null}

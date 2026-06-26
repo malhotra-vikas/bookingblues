@@ -1537,14 +1537,27 @@ The investments that compound.
 
 ## 🎨 Design / UX backlog
 
-- [ ] **UI revamp — make it dynamic & polished (requested 2026-06-26)** — the
-  current operator dashboard / marketing UI is functional but plain. Revamp for a
-  more modern, dynamic, "amazing" feel — reference: **https://fanmaker.com/**
-  (motion, depth, vibrant visual design). Scope: marketing pages + dashboard +
-  onboarding wizard. Likely a design pass (tokens, motion/transitions, richer
-  components, illustrations/imagery) rather than functional change. Big,
-  cross-cutting; schedule as a dedicated effort, not piecemeal. (Note: dark mode
-  was deliberately removed earlier — keep light-only unless revisited.)
+- [~] **UI revamp — make it dynamic & polished (requested 2026-06-26, IN PROGRESS)** —
+  reference **https://fanmaker.com/**. **Shipped so far (uncommitted):** design system
+  (Space Grotesk display font + Inter, brand-purple gradient/glow/shadow tokens, `Reveal`
+  scroll-motion, `card-lift`, reduced-motion safety); global display-font headings + a
+  global accented gradient background with ambient blobs on every page; homepage
+  (gradient hero, elevated cards, numbered step cards, scroll reveal); pricing
+  (fanmaker-style tier cards, Crew highlighted); contact cards; shared app primitives
+  (SettingsPanel Card, onboarding StepCard, dashboard Stat tile, Nav glass header,
+  AuthForm gradient button, auth card). **Verified via Playwright screenshots:** the 9
+  public pages look polished + uniform. **NOT visually verified:** the authed pages
+  (dashboard/settings/onboarding/admin) — couldn't screenshot due to a sandbox netns
+  quirk with the auth-session local server; they inherit the shared primitives + globals
+  so should be consistent, but eyeball them after deploy. **Still to do:** per-page polish
+  on dashboard/onboarding/admin buttons + layouts. Keep light-only (dark mode removed).
+- [ ] **Cal.com demo booking — collect name + email + phone (requested 2026-06-26)** —
+  config-only (NOT code): the demo embed (`cal.com/malhotra-vikas/intro-session-30-minutes`)
+  books with just the host's details and no phone. In Cal.com → Event Types → [intro
+  session] → Advanced → Booking questions: keep Name + Email required, **add a required
+  Phone question**, and fix the event title template (was "Host | Host"). Alternative
+  considered: build our own demo-request form on `/contact` (name/email/phone → email
+  sales) for full control — bigger change, deferred unless we want to drop the Cal embed.
 
 ---
 

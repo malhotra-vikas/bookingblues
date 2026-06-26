@@ -183,7 +183,7 @@ export function AuthForm({ mode }: { mode: 'login' | 'signup' }): JSX.Element {
       <button
         type="submit"
         disabled={busy || (mode === 'signup' && !consent)}
-        className="w-full rounded-md bg-accent px-4 py-2.5 text-base font-medium text-white shadow-sm hover:bg-accent-dark transition-colors disabled:opacity-50"
+        className="w-full rounded-xl bg-brand-sheen px-4 py-3 text-base font-semibold text-white shadow-glow transition-all duration-300 hover:-translate-y-0.5 hover:shadow-card-hover disabled:opacity-50 disabled:hover:translate-y-0"
       >
         {busy ? 'Working…' : mode === 'signup' ? 'Create account' : 'Sign in'}
       </button>

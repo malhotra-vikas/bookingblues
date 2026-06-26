@@ -22,7 +22,7 @@ export default async function AdminLayout({ children }: { children: ReactNode })
   if (role !== 'admin') redirect('/dashboard');
 
   return (
-    <div className="min-h-screen flex flex-col bg-paper dark:bg-slate-950">
+    <div className="min-h-screen flex flex-col">
       <div className="bg-red-700 dark:bg-red-900 px-6 py-1.5 text-center text-xs font-semibold uppercase tracking-wide text-white">
         KeeprSteady Admin · Internal use only · Every action is logged
       </div>

@@ -14,11 +14,11 @@ export function StepCard({
   children?: ReactNode;
 }): JSX.Element {
   return (
-    <section className="rounded-md border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4">
+    <section className="rounded-2xl border border-slate-200/70 dark:border-slate-800 bg-white/80 dark:bg-slate-900/80 backdrop-blur shadow-card p-5">
       <header className="flex items-center gap-3">
         <span
-          className={`inline-flex h-6 w-6 items-center justify-center rounded-full text-xs font-semibold ${
-            done ? 'bg-emerald-600 text-white' : 'bg-slate-200 text-ink dark:bg-slate-700 dark:text-slate-200'
+          className={`inline-flex h-7 w-7 items-center justify-center rounded-lg text-xs font-bold ${
+            done ? 'bg-brand-sheen text-white shadow-sm' : 'bg-accent-soft text-accent'
           }`}
           aria-hidden
         >

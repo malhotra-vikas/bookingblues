@@ -7,7 +7,7 @@ import { BRAND, TRIAL_COPY } from '../../lib/brand';
 
 export default function AuthLayout({ children }: { children: ReactNode }): JSX.Element {
   return (
-    <main className="min-h-screen flex flex-col bg-gradient-to-b from-slate-50 to-white dark:from-slate-950 dark:to-slate-900">
+    <main className="min-h-screen flex flex-col">
       <header className="px-6 py-4 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
         <div className="max-w-5xl mx-auto flex items-center gap-6">
           <Link href="/" className="no-underline" aria-label={`${BRAND.name} home`}>
@@ -54,7 +54,7 @@ export default function AuthLayout({ children }: { children: ReactNode }): JSX.E
 
           {/* Form card */}
           <section className="w-full max-w-md mx-auto lg:mx-0">
-            <div className="rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm p-7">
+            <div className="rounded-2xl bg-white/80 dark:bg-slate-900/80 backdrop-blur border border-slate-200/70 dark:border-slate-800 shadow-card p-7">
               {children}
             </div>
           </section>

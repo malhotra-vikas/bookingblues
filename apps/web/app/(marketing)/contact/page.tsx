@@ -16,7 +16,7 @@ export default function ContactPage(): JSX.Element {
         We typically reply within one business day. Faster: pick a slot below for a 15-minute demo.
       </p>
 
-      <section className="mt-10 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6">
+      <section className="mt-10 rounded-2xl border border-slate-200/70 dark:border-slate-800 bg-white/80 dark:bg-slate-900/80 backdrop-blur shadow-card p-6">
         <h2 className="text-lg font-semibold text-ink dark:text-slate-100">Book a 15-min demo</h2>
         <p className="mt-1 text-sm text-muted">
           Live walkthrough of the AI booking flow, the dashboard, and the deposit setup. No card
@@ -51,7 +51,7 @@ export default function ContactPage(): JSX.Element {
       </section>
 
       <section className="mt-10 grid sm:grid-cols-2 gap-4">
-        <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6">
+        <div className="card-lift rounded-2xl border border-slate-200/70 dark:border-slate-800 bg-white/80 dark:bg-slate-900/80 backdrop-blur shadow-card p-6">
           <p className="text-xs font-semibold tracking-[0.16em] uppercase text-accent mb-2">
             Sales &amp; support
           </p>
@@ -66,7 +66,7 @@ export default function ContactPage(): JSX.Element {
             day.
           </p>
         </div>
-        <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6">
+        <div className="card-lift rounded-2xl border border-slate-200/70 dark:border-slate-800 bg-white/80 dark:bg-slate-900/80 backdrop-blur shadow-card p-6">
           <p className="text-xs font-semibold tracking-[0.16em] uppercase text-accent mb-2">
             Already a subscriber?
           </p>
