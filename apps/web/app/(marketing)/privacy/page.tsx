@@ -107,6 +107,50 @@ export default function PrivacyPage(): JSX.Element {
         </p>
       </Section>
 
+      <Section title="4a. Google User Data — Limited Use">
+        <p>
+          When a Subscriber connects their Google Calendar, {BRAND.name} requests the
+          <code> calendar.readonly</code> scope (to read free/busy availability so the assistant can
+          propose open appointment times) and the <code>calendar.events</code> scope (to create the
+          confirmed appointment as a calendar event). We request no other Google scopes.
+        </p>
+        <p>
+          {BRAND.name}&apos;s use and transfer of information received from Google APIs to any other
+          app will adhere to the{' '}
+          <a
+            href="https://developers.google.com/terms/api-services-user-data-policy"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Google API Services User Data Policy
+          </a>
+          , including the Limited Use requirements. Specifically:
+        </p>
+        <ul>
+          <li>
+            We use Google Calendar data only to provide and improve the user-facing booking features
+            described in this policy (reading availability and writing appointments).
+          </li>
+          <li>
+            We do not transfer Google user data to third parties except as necessary to provide or
+            improve those features, to comply with applicable law, or as part of a merger or
+            acquisition.
+          </li>
+          <li>We do not use Google user data for advertising, and we do not sell it.</li>
+          <li>
+            We do not allow humans to read Google user data unless we first obtain the Subscriber&apos;s
+            consent for specific data, it is necessary for security purposes (such as investigating
+            abuse), it is required to comply with applicable law, or the data is aggregated and
+            anonymized for internal operations.
+          </li>
+          <li>
+            Google OAuth refresh tokens are encrypted at rest (AES-256-GCM). A Subscriber may revoke
+            access at any time from their {BRAND.name} settings or their Google Account permissions
+            page, after which we delete the stored token.
+          </li>
+        </ul>
+      </Section>
+
       <Section title="5. Third-Party Service Providers">
         <p>
           {BRAND.name} uses the following sub-processors. Each has their own privacy policy:
