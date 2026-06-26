@@ -17,6 +17,7 @@ interface Operator {
   google_calendar_id: string | null;
   booking_fee_enabled: boolean;
   booking_fee_cents: number | null;
+  business_hours: Record<string, { start: string; end: string }[]> | null;
   subscription_status: string | null;
   plan: string | null;
   plan_cadence: string | null;
@@ -24,6 +25,34 @@ interface Operator {
   stripe_connect_account_id: string | null;
   stripe_connect_charges_enabled: boolean;
   stripe_connect_payouts_enabled: boolean;
+}
+
+const DAYS: ReadonlyArray<{ key: string; label: string }> = [
+  { key: 'mon', label: 'Monday' },
+  { key: 'tue', label: 'Tuesday' },
+  { key: 'wed', label: 'Wednesday' },
+  { key: 'thu', label: 'Thursday' },
+  { key: 'fri', label: 'Friday' },
+  { key: 'sat', label: 'Saturday' },
+  { key: 'sun', label: 'Sunday' },
+];
+
+interface DayHours {
+  open: boolean;
+  start: string;
+  end: string;
+}
+
+/** Seed the per-day editor from the stored business_hours (first interval/day). */
+function initDayHours(bh: Operator['business_hours']): Record<string, DayHours> {
+  const out: Record<string, DayHours> = {};
+  for (const { key } of DAYS) {
+    const interval = bh?.[key]?.[0];
+    out[key] = interval
+      ? { open: true, start: interval.start, end: interval.end }
+      : { open: false, start: '09:00', end: '17:00' };
+  }
+  return out;
 }
 
 async function authedFetch(path: string, init?: RequestInit): Promise<Response> {
@@ -62,6 +91,13 @@ export function SettingsPanel({ operator }: { operator: Operator }): JSX.Element
   const [feeDollars, setFeeDollars] = useState(
     operator.booking_fee_cents != null ? (operator.booking_fee_cents / 100).toFixed(2) : '',
   );
+  const [hours, setHours] = useState<Record<string, DayHours>>(() =>
+    initDayHours(operator.business_hours),
+  );
+  const hoursInvalid = DAYS.some(({ key }) => {
+    const d = hours[key];
+    return d?.open && !(d.start < d.end);
+  });
 
   // Per-plan take rate (Solo 10% / Crew 15% / Fleet 20%), charged ON TOP of the
   // deposit and paid by the customer. Mirrors computeBookingFeeCharge on the API.
@@ -120,6 +156,32 @@ export function SettingsPanel({ operator }: { operator: Operator }): JSX.Element
       setInfo('Saved.');
       router.refresh();
     });
+  }
+
+  async function saveHours(): Promise<void> {
+    await run('save-hours', async () => {
+      // Build business_hours: each open day → one [{start,end}] interval; closed
+      // days are omitted. Matches BusinessHoursSchema on the API.
+      const business_hours: Record<string, { start: string; end: string }[]> = {};
+      for (const { key } of DAYS) {
+        const d = hours[key];
+        if (d?.open) business_hours[key] = [{ start: d.start, end: d.end }];
+      }
+      const res = await authedFetch('/v1/operators/me', {
+        method: 'PATCH',
+        body: JSON.stringify({ business_hours }),
+      });
+      if (!res.ok) {
+        const detail = await res.json().catch(() => ({}));
+        throw new Error(detail.detail ?? `Save failed (${res.status})`);
+      }
+      setInfo('Business hours saved.');
+      router.refresh();
+    });
+  }
+
+  function setDay(key: string, patch: Partial<DayHours>): void {
+    setHours((prev) => ({ ...prev, [key]: { ...prev[key]!, ...patch } }));
   }
 
   async function startStripeConnect(): Promise<void> {
@@ -182,6 +244,54 @@ export function SettingsPanel({ operator }: { operator: Operator }): JSX.Element
           <div className="text-sm font-mono text-muted dark:text-slate-300">{formatE164(operator.personal_phone_e164)}</div>
         </Field>
         <SaveButton busy={busy === 'save'} onClick={saveProfile} />
+      </Card>
+
+      {/* ── Business hours ───────────────────────────────────────────── */}
+      <Card
+        title="Business hours"
+        description="When the AI may book appointments. Callers are only offered slots inside these hours (in your timezone)."
+      >
+        <div className="space-y-2">
+          {DAYS.map(({ key, label }) => {
+            const d = hours[key]!;
+            const invalid = d.open && !(d.start < d.end);
+            return (
+              <div key={key} className="flex items-center gap-3 text-sm">
+                <label className="flex items-center gap-2 w-32 shrink-0">
+                  <input
+                    type="checkbox"
+                    checked={d.open}
+                    onChange={(e) => setDay(key, { open: e.target.checked })}
+                  />
+                  <span className="text-ink dark:text-slate-100">{label}</span>
+                </label>
+                {d.open ? (
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="time"
+                      value={d.start}
+                      onChange={(e) => setDay(key, { start: e.target.value })}
+                      className="rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 dark:text-slate-100 px-2 py-1 text-sm"
+                    />
+                    <span className="text-muted dark:text-slate-400">to</span>
+                    <input
+                      type="time"
+                      value={d.end}
+                      onChange={(e) => setDay(key, { end: e.target.value })}
+                      className="rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 dark:text-slate-100 px-2 py-1 text-sm"
+                    />
+                    {invalid ? (
+                      <span className="text-xs text-red-600">end must be after start</span>
+                    ) : null}
+                  </div>
+                ) : (
+                  <span className="text-xs text-muted dark:text-slate-400">Closed</span>
+                )}
+              </div>
+            );
+          })}
+        </div>
+        <SaveButton busy={busy === 'save-hours'} onClick={saveHours} disabled={hoursInvalid} />
       </Card>
 
       {/* ── Booking fee + economics ──────────────────────────────────── */}
@@ -412,12 +522,20 @@ function Field({
   );
 }
 
-function SaveButton({ busy, onClick }: { busy: boolean; onClick: () => void }): JSX.Element {
+function SaveButton({
+  busy,
+  onClick,
+  disabled,
+}: {
+  busy: boolean;
+  onClick: () => void;
+  disabled?: boolean;
+}): JSX.Element {
   return (
     <button
       type="button"
       onClick={onClick}
-      disabled={busy}
+      disabled={busy || disabled}
       className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-white disabled:opacity-50 self-start"
     >
       {busy ? 'Saving…' : 'Save'}
