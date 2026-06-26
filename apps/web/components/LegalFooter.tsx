@@ -17,9 +17,10 @@ export function LegalFooter({ variant }: { variant: 'marketing' | 'auth' }): JSX
           condensed ? 'max-w-3xl' : 'max-w-4xl'
         }`}
       >
-        {BRAND.name} is a service operated by {BRAND.legalEntity}. {BRAND.name} automates SMS
-        responses to missed calls on behalf of home service
-        contractors. The AI may not always respond accurately — every conversation is monitored
+        {BRAND.name} is a service operated by {BRAND.legalEntity}. {BRAND.name} is an AI assistant
+        for home-service businesses: when a contractor can&apos;t answer a call, it texts the caller
+        back, answers their questions, books the appointment, and adds it to the contractor&apos;s
+        Google Calendar. The AI may not always respond accurately — every conversation is monitored
         by our team, but human review is not guaranteed before delivery. Contractors are solely
         responsible for the appointments booked and deposits collected through this platform.
         {' '}

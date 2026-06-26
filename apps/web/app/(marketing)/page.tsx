@@ -5,9 +5,9 @@ import type { ReactNode } from 'react';
 import { BRAND, TRIAL_COPY } from '../../lib/brand';
 
 export const metadata: Metadata = {
-  title: `${BRAND.name} — AI Dispatcher for Home Service Pros | Never Miss a Job`,
+  title: `${BRAND.name} — AI booking assistant for home-service businesses`,
   description:
-    'AI books your missed calls by text in under 10 seconds. Built for plumbers, HVAC, roofers, and electricians. 7-day free trial.',
+    `${BRAND.name} is an AI assistant for home-service businesses. When you can't answer a call, it texts the caller back, books the appointment, and adds it to your Google Calendar. Built for plumbers, HVAC, roofers, and electricians. Free 7-day trial.`,
   alternates: { canonical: '/' },
 };
 
