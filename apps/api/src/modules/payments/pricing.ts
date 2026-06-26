@@ -53,6 +53,12 @@ export function computeApplicationFee(input: PricingInput): PricingResult {
 export interface BookingFeeChargeInput {
   /** The operator's deposit (what they want to keep), in cents. */
   readonly depositCents: number;
+  /**
+   * Optional emergency visit fee (#17e) added to the deposit base on emergency
+   * bookings. The platform take rate applies to it the same as the deposit, and
+   * the operator keeps it. Defaults to 0 (non-emergency).
+   */
+  readonly emergencyFeeCents?: number;
   /** Per-plan platform take rate in bps (10% = 1000). */
   readonly takeRateBps: number;
   readonly minPlatformFeeCents: number;
@@ -77,15 +83,18 @@ export interface BookingFeeChargeResult {
  * below `charge − processing` for any deposit at or above the min fee.
  */
 export function computeBookingFeeCharge(input: BookingFeeChargeInput): BookingFeeChargeResult {
-  if (input.depositCents <= 0) {
+  // The operator's net base = deposit + emergency surcharge (both kept by the
+  // operator). The platform take is computed on that combined base, on top.
+  const baseCents = input.depositCents + Math.max(0, input.emergencyFeeCents ?? 0);
+  if (baseCents <= 0) {
     return { chargeCents: 0, applicationFeeCents: 0 };
   }
   const platformFeeCents = Math.max(
-    Math.floor((input.depositCents * input.takeRateBps) / 10_000),
+    Math.floor((baseCents * input.takeRateBps) / 10_000),
     input.minPlatformFeeCents,
   );
   return {
-    chargeCents: input.depositCents + platformFeeCents,
+    chargeCents: baseCents + platformFeeCents,
     applicationFeeCents: platformFeeCents,
   };
 }

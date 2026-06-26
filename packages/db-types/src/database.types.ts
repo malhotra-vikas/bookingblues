@@ -473,6 +473,7 @@ export type Database = {
         Row: {
           booking_fee_cents: number | null;
           booking_fee_enabled: boolean;
+          emergency_visit_fee_cents: number | null;
           business_hours: Json;
           business_name: string;
           category: string | null;
@@ -510,6 +511,7 @@ export type Database = {
         Insert: {
           booking_fee_cents?: number | null;
           booking_fee_enabled?: boolean;
+          emergency_visit_fee_cents?: number | null;
           business_hours?: Json;
           business_name: string;
           category?: string | null;
@@ -547,6 +549,7 @@ export type Database = {
         Update: {
           booking_fee_cents?: number | null;
           booking_fee_enabled?: boolean;
+          emergency_visit_fee_cents?: number | null;
           business_hours?: Json;
           business_name?: string;
           category?: string | null;

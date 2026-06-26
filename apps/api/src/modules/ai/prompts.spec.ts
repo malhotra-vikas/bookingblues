@@ -15,6 +15,7 @@ const baseOperator: Tables<'operators'> = {
   google_calendar_connected_at: null,
   booking_fee_enabled: false,
   booking_fee_cents: null,
+  emergency_visit_fee_cents: null,
   stripe_customer_id: null,
   stripe_subscription_id: null,
   stripe_price_id: null,

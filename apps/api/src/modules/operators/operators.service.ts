@@ -127,6 +127,9 @@ export class OperatorsService {
       update.booking_fee_enabled = patch.booking_fee_enabled;
     }
     if (patch.booking_fee_cents !== undefined) update.booking_fee_cents = patch.booking_fee_cents;
+    if (patch.emergency_visit_fee_cents !== undefined) {
+      update.emergency_visit_fee_cents = patch.emergency_visit_fee_cents;
+    }
     if (patch.service_zip_codes !== undefined) {
       // De-dupe + sort for stable storage and easier diffing.
       update.service_zip_codes = [...new Set(patch.service_zip_codes)].sort();

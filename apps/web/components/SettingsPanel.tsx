@@ -17,6 +17,7 @@ interface Operator {
   google_calendar_id: string | null;
   booking_fee_enabled: boolean;
   booking_fee_cents: number | null;
+  emergency_visit_fee_cents: number | null;
   business_hours: Record<string, { start: string; end: string }[]> | null;
   subscription_status: string | null;
   plan: string | null;
@@ -91,6 +92,11 @@ export function SettingsPanel({ operator }: { operator: Operator }): JSX.Element
   const [feeDollars, setFeeDollars] = useState(
     operator.booking_fee_cents != null ? (operator.booking_fee_cents / 100).toFixed(2) : '',
   );
+  const [emergencyFeeDollars, setEmergencyFeeDollars] = useState(
+    operator.emergency_visit_fee_cents != null
+      ? (operator.emergency_visit_fee_cents / 100).toFixed(2)
+      : '',
+  );
   const [hours, setHours] = useState<Record<string, DayHours>>(() =>
     initDayHours(operator.business_hours),
   );
@@ -140,6 +146,9 @@ export function SettingsPanel({ operator }: { operator: Operator }): JSX.Element
   async function saveProfile(): Promise<void> {
     await run('save', async () => {
       const cents = feeEnabled ? feeCents : null;
+      const emergencyCents = feeEnabled
+        ? Math.max(0, Math.round(Number(emergencyFeeDollars || '0') * 100))
+        : null;
       const res = await authedFetch('/v1/operators/me', {
         method: 'PATCH',
         body: JSON.stringify({
@@ -147,6 +156,7 @@ export function SettingsPanel({ operator }: { operator: Operator }): JSX.Element
           timezone,
           booking_fee_enabled: feeEnabled,
           ...(cents != null ? { booking_fee_cents: cents } : {}),
+          emergency_visit_fee_cents: emergencyCents,
         }),
       });
       if (!res.ok) {
@@ -318,7 +328,7 @@ export function SettingsPanel({ operator }: { operator: Operator }): JSX.Element
         </label>
         {feeEnabled && (
           <>
-            <Field label="Amount (USD)">
+            <Field label="Deposit amount (USD)">
               <input
                 type="number"
                 inputMode="decimal"
@@ -328,6 +338,21 @@ export function SettingsPanel({ operator }: { operator: Operator }): JSX.Element
                 onChange={(e) => setFeeDollars(e.target.value)}
                 className="rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 dark:text-slate-100 px-3 py-2 text-sm w-32"
               />
+            </Field>
+            <Field label="Emergency visit fee (USD, optional)">
+              <input
+                type="number"
+                inputMode="decimal"
+                step="0.01"
+                min="0"
+                value={emergencyFeeDollars}
+                onChange={(e) => setEmergencyFeeDollars(e.target.value)}
+                className="rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 dark:text-slate-100 px-3 py-2 text-sm w-32"
+              />
+              <p className="mt-1 text-xs text-muted dark:text-slate-400">
+                Charged to the caller in addition to the deposit on emergency jobs (active
+                flooding, gas, etc.). Same platform fee applies. Leave blank for none.
+              </p>
             </Field>
             {feeCents > 0 && (
               <div className="rounded-md bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 p-3 text-sm">

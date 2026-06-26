@@ -92,4 +92,28 @@ describe('computeBookingFeeCharge (fee on top, paid by caller)', () => {
     expect(computeBookingFeeCharge({ depositCents: 0, takeRateBps: 1000, minPlatformFeeCents: 100 }).chargeCents).toBe(0);
     expect(computeBookingFeeCharge({ depositCents: -10, takeRateBps: 1000, minPlatformFeeCents: 100 }).applicationFeeCents).toBe(0);
   });
+
+  it('emergency fee adds to the deposit base; platform take applies to the sum', () => {
+    // Solo 10%: $50 deposit + $40 emergency = $90 base. Fee = $9, caller pays $99.
+    const r = computeBookingFeeCharge({
+      depositCents: 5000,
+      emergencyFeeCents: 4000,
+      takeRateBps: 1000,
+      minPlatformFeeCents: 100,
+    });
+    expect(r.applicationFeeCents).toBe(900);
+    expect(r.chargeCents).toBe(9900);
+  });
+
+  it('charges the emergency fee even when there is no deposit', () => {
+    // $0 deposit + $40 emergency, Fleet 20% = $8 fee, caller pays $48.
+    const r = computeBookingFeeCharge({
+      depositCents: 0,
+      emergencyFeeCents: 4000,
+      takeRateBps: 2000,
+      minPlatformFeeCents: 100,
+    });
+    expect(r.applicationFeeCents).toBe(800);
+    expect(r.chargeCents).toBe(4800);
+  });
 });

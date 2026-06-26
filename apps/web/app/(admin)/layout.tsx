@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import type { ReactNode } from 'react';
 
+import { LegalFooter } from '../../components/LegalFooter';
 import { SignOutButton } from '../../components/SignOutButton';
 import { getSupabaseServerClient } from '../../lib/supabase/server';
 
@@ -55,6 +56,11 @@ export default async function AdminLayout({ children }: { children: ReactNode })
         </div>
       </header>
       <main className="flex-1 px-6 py-6 max-w-6xl w-full mx-auto">{children}</main>
+      <footer className="border-t border-slate-200 dark:border-slate-800 mt-12">
+        <div className="max-w-6xl mx-auto px-6 py-8">
+          <LegalFooter variant="marketing" />
+        </div>
+      </footer>
     </div>
   );
 }
