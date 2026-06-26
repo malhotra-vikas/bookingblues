@@ -9,7 +9,12 @@ import { SupabaseService } from '../../common/supabase/supabase.service';
 import { TwilioService } from '../../common/twilio/twilio.service';
 import { CalendarService } from '../calendar/calendar.service';
 import { ConversationsService } from '../conversations/conversations.service';
-import { DEGRADED_HANDOFF_MARKER, degradedHandoffSms } from '../conversations/templates/sms-templates';
+import {
+  AI_UNAVAILABLE_MARKER,
+  DEGRADED_HANDOFF_MARKER,
+  aiUnavailableFallbackSms,
+  degradedHandoffSms,
+} from '../conversations/templates/sms-templates';
 import { BookingsService } from '../appointments/bookings.service';
 import { PaymentsService } from '../payments/payments.service';
 import { EscalationsService } from '../slack/escalations.service';
@@ -299,6 +304,11 @@ export class AdvanceService {
         .update({ status: 'awaiting_caller' })
         .eq('id', conversation.id);
     }
+    } catch (err) {
+      // The AI advance failed (e.g. OpenAI outage / quota / timeout). Never leave
+      // the caller in silence: send one fallback SMS and alert the team in the
+      // #convos thread to follow up manually. Then swallow — we've handled it.
+      await this.handleAdvanceFailure(operator, conversation, callerPhoneE164, err);
     } finally {
       // Release the cross-replica lock. Best-effort — if this fails the
       // TTL (30s) will release it eventually.
@@ -309,6 +319,80 @@ export class AdvanceService {
         .update({ advance_locked_until: null } as any)
         .eq('id', conversation.id);
     }
+  }
+
+  /**
+   * Graceful degradation when the AI advance throws: send the caller a single
+   * fallback SMS (deduped on a stable marker so an outage doesn't spam them) and
+   * post an alert into the conversation's #convos thread so a human follows up.
+   * Each sub-step is independently guarded — a Slack failure must not block the
+   * SMS, and vice-versa.
+   */
+  private async handleAdvanceFailure(
+    operator: OperatorRow,
+    conversation: ConversationRow,
+    callerPhoneE164: string,
+    err: unknown,
+  ): Promise<void> {
+    const reason = err instanceof Error ? err.message : String(err);
+    this.logger.error(
+      { operatorId: operator.id, conversationId: conversation.id, err: reason },
+      'advance failed — sending caller fallback SMS + #convos alert',
+    );
+
+    const alreadyHandled = await this.aiFallbackAlreadySent(conversation.id);
+
+    if (!alreadyHandled) {
+      const fromNumber = operator.twilio_number_e164;
+      if (fromNumber) {
+        try {
+          await this.sendBotSms(
+            fromNumber,
+            callerPhoneE164,
+            conversation.id,
+            aiUnavailableFallbackSms(operator.business_name),
+          );
+        } catch (smsErr) {
+          this.logger.error(
+            { conversationId: conversation.id, err: (smsErr as Error).message },
+            'advance-failure fallback SMS send failed',
+          );
+        }
+      }
+
+      try {
+        await this.escalations.postConversationThreadAlert({
+          operator,
+          conversation,
+          text:
+            `:rotating_light: *AI failed to respond — please follow up with this caller.* ` +
+            `A fallback text was sent. Error: \`${reason.slice(0, 160)}\``,
+        });
+      } catch (slackErr) {
+        this.logger.error(
+          { conversationId: conversation.id, err: (slackErr as Error).message },
+          'advance-failure Slack alert failed',
+        );
+      }
+    }
+  }
+
+  /**
+   * Has the AI-unavailable fallback already been sent on this conversation?
+   * Dedupes both the caller SMS and the #convos alert so repeated caller turns
+   * during an outage produce one fallback + one alert, not a storm.
+   */
+  private async aiFallbackAlreadySent(conversationId: string): Promise<boolean> {
+    const { data } = await this.supabase
+      .db()
+      .from('messages')
+      .select('id')
+      .eq('conversation_id', conversationId)
+      .eq('role', 'bot')
+      .ilike('body', `%${AI_UNAVAILABLE_MARKER}%`)
+      .limit(1)
+      .maybeSingle();
+    return Boolean(data);
   }
 
   // ── helpers ──────────────────────────────────────────────────────────────

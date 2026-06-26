@@ -55,6 +55,25 @@ export function degradedHandoffSms(businessName: string): string {
   );
 }
 
+/**
+ * Stable substring in the AI-unavailable fallback, used to dedupe re-sends so a
+ * caller texting repeatedly during an OpenAI outage gets ONE fallback, not many.
+ * Keep in sync with `aiUnavailableFallbackSms`.
+ */
+export const AI_UNAVAILABLE_MARKER = 'someone will text you back shortly';
+
+/**
+ * Fallback sent when the AI advance fails (e.g. OpenAI error/outage) so the
+ * caller is never left in silence. The team is alerted in the #convos thread to
+ * follow up manually.
+ */
+export function aiUnavailableFallbackSms(businessName: string): string {
+  return (
+    `Thanks for contacting ${businessName}! We've got your message and ` +
+    `${AI_UNAVAILABLE_MARKER}.`
+  );
+}
+
 /** Booking-fee payment link, sent by the request_payment_link tool. */
 export function paymentLinkSms(checkoutUrl: string): string {
   return `Reserve your slot with the booking fee here: ${checkoutUrl}`;

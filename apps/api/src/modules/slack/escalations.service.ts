@@ -124,6 +124,31 @@ export class EscalationsService {
   }
 
   /**
+   * Post an operational alert into the conversation's #convos monitoring thread
+   * (e.g. the AI advance failed and a human needs to follow up). Ensures the
+   * thread exists first. Best-effort — Slack failures are logged, never thrown.
+   */
+  async postConversationThreadAlert(args: {
+    operator: OperatorRow;
+    conversation: ConversationRow;
+    text: string;
+  }): Promise<void> {
+    const { channelId, threadTs } = await this.ensureConversationThread({
+      operator: args.operator,
+      conversation: args.conversation,
+    });
+    if (!channelId || !threadTs) return;
+    try {
+      await this.slackApi.postMessage({ channel: channelId, threadTs, text: args.text });
+    } catch (err) {
+      this.logger.warn(
+        { conversationId: args.conversation.id, err: (err as Error).message },
+        'postConversationThreadAlert failed (non-fatal)',
+      );
+    }
+  }
+
+  /**
    * Echo a caller's inbound SMS into the conversation's monitoring thread.
    * Always runs — pre- and post-escalation. Replaces the old
    * forwardCallerSmsToSlack which was gated on the conversation being in
