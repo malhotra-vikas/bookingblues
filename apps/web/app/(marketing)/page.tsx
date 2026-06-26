@@ -27,12 +27,15 @@ export default function HomePage(): JSX.Element {
               <span className="text-red-600">never miss another emergency call.</span>
             </h1>
             <p className="text-lg text-muted leading-relaxed mb-3 max-w-md">
-              AI books your missed calls by text while you&apos;re on the job. Caller gets a text
-              in 10 seconds, you get an SMS alert, and the appointment lands on your calendar
-              before they call the next contractor.
+              <strong className="font-medium text-ink">{BRAND.name} is an AI assistant for
+              home-service businesses.</strong> When you can&apos;t answer a call, it texts the
+              caller back within 10 seconds, answers their questions, books the appointment, and
+              adds it to your <strong className="font-medium text-ink">Google Calendar</strong> —
+              so you don&apos;t lose the customer to the next contractor.
             </p>
             <p className="text-sm text-muted mb-7 max-w-md">
-              Works for plumbers, HVAC techs, roofers, electricians, and locksmiths.
+              {BRAND.name} connects to your Google Calendar to read your availability and create the
+              booking. Works for plumbers, HVAC techs, roofers, electricians, and locksmiths.
             </p>
             <div className="flex flex-wrap gap-3 mb-3">
               <CtaPrimary href="/signup">Start free 7-day trial</CtaPrimary>
