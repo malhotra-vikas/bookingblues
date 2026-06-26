@@ -111,11 +111,23 @@ export function SettingsPanel({ operator }: { operator: Operator }): JSX.Element
   const platformFeePct = currentPlan?.platformFeePct ?? 10;
   const depositMandatory = currentPlan?.depositMode === 'mandatory';
   const takeBps = platformFeePct * 100;
+  // Shared on-top math (mirrors computeBookingFeeCharge): caller pays base +
+  // platform fee; operator keeps base less Stripe card processing.
+  const charge = (baseCents: number) => {
+    const platform = baseCents > 0 ? Math.max(Math.floor((baseCents * takeBps) / 10_000), 100) : 0;
+    const customerPays = baseCents + platform;
+    const stripe = customerPays > 0 ? Math.ceil(customerPays * 0.029) + 30 : 0;
+    return { base: baseCents, platform, customerPays, stripe, youReceive: Math.max(0, customerPays - platform - stripe) };
+  };
   const feeCents = Math.max(0, Math.round(Number(feeDollars || '0') * 100));
-  const platformCents = feeCents > 0 ? Math.max(Math.floor((feeCents * takeBps) / 10_000), 100) : 0;
-  const customerPaysCents = feeCents + platformCents;
-  const stripeProcessingCents = customerPaysCents > 0 ? Math.ceil(customerPaysCents * 0.029) + 30 : 0;
-  const operatorTakeCents = Math.max(0, customerPaysCents - platformCents - stripeProcessingCents);
+  const emergencyCents = Math.max(0, Math.round(Number(emergencyFeeDollars || '0') * 100));
+  const deposit = charge(feeCents);
+  const emergency = charge(feeCents + emergencyCents); // deposit + emergency surcharge
+  // Legacy aliases kept for the existing deposit breakdown rows below.
+  const platformCents = deposit.platform;
+  const customerPaysCents = deposit.customerPays;
+  const stripeProcessingCents = deposit.stripe;
+  const operatorTakeCents = deposit.youReceive;
 
   const connectStatus: ConnectStatus =
     !operator.stripe_connect_account_id
@@ -367,6 +379,23 @@ export function SettingsPanel({ operator }: { operator: Operator }): JSX.Element
                 <EconomicsRow label="Card processing (2.9% + 30¢)" amount={-stripeProcessingCents} />
                 <div className="border-t border-slate-200 dark:border-slate-700 mt-2 pt-2">
                   <EconomicsRow label="You receive" amount={operatorTakeCents} bold />
+                </div>
+              </div>
+            )}
+            {emergencyCents > 0 && (
+              <div className="rounded-md bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900 p-3 text-sm">
+                <div className="text-xs text-amber-800 dark:text-amber-300 uppercase tracking-wide mb-2">
+                  On an emergency job (${(feeCents / 100).toFixed(2)} deposit + $
+                  {(emergencyCents / 100).toFixed(2)} emergency)
+                </div>
+                <EconomicsRow label="Deposit + emergency fee" amount={emergency.base} />
+                <EconomicsRow label={`KeeprSteady fee (${platformFeePct}%, on top)`} amount={emergency.platform} />
+                <div className="border-t border-amber-200 dark:border-amber-900 mt-2 pt-2">
+                  <EconomicsRow label="Customer pays" amount={emergency.customerPays} bold />
+                </div>
+                <EconomicsRow label="Card processing (2.9% + 30¢)" amount={-emergency.stripe} />
+                <div className="border-t border-amber-200 dark:border-amber-900 mt-2 pt-2">
+                  <EconomicsRow label="You receive" amount={emergency.youReceive} bold />
                 </div>
               </div>
             )}
