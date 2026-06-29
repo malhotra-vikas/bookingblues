@@ -27,6 +27,11 @@ export const ProposeSlotsArgs = z.object({
 });
 export type ProposeSlotsArgs = z.infer<typeof ProposeSlotsArgs>;
 
+export const CheckServiceAreaArgs = z.object({
+  zip: z.string().min(3).max(10),
+});
+export type CheckServiceAreaArgs = z.infer<typeof CheckServiceAreaArgs>;
+
 export const BookAppointmentArgs = z.object({
   start: IsoDateTime,
   end: IsoDateTime,
@@ -58,6 +63,20 @@ export const EscalateToHumanArgs = z.object({
 export type EscalateToHumanArgs = z.infer<typeof EscalateToHumanArgs>;
 
 export const TOOL_DEFINITIONS: ReadonlyArray<OpenAI.Chat.Completions.ChatCompletionTool> = [
+  {
+    type: 'function',
+    function: {
+      name: 'check_service_area',
+      description:
+        "Authoritatively check whether a caller's 5-digit ZIP is within the operator's service area (explicit ZIPs + radius zones). ALWAYS call this to decide service area — never guess from a ZIP list. Returns { in_area, configured }. Only call mark_out_of_scope for area reasons when this returns in_area=false.",
+      parameters: {
+        type: 'object',
+        properties: { zip: { type: 'string' } },
+        required: ['zip'],
+        additionalProperties: false,
+      },
+    },
+  },
   {
     type: 'function',
     function: {

@@ -9,10 +9,13 @@ declare module 'zipcodes' {
   export function lookup(
     zip: string,
   ): { zip: string; latitude: number; longitude: number; city: string; state: string; country: string } | undefined;
+  /** Great-circle miles between two ZIP centroids; undefined if either is unknown. */
+  export function distance(zipA: string, zipB: string): number | undefined;
 
   const _default: {
     radius: typeof radius;
     lookup: typeof lookup;
+    distance: typeof distance;
   };
   export default _default;
 }

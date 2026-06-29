@@ -62,6 +62,7 @@ describe('Tool argument schemas', () => {
     expect(names).toEqual([
       'book_appointment',
       'check_availability',
+      'check_service_area',
       'escalate_to_human',
       'mark_out_of_scope',
       'mark_spam',

@@ -106,8 +106,8 @@ export function holdExpiredSms(businessName: string, friendlyTime: string): stri
 }
 
 /** Out-of-scope handoff — the caller's address is outside the service area. */
-export function outOfScopeAreaSms(businessName: string, zipList: string): string {
-  return `Thanks for reaching out! ${businessName} only services ZIP codes ${zipList}. Your address is outside our area — best of luck finding a local pro.`;
+export function outOfScopeAreaSms(businessName: string, areaText: string): string {
+  return `Thanks for reaching out! ${businessName} services ${areaText}. Your address is outside that area — best of luck finding a local pro.`;
 }
 
 /** Out-of-scope handoff — the job type isn't something this trade handles. */

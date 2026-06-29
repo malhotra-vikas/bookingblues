@@ -22,6 +22,7 @@ import { assembleSystemPrompt, wrapCallerMessage } from './prompts';
 import {
   bookAppointment,
   checkAvailability,
+  checkServiceArea,
   escalateToHuman,
   markOutOfScope,
   markSpam,
@@ -32,6 +33,7 @@ import type { ToolContext, ToolResult } from './tool-handlers';
 import {
   BookAppointmentArgs,
   CheckAvailabilityArgs,
+  CheckServiceAreaArgs,
   EscalateToHumanArgs,
   MarkOutOfScopeArgs,
   MarkSpamArgs,
@@ -508,6 +510,8 @@ export class AdvanceService {
     // (e.g. re-ask the caller for their name) within the same advance turn.
     try {
       switch (name) {
+        case 'check_service_area':
+          return checkServiceArea(CheckServiceAreaArgs.parse(parsed), ctx);
         case 'check_availability':
           return await checkAvailability(CheckAvailabilityArgs.parse(parsed), ctx);
         case 'propose_slots':

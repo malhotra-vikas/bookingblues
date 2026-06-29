@@ -1,7 +1,7 @@
 import type { Tables } from '@bookingblues/db-types';
 
 import { asBusinessHours, describeBusinessHours } from '../calendar/business-hours';
-import { expandServiceArea, parseRadiusZones } from './service-area';
+import { describeServiceArea } from './service-area';
 
 type OperatorRow = Tables<'operators'>;
 type CategoryRow = Tables<'categories'>;
@@ -39,11 +39,12 @@ LEAD QUALIFICATION — do this BEFORE calling check_availability:
   minimum), THEN call check_availability and propose slots.
 
 SERVICE-AREA CHECK — when the operator block lists a Service area:
-- The caller's ZIP must be in the list. Politely ask for ZIP if you only have
-  a city or street so far.
-- If the caller's ZIP is NOT in the list, call \`mark_out_of_scope\` with
-  reason='outside_service_area'. The handoff SMS will tell them where the
-  business operates.
+- Ask for the caller's 5-digit ZIP if you only have a city or street so far.
+- ALWAYS verify the ZIP by calling \`check_service_area(zip)\`. NEVER decide
+  service area by guessing or eyeballing — radius zones cover many ZIPs you
+  can't enumerate.
+- Only if \`check_service_area\` returns in_area=false, call \`mark_out_of_scope\`
+  with reason='outside_service_area'. If in_area=true, proceed normally.
 - If Service area is "not configured", skip this check entirely.
 
 BUSINESS HOURS — the operator block lists \`Business hours\` (per weekday, with
@@ -115,27 +116,10 @@ export function operatorBlock(operator: OperatorRow, nowIso: string): string {
     ? `A non-refundable booking fee of $${(operator.booking_fee_cents! / 100).toFixed(2)} ` +
       `is collected via the secure checkout link before the appointment is confirmed.`
     : 'No booking fee is collected.';
-  const expandedZips = expandServiceArea(operator);
-  const zones = parseRadiusZones(operator.service_radius_zones);
-  let serviceArea: string;
-  if (expandedZips.length === 0) {
-    serviceArea = 'Service area: not configured — accept any address.';
-  } else {
-    const zonesNote =
-      zones.length > 0
-        ? ` (${zones.map((z) => `${z.radius_miles}mi of ${z.center_zip}`).join(' + ')}${
-            (operator.service_zip_codes ?? []).length > 0 ? ' + explicit ZIPs' : ''
-          })`
-        : '';
-    if (expandedZips.length <= 80) {
-      serviceArea = `Service area (US ZIPs)${zonesNote}: ${expandedZips.join(', ')}`;
-    } else {
-      const head = expandedZips.slice(0, 60).join(', ');
-      serviceArea =
-        `Service area (US ZIPs)${zonesNote}: ${head}, …${expandedZips.length - 60} more. ` +
-        `If the caller's ZIP isn't in this list, treat as outside service area.`;
-    }
-  }
+  // Describe the area semantically — the authoritative in/out decision is the
+  // `check_service_area` tool (deterministic), NOT the model reading a ZIP list.
+  // Dumping (and truncating) a 680-ZIP radius caused false rejections.
+  const serviceArea = `Service area: ${describeServiceArea(operator)} (verify any ZIP with check_service_area)`;
   const businessHours = describeBusinessHours(asBusinessHours(operator.business_hours));
   return [
     `Operator: ${operator.business_name}`,

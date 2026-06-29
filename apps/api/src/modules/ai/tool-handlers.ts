@@ -21,12 +21,14 @@ import type { TwilioService } from '../../common/twilio/twilio.service';
 import type {
   BookAppointmentArgs,
   CheckAvailabilityArgs,
+  CheckServiceAreaArgs,
   EscalateToHumanArgs,
   MarkOutOfScopeArgs,
   MarkSpamArgs,
   ProposeSlotsArgs,
   RequestPaymentLinkArgs,
 } from './tool-definitions';
+import { describeServiceArea, isZipInServiceArea, parseRadiusZones } from './service-area';
 
 type OperatorRow = Tables<'operators'>;
 type ConversationRow = Tables<'conversations'>;
@@ -102,6 +104,18 @@ export async function checkAvailability(
       business_hours: ctx.operator.business_hours,
       busy,
       window: { start: args.window_start, end: args.window_end },
+    },
+  };
+}
+
+export function checkServiceArea(args: CheckServiceAreaArgs, ctx: ToolContext): ToolResult {
+  const { configured, inArea } = isZipInServiceArea(ctx.operator, args.zip);
+  return {
+    content: {
+      zip: args.zip,
+      in_area: inArea,
+      configured,
+      service_area: describeServiceArea(ctx.operator),
     },
   };
 }
@@ -250,21 +264,20 @@ export function markOutOfScope(args: MarkOutOfScopeArgs, ctx: ToolContext): Tool
   const services = ctx.operator.category
     ? SERVICES_BY_CATEGORY[ctx.operator.category]
     : undefined;
-  const zips = ctx.operator.service_zip_codes ?? [];
   const reasonLower = args.reason.toLowerCase();
   const isAreaReason =
     reasonLower.includes('service_area') ||
     reasonLower.includes('service area') ||
     (reasonLower.includes('outside') && reasonLower.includes('area'));
+  const areaConfigured =
+    (ctx.operator.service_zip_codes ?? []).length > 0 ||
+    parseRadiusZones(ctx.operator.service_radius_zones).length > 0;
 
   let closing: string;
-  if (zips.length > 0 && isAreaReason) {
-    // Out-of-area handoff — name (a sample of) the ZIPs we cover.
-    const zipList =
-      zips.length <= 6
-        ? zips.join(', ')
-        : `${zips.slice(0, 6).join(', ')} and ${zips.length - 6} more`;
-    closing = outOfScopeAreaSms(ctx.operator.business_name, zipList);
+  if (areaConfigured && isAreaReason) {
+    // Out-of-area handoff — describe the real coverage (radius zones + ZIPs),
+    // not just the explicit ZIP list.
+    closing = outOfScopeAreaSms(ctx.operator.business_name, describeServiceArea(ctx.operator));
   } else if (services) {
     closing = outOfScopeServiceSms(ctx.operator.business_name, services);
   } else {
