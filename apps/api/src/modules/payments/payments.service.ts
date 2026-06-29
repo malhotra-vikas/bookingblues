@@ -185,7 +185,10 @@ export class PaymentsService {
       })
       .eq('id', args.appointmentId);
 
-    return { url: session.url, paymentId: data.id };
+    // Hand back a short, branded link (no special chars → tappable in SMS) that
+    // 302s to the long Stripe Checkout URL. The raw `session.url` would break
+    // SMS link detection at its `#`/`%` fragment.
+    return { url: `${this.env.API_URL}/pay/${args.appointmentId}`, paymentId: data.id };
   }
 
   /**

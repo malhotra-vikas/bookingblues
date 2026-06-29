@@ -84,7 +84,12 @@ async function bootstrap(): Promise<void> {
   // Per CLAUDE.md §10, webhook routes are unprefixed (Twilio/Stripe/Google call
   // them directly). Everything else lives under /v1.
   app.setGlobalPrefix('v1', {
-    exclude: [{ path: 'webhooks/(.*)', method: RequestMethod.ALL }],
+    exclude: [
+      { path: 'webhooks/(.*)', method: RequestMethod.ALL },
+      // Short, clean booking-fee payment links sent over SMS (no /v1, no special
+      // chars) that 302 to the long Stripe Checkout URL.
+      { path: 'pay/(.*)', method: RequestMethod.ALL },
+    ],
   });
 
   await app.listen(env.PORT, '0.0.0.0');
