@@ -14,4 +14,11 @@ export class PaymentsController {
   async onboardingLink(@CurrentUser() user: AuthenticatedUser): Promise<{ url: string }> {
     return this.onboarding.createOnboardingLink(user.userId, user.email);
   }
+
+  @Post('sync')
+  async sync(
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<{ charges_enabled: boolean; payouts_enabled: boolean; details_submitted: boolean }> {
+    return this.onboarding.syncAccountStatus(user.userId);
+  }
 }

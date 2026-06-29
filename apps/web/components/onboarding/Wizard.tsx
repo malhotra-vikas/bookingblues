@@ -398,10 +398,11 @@ export function Wizard({
   const serviceAreaSet = (op?.service_zip_codes?.length ?? 0) > 0;
 
   // Stripe redirects back here after Connect onboarding with ?connect=return
-  // or ?connect=refresh. Surface a banner so the operator sees acknowledgement
-  // (the actual charges_enabled/payouts_enabled flips arrive via webhook —
-  // can be a beat or two later — so we keep it informational rather than
-  // claiming completion).
+  // or ?connect=refresh. On return we actively pull the live capability state
+  // from Stripe (POST /connect/sync) rather than waiting on the account.updated
+  // webhook — otherwise the UI can sit on "verifying" forever if no Connect
+  // webhook is wired. Banner is informational; the sync + router.refresh drives
+  // the real charges_enabled/payouts_enabled flags.
   const searchParams = useSearchParams();
   const connectStatus = searchParams.get('connect');
   const [connectBanner, setConnectBanner] = useState<string | null>(
@@ -412,15 +413,48 @@ export function Wizard({
         : null,
   );
   useEffect(() => {
-    if (!connectBanner) return;
-    // Strip the query param after a few seconds so refreshing doesn't re-show.
+    if (connectStatus !== 'return') return;
+    let cancelled = false;
+    (async () => {
+      try {
+        await authedFetch('/v1/operators/me/connect/sync', { method: 'POST' });
+      } catch {
+        // Non-fatal — the webhook (once wired) or a manual refresh will still
+        // reconcile. Don't block the wizard on a transient sync failure.
+      }
+      if (cancelled) return;
+      setConnectBanner(null);
+      router.replace('/onboarding');
+      router.refresh();
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [connectStatus, router]);
+  useEffect(() => {
+    if (connectStatus !== 'refresh' || !connectBanner) return;
     const t = setTimeout(() => {
       setConnectBanner(null);
       router.replace('/onboarding');
       router.refresh();
     }, 5000);
     return () => clearTimeout(t);
-  }, [connectBanner, router]);
+  }, [connectStatus, connectBanner, router]);
+
+  // Manual "I finished — recheck" affordance for when the operator returns and
+  // Stripe is still finalizing (capabilities can lag the return redirect).
+  const [syncing, setSyncing] = useState(false);
+  async function refreshConnectStatus(): Promise<void> {
+    setSyncing(true);
+    try {
+      await authedFetch('/v1/operators/me/connect/sync', { method: 'POST' });
+      router.refresh();
+    } catch {
+      // surfaced via the existing handle() error channel elsewhere; no-op here
+    } finally {
+      setSyncing(false);
+    }
+  }
 
   // setupCallUrl is now passed in as a prop from the server-rendered page.
   // See note at top of file re: Turbopack inlining + hydration mismatch.
@@ -805,7 +839,7 @@ export function Wizard({
               charges={Boolean(op?.stripe_connect_charges_enabled)}
               payouts={Boolean(op?.stripe_connect_payouts_enabled)}
             />
-            <div>
+            <div className="flex items-center gap-2">
               <button
                 type="button"
                 onClick={startStripeConnect}
@@ -818,6 +852,16 @@ export function Wizard({
                     ? 'Continue Stripe setup'
                     : 'Set up payouts with Stripe'}
               </button>
+              {op?.stripe_connect_account_id ? (
+                <button
+                  type="button"
+                  onClick={refreshConnectStatus}
+                  disabled={syncing}
+                  className="rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-ink disabled:opacity-50"
+                >
+                  {syncing ? 'Checking…' : 'Recheck status'}
+                </button>
+              ) : null}
             </div>
           </div>
         )}
