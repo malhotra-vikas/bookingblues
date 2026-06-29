@@ -23,6 +23,7 @@ import {
   bookAppointment,
   checkAvailability,
   checkServiceArea,
+  collectServiceAddress,
   escalateToHuman,
   markOutOfScope,
   markSpam,
@@ -36,6 +37,7 @@ import {
   CheckServiceAreaArgs,
   EscalateToHumanArgs,
   MarkOutOfScopeArgs,
+  CollectServiceAddressArgs,
   MarkSpamArgs,
   ProposeSlotsArgs,
   RequestPaymentLinkArgs,
@@ -526,6 +528,8 @@ export class AdvanceService {
           return await bookAppointment(BookAppointmentArgs.parse(parsed), ctx);
         case 'request_payment_link':
           return await requestPaymentLink(RequestPaymentLinkArgs.parse(parsed), ctx);
+        case 'collect_service_address':
+          return await collectServiceAddress(CollectServiceAddressArgs.parse(parsed), ctx);
         case 'mark_out_of_scope':
           return markOutOfScope(MarkOutOfScopeArgs.parse(parsed), ctx);
         case 'mark_spam':

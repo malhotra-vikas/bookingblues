@@ -38,14 +38,25 @@ export function bookingConfirmationSms(args: {
   icsUrl: string;
   feeLine?: string;
   callerName?: string | null;
+  /** When true, ask the caller for their full property address (post-confirm). */
+  askAddress?: boolean;
 }): string {
   const fn = firstName(args.callerName);
   const lead = fn ? `✅ ${fn}, you're booked` : `✅ You're booked`;
+  const addressAsk = args.askAddress
+    ? ' What is the full property address (street, unit, city, ZIP) so our tech can find you?'
+    : '';
   return (
     `${lead} with ${args.businessName} for ${args.friendlyTime}. ` +
     `Add to your calendar: ${args.icsUrl}` +
-    (args.feeLine ?? '')
+    (args.feeLine ?? '') +
+    addressAsk
   );
+}
+
+/** Final acknowledgement after the caller provides their property address. */
+export function addressConfirmedSms(friendlyTime: string): string {
+  return `Perfect — got your address. You're all set for ${friendlyTime}. See you then!`;
 }
 
 /**

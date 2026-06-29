@@ -47,6 +47,11 @@ export const RequestPaymentLinkArgs = z.object({
 });
 export type RequestPaymentLinkArgs = z.infer<typeof RequestPaymentLinkArgs>;
 
+export const CollectServiceAddressArgs = z.object({
+  address: z.string().min(5).max(300),
+});
+export type CollectServiceAddressArgs = z.infer<typeof CollectServiceAddressArgs>;
+
 export const MarkOutOfScopeArgs = z.object({
   reason: z.string().min(1).max(300),
 });
@@ -148,6 +153,20 @@ export const TOOL_DEFINITIONS: ReadonlyArray<OpenAI.Chat.Completions.ChatComplet
   // book_appointment now reserves the slot AND sends the payment link itself
   // (Reserve→Pay→Confirm), so a separate model-driven tool would double-send.
   // The handler + schema are retained for the manual/legacy path.
+  {
+    type: 'function',
+    function: {
+      name: 'collect_service_address',
+      description:
+        "Save the caller's full property/service address AFTER the booking is confirmed and add it to the calendar event so the tech can find the job. Call this only once the appointment is confirmed and the caller has given a complete street address (street + unit if any + city + ZIP). Ends the conversation.",
+      parameters: {
+        type: 'object',
+        properties: { address: { type: 'string' } },
+        required: ['address'],
+        additionalProperties: false,
+      },
+    },
+  },
   {
     type: 'function',
     function: {

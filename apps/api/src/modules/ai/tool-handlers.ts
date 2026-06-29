@@ -5,6 +5,7 @@ import type { BookingsService } from '../appointments/bookings.service';
 import type { CalendarService } from '../calendar/calendar.service';
 import { isBookingFeeCollectible } from './prompts';
 import {
+  addressConfirmedSms,
   escalationHandoffSms,
   outOfScopeAreaSms,
   outOfScopeGenericSms,
@@ -22,6 +23,7 @@ import type {
   BookAppointmentArgs,
   CheckAvailabilityArgs,
   CheckServiceAreaArgs,
+  CollectServiceAddressArgs,
   EscalateToHumanArgs,
   MarkOutOfScopeArgs,
   MarkSpamArgs,
@@ -202,7 +204,9 @@ export async function bookAppointment(
   }
 
   // No fee collectible — book immediately (shared pipeline: advisory lock,
-  // calendar insert, confirmation SMS with the tap-to-add ICS link).
+  // calendar insert, confirmation SMS with the tap-to-add ICS link). The
+  // confirmation already asks for the property address, so keep the
+  // conversation OPEN (stopLoop) — `collect_service_address` finalizes it.
   try {
     const result = await ctx.bookings.book(common);
     return {
@@ -210,9 +214,9 @@ export async function bookAppointment(
         appointment_id: result.appointmentId,
         ics_url: result.icsUrl,
         booking_fee_required: false,
+        status: 'confirmed_awaiting_address',
       },
-      state: 'completed',
-      outcome: 'booked',
+      stopLoop: true,
     };
   } catch (err) {
     if (err instanceof ConflictError || err instanceof ValidationError) {
@@ -220,6 +224,70 @@ export async function bookAppointment(
     }
     throw err;
   }
+}
+
+export async function collectServiceAddress(
+  args: CollectServiceAddressArgs,
+  ctx: ToolContext,
+): Promise<ToolResult> {
+  // Find the confirmed appointment for this conversation (the just-booked one).
+  const { data: appt, error } = await ctx.supabase
+    .db()
+    .from('appointments')
+    .select('id, google_event_id, scheduled_for_start, job_summary, caller_name, caller_phone_e164')
+    .eq('conversation_id', ctx.conversation.id)
+    .eq('status', 'confirmed')
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
+  if (!appt) {
+    return {
+      content: { error: 'no_confirmed_appointment', message: 'No confirmed appointment to attach an address to yet.' },
+    };
+  }
+
+  await ctx.supabase
+    .db()
+    .from('appointments')
+    .update({ service_address: args.address })
+    .eq('id', appt.id);
+
+  // Patch the Google Calendar event so the tech sees the address in `location`.
+  if (appt.google_event_id) {
+    try {
+      await ctx.calendar.patchEvent({
+        operatorId: ctx.operator.id,
+        eventId: appt.google_event_id,
+        location: args.address,
+        description:
+          `Caller: ${appt.caller_name ?? ''} ${appt.caller_phone_e164}\n` +
+          `Address: ${args.address}\n\n${appt.job_summary}`,
+      });
+    } catch (err) {
+      // Address is saved on the appointment regardless; calendar patch is
+      // best-effort (operator can see it in the dashboard / booking email).
+      ctx.logger.warn(
+        { appointmentId: appt.id, err: (err as Error).message },
+        'collect_service_address: calendar patch failed (address still saved)',
+      );
+    }
+  }
+
+  const friendlyTime = new Date(appt.scheduled_for_start).toLocaleString('en-US', {
+    timeZone: ctx.operator.timezone,
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+  return {
+    content: { ok: true, appointment_id: appt.id },
+    state: 'completed',
+    outcome: 'booked',
+    outboundMessage: addressConfirmedSms(friendlyTime),
+  };
 }
 
 export async function requestPaymentLink(

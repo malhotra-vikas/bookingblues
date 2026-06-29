@@ -254,4 +254,43 @@ export class CalendarService {
     }
     return { id: json.id, htmlLink: json.htmlLink ?? null };
   }
+
+  /**
+   * Patch an existing event — used to add the full property address (collected
+   * after payment) to the invite's `location`, so the tech can navigate there.
+   * `sendUpdates=all` notifies the caller-attendee of the update.
+   */
+  async patchEvent(args: {
+    operatorId: string;
+    eventId: string;
+    location?: string;
+    description?: string;
+  }): Promise<void> {
+    const accessToken = await this.getFreshAccessToken(args.operatorId);
+    const body: { location?: string; description?: string } = {};
+    if (args.location !== undefined) body.location = args.location;
+    if (args.description !== undefined) body.description = args.description;
+
+    const url = `https://www.googleapis.com/calendar/v3/calendars/primary/events/${encodeURIComponent(
+      args.eventId,
+    )}?sendUpdates=all`;
+    const res = await fetch(url, {
+      method: 'PATCH',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify(body),
+    });
+    if (res.status === 401) {
+      await this.markRevoked(args.operatorId, '401 from events.patch');
+      throw new ExternalServiceError('google', 'Calendar grant revoked (401 on events.patch)');
+    }
+    if (!res.ok) {
+      throw new ExternalServiceError(
+        'google',
+        `events.patch failed: ${res.status} ${await res.text()}`,
+      );
+    }
+  }
 }

@@ -175,6 +175,10 @@ export class BookingsService {
         icsUrl,
         feeCheckoutUrl,
         callerName: args.callerName,
+        // Ask for the address only on the AI conversational path (which can
+        // handle the reply); manual/Slack-button books pass chargeFeeIfEligible
+        // and aren't an interactive SMS thread.
+        askAddress: !args.chargeFeeIfEligible,
       }).catch((err) => {
         this.logger.warn(
           { appointmentId, err: (err as Error).message },
@@ -369,6 +373,7 @@ export class BookingsService {
         icsUrl: this.icsUrl(appt.id),
         feeCheckoutUrl: null,
         callerName: appt.caller_name,
+        askAddress: true,
       }).catch((smsErr) => {
         this.logger.warn(
           { appointmentId, err: (smsErr as Error).message },
@@ -376,10 +381,14 @@ export class BookingsService {
         );
       });
 
+      // Keep the conversation OPEN so the caller's address reply runs the AI
+      // (which calls `collect_service_address` to patch the calendar). The
+      // conversation completes there. Reset `started_at` so this post-confirm
+      // exchange doesn't inherit the booking turns toward the §9.3 cap.
       await this.supabase
         .db()
         .from('conversations')
-        .update({ status: 'completed', completed_at: new Date().toISOString(), outcome: 'booked' })
+        .update({ status: 'awaiting_caller', started_at: new Date().toISOString() })
         .eq('id', appt.conversation_id);
     }
 
@@ -605,6 +614,8 @@ export class BookingsService {
     icsUrl: string;
     feeCheckoutUrl: string | null;
     callerName?: string | null;
+    /** Ask for the full property address in the confirmation (post-confirm). */
+    askAddress?: boolean;
   }): Promise<void> {
     if (!args.operator.twilio_number_e164) return;
     const friendlyTime = new Date(args.startIso).toLocaleString('en-US', {
@@ -623,6 +634,7 @@ export class BookingsService {
       icsUrl: args.icsUrl,
       feeLine,
       callerName: args.callerName ?? null,
+      ...(args.askAddress ? { askAddress: true } : {}),
     });
     const send = await this.twilio.sendSms({
       from: args.operator.twilio_number_e164,

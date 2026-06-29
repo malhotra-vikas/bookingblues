@@ -122,6 +122,7 @@ export type Database = {
           reminder_sent_at: string | null;
           scheduled_for_end: string;
           scheduled_for_start: string;
+          service_address: string | null;
           status: Database["public"]["Enums"]["appointment_status"];
           updated_at: string;
         };
@@ -142,6 +143,7 @@ export type Database = {
           reminder_sent_at?: string | null;
           scheduled_for_end: string;
           scheduled_for_start: string;
+          service_address?: string | null;
           status?: Database["public"]["Enums"]["appointment_status"];
           updated_at?: string;
         };
@@ -162,6 +164,7 @@ export type Database = {
           reminder_sent_at?: string | null;
           scheduled_for_end?: string;
           scheduled_for_start?: string;
+          service_address?: string | null;
           status?: Database["public"]["Enums"]["appointment_status"];
           updated_at?: string;
         };
