@@ -115,8 +115,32 @@ export class PaymentsService {
       { stripeAccount: eligibility.connectAccountId },
     );
 
+    this.logger.info(
+      {
+        operatorId: args.operatorId,
+        appointmentId: args.appointmentId,
+        connectAccount: eligibility.connectAccountId,
+        sessionId: session.id,
+        status: session.status,
+        mode: session.mode,
+        hasUrl: Boolean(session.url),
+        paymentIntent: typeof session.payment_intent === 'string' ? session.payment_intent : typeof session.payment_intent,
+        chargeCents: pricing.chargeCents,
+        applicationFeeCents: pricing.applicationFeeCents,
+        plan: eligibility.plan,
+        takeRateBps,
+      },
+      'createBookingFeeCheckout: stripe session created',
+    );
+
     if (!session.url || !session.payment_intent) {
-      throw new ExternalServiceError('stripe', 'Checkout Session missing url or payment_intent');
+      const missing = [!session.url && 'url', !session.payment_intent && 'payment_intent']
+        .filter(Boolean)
+        .join('+');
+      throw new ExternalServiceError(
+        'stripe',
+        `Checkout Session missing ${missing} (session ${session.id}, status ${session.status})`,
+      );
     }
     const paymentIntentId =
       typeof session.payment_intent === 'string' ? session.payment_intent : session.payment_intent.id;
