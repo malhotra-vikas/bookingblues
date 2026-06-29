@@ -608,7 +608,7 @@ export type Database = {
           status: Database["public"]["Enums"]["payment_status"];
           stripe_charge_id: string | null;
           stripe_connected_account_id: string;
-          stripe_payment_intent_id: string;
+          stripe_payment_intent_id: string | null;
           type: Database["public"]["Enums"]["payment_type"];
           updated_at: string;
         };
@@ -625,7 +625,7 @@ export type Database = {
           status?: Database["public"]["Enums"]["payment_status"];
           stripe_charge_id?: string | null;
           stripe_connected_account_id: string;
-          stripe_payment_intent_id: string;
+          stripe_payment_intent_id?: string | null;
           type?: Database["public"]["Enums"]["payment_type"];
           updated_at?: string;
         };
@@ -642,7 +642,7 @@ export type Database = {
           status?: Database["public"]["Enums"]["payment_status"];
           stripe_charge_id?: string | null;
           stripe_connected_account_id?: string;
-          stripe_payment_intent_id?: string;
+          stripe_payment_intent_id?: string | null;
           type?: Database["public"]["Enums"]["payment_type"];
           updated_at?: string;
         };

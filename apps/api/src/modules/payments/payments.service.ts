@@ -133,17 +133,20 @@ export class PaymentsService {
       'createBookingFeeCheckout: stripe session created',
     );
 
-    if (!session.url || !session.payment_intent) {
-      const missing = [!session.url && 'url', !session.payment_intent && 'payment_intent']
-        .filter(Boolean)
-        .join('+');
+    // Only the hosted URL is required up front. Stripe attaches the
+    // PaymentIntent id when the customer pays (it's null on the session at
+    // creation), so we insert the pending row WITHOUT it and backfill from the
+    // `payment_intent.succeeded` webhook (matched via PI metadata.appointment_id).
+    if (!session.url) {
       throw new ExternalServiceError(
         'stripe',
-        `Checkout Session missing ${missing} (session ${session.id}, status ${session.status})`,
+        `Checkout Session missing url (session ${session.id}, status ${session.status})`,
       );
     }
     const paymentIntentId =
-      typeof session.payment_intent === 'string' ? session.payment_intent : session.payment_intent.id;
+      typeof session.payment_intent === 'string'
+        ? session.payment_intent
+        : (session.payment_intent?.id ?? null);
 
     const { data, error } = await this.supabase
       .db()
@@ -170,12 +173,13 @@ export class PaymentsService {
       throw error;
     }
 
-    // Stamp the appointment with the checkout/payment-intent ids and pending status.
+    // Stamp the appointment with the checkout session id + pending status. The
+    // PI id is backfilled on the webhook (null here at creation).
     await this.supabase
       .db()
       .from('appointments')
       .update({
-        fee_payment_intent_id: paymentIntentId,
+        ...(paymentIntentId ? { fee_payment_intent_id: paymentIntentId } : {}),
         fee_checkout_session_id: session.id,
         fee_status: 'pending',
       })
@@ -200,6 +204,11 @@ export class PaymentsService {
     if (!payment) throw new NotFoundError('Payment not found');
     if (payment.status !== 'succeeded') {
       throw new ValidationError(`Cannot refund payment in status ${payment.status}`);
+    }
+    if (!payment.stripe_payment_intent_id) {
+      // Succeeded payments always have the PI backfilled by the webhook; guard
+      // anyway so we never call Stripe with a null payment_intent.
+      throw new ValidationError('Payment has no PaymentIntent id; cannot refund');
     }
 
     await this.stripe.client().refunds.create(

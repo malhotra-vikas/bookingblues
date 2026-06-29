@@ -60,15 +60,37 @@ export async function onPaymentIntentSucceeded(
   envelopeAccountId: string,
   deps: ConnectHandlerDeps,
 ): Promise<void> {
-  const { data: payment, error: lookupErr } = await deps.db
+  // Match by PI id first; fall back to the pending row by appointment_id from
+  // the PI metadata, since Stripe doesn't attach the PI id to the Checkout
+  // Session at creation (it's null then) so the row was inserted PI-less.
+  let payment: { id: string; appointment_id: string; stripe_connected_account_id: string } | null =
+    null;
+  const byPi = await deps.db
     .from('payments')
     .select('id, appointment_id, stripe_connected_account_id')
     .eq('stripe_payment_intent_id', pi.id)
     .maybeSingle();
-  if (lookupErr) throw lookupErr;
+  if (byPi.error) throw byPi.error;
+  payment = byPi.data;
+
+  const appointmentId = typeof pi.metadata?.appointment_id === 'string' ? pi.metadata.appointment_id : null;
+  if (!payment && appointmentId) {
+    const byAppt = await deps.db
+      .from('payments')
+      .select('id, appointment_id, stripe_connected_account_id')
+      .eq('appointment_id', appointmentId)
+      .eq('type', 'booking_fee')
+      .is('stripe_payment_intent_id', null)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (byAppt.error) throw byAppt.error;
+    payment = byAppt.data;
+  }
+
   if (!payment) {
     deps.logger.warn(
-      { paymentIntentId: pi.id, envelopeAccountId },
+      { paymentIntentId: pi.id, envelopeAccountId, appointmentId },
       'No payment row matches PI; ignoring',
     );
     return;
@@ -87,6 +109,7 @@ export async function onPaymentIntentSucceeded(
     .from('payments')
     .update({
       status: 'succeeded',
+      stripe_payment_intent_id: pi.id, // backfill (was null at checkout creation)
       ...(chargeId ? { stripe_charge_id: chargeId } : {}),
       raw_event: pi as unknown as Database['public']['Tables']['payments']['Row']['raw_event'],
     })
