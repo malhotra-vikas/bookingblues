@@ -75,7 +75,14 @@ export class ConversationsService {
       const { data: reopened, error: reopenErr } = await this.supabase
         .db()
         .from('conversations')
-        .update({ status: 'awaiting_bot', completed_at: null, outcome: null })
+        // Reset `started_at` so the §9.3 caller-turn cap counts only THIS
+        // follow-up engagement, not the turns from the prior (completed) one.
+        .update({
+          status: 'awaiting_bot',
+          completed_at: null,
+          outcome: null,
+          started_at: new Date().toISOString(),
+        })
         .eq('id', recent.id)
         .select('*')
         .single();

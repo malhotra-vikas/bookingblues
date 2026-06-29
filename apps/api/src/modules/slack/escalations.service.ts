@@ -294,6 +294,13 @@ export class EscalationsService {
   }): Promise<void> {
     const esc = await this.requireEscalation(args.escalationId);
     await this.flipConversationStatus(esc.conversation_id, 'awaiting_caller');
+    // Reset the engagement turn baseline so the AI doesn't immediately re-hit
+    // the §9.3 turn cap on the turns that led to the escalation.
+    await this.supabase
+      .db()
+      .from('conversations')
+      .update({ started_at: new Date().toISOString() })
+      .eq('id', esc.conversation_id);
 
     await this.audit.write({
       actorUserId: args.resolvedByUserId,

@@ -204,13 +204,19 @@ export class AdvanceService {
       return;
     }
 
-    // Caller-turn cap (CLAUDE.md §9.3) — count caller messages on this convo.
+    // Caller-turn cap (CLAUDE.md §9.3) — count caller messages in the CURRENT
+    // engagement only (since `started_at`), not the conversation's lifetime. A
+    // conversation row is reused across follow-ups (resume window) and after a
+    // human hands back (back-to-bot); `started_at` is reset at those points, so
+    // a brand-new engagement starts at 0 instead of inheriting old turns and
+    // force-escalating immediately (QA 2026-06-29).
     const { count: callerTurns } = await this.supabase
       .db()
       .from('messages')
       .select('id', { count: 'exact', head: true })
       .eq('conversation_id', conversation.id)
-      .eq('role', 'caller');
+      .eq('role', 'caller')
+      .gte('created_at', conversation.started_at);
     if ((callerTurns ?? 0) >= MAX_CALLER_TURNS) {
       const result = await escalateToHuman(
         { reason: `turn_cap: caller turn cap (${MAX_CALLER_TURNS}) reached` },
