@@ -26,15 +26,23 @@ export function bookingFeeLine(feeCents: number, checkoutUrl: string): string {
   return ` Please secure your slot with the $${(feeCents / 100).toFixed(2)} booking fee: ${checkoutUrl}`;
 }
 
+/** First name only — keeps SMS personal without echoing a full legal name. */
+export function firstName(name: string | null | undefined): string {
+  return (name ?? '').trim().split(/\s+/)[0] ?? '';
+}
+
 /** Booking confirmation to the caller. `feeLine` is appended verbatim (may be empty). */
 export function bookingConfirmationSms(args: {
   businessName: string;
   friendlyTime: string;
   icsUrl: string;
   feeLine?: string;
+  callerName?: string | null;
 }): string {
+  const fn = firstName(args.callerName);
+  const lead = fn ? `✅ ${fn}, you're booked` : `✅ You're booked`;
   return (
-    `✅ You're booked with ${args.businessName} for ${args.friendlyTime}. ` +
+    `${lead} with ${args.businessName} for ${args.friendlyTime}. ` +
     `Add to your calendar: ${args.icsUrl}` +
     (args.feeLine ?? '')
   );
@@ -90,9 +98,12 @@ export function reservationHoldSms(args: {
   friendlyTime: string;
   feeCents: number;
   checkoutUrl: string;
+  callerName?: string | null;
 }): string {
+  const fn = firstName(args.callerName);
+  const lead = fn ? `Almost done, ${fn}!` : 'Almost done!';
   return (
-    `Almost done! Your ${args.friendlyTime} slot with ${args.businessName} is held for 30 min. ` +
+    `${lead} Your ${args.friendlyTime} slot with ${args.businessName} is held for 30 min. ` +
     `Pay the $${(args.feeCents / 100).toFixed(2)} booking fee to confirm it: ${args.checkoutUrl}`
   );
 }

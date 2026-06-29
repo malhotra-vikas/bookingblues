@@ -195,6 +195,7 @@ export async function bookAppointment(
         friendlyTime,
         feeCents: ctx.operator.booking_fee_cents!,
         checkoutUrl: session.url,
+        callerName: args.caller_name,
       }),
       stopLoop: true,
     };

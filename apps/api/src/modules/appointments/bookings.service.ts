@@ -174,6 +174,7 @@ export class BookingsService {
         startIso: args.startIso,
         icsUrl,
         feeCheckoutUrl,
+        callerName: args.callerName,
       }).catch((err) => {
         this.logger.warn(
           { appointmentId, err: (err as Error).message },
@@ -367,6 +368,7 @@ export class BookingsService {
         startIso: appt.scheduled_for_start,
         icsUrl: this.icsUrl(appt.id),
         feeCheckoutUrl: null,
+        callerName: appt.caller_name,
       }).catch((smsErr) => {
         this.logger.warn(
           { appointmentId, err: (smsErr as Error).message },
@@ -602,6 +604,7 @@ export class BookingsService {
     startIso: string;
     icsUrl: string;
     feeCheckoutUrl: string | null;
+    callerName?: string | null;
   }): Promise<void> {
     if (!args.operator.twilio_number_e164) return;
     const friendlyTime = new Date(args.startIso).toLocaleString('en-US', {
@@ -619,6 +622,7 @@ export class BookingsService {
       friendlyTime,
       icsUrl: args.icsUrl,
       feeLine,
+      callerName: args.callerName ?? null,
     });
     const send = await this.twilio.sendSms({
       from: args.operator.twilio_number_e164,
