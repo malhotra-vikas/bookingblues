@@ -5,6 +5,7 @@ import { SupabaseModule } from '../../common/supabase/supabase.module';
 import { TwilioModule } from '../../common/twilio/twilio.module';
 import { WebhooksModule as IdempotencyWebhooksModule } from '../../common/webhooks/webhooks.module';
 import { AiModule } from '../ai/ai.module';
+import { AppointmentsModule } from '../appointments/appointments.module';
 import { ConversationsModule } from '../conversations/conversations.module';
 import { SlackModule } from '../slack/slack.module';
 
@@ -22,6 +23,7 @@ import { TwilioVoiceController } from './twilio-voice.controller';
     IdempotencyWebhooksModule,
     ConversationsModule,
     AiModule,
+    AppointmentsModule,
     SlackModule,
   ],
   controllers: [

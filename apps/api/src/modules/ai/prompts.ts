@@ -1,5 +1,6 @@
 import type { Tables } from '@bookingblues/db-types';
 
+import { asBusinessHours, describeBusinessHours } from '../calendar/business-hours';
 import { expandServiceArea, parseRadiusZones } from './service-area';
 
 type OperatorRow = Tables<'operators'>;
@@ -45,22 +46,51 @@ SERVICE-AREA CHECK — when the operator block lists a Service area:
   business operates.
 - If Service area is "not configured", skip this check entirely.
 
+BUSINESS HOURS — the operator block lists \`Business hours\` (per weekday, with
+closed days named). This is a HARD constraint:
+- NEVER propose, confirm, or book a slot on a closed day or outside the open
+  hours for that day. The operator's timezone applies.
+- If the caller asks for a closed day or an out-of-hours time (e.g. "this
+  weekend" when closed Sat/Sun), DO NOT offer it. Say the business is closed
+  then, and proactively offer the nearest OPEN slots instead.
+- A 60-minute slot must fit entirely within an open window (start and end both
+  inside the same day's hours).
+
 TIME HANDLING — when the caller mentions a relative or vague time:
 - Anchor all resolution to \`Now\` and \`Timezone\` from the operator block. "Friday"
   means the NEXT Friday on or after the date in \`Now\`. "Tomorrow" is the day
-  after \`Now\`. "This weekend" is the upcoming Saturday + Sunday.
-- For vague single-day asks ("Friday", "Tuesday", "tomorrow"), call
-  check_availability with the operator's full business-day window in their
-  timezone — e.g. 08:00 to 18:00 local on that date.
-- For multi-day asks ("this weekend", "next week", "anytime next few days"),
-  span the full window — e.g. Sat 08:00 through Sun 18:00 operator-local.
+  after \`Now\`.
+- Only ever resolve times to days the operator is OPEN (see Business hours). If
+  a relative ask lands on a closed day, shift to the nearest open day.
+- For single-day asks, call check_availability with that day's open window in
+  the operator's timezone. For multi-day asks, span only the open days/hours.
 - Datetimes you pass to tools MUST be ISO 8601 with the operator's UTC offset
   (e.g., \`2026-05-17T09:00:00-04:00\` for 9am Eastern in May). Never emit a
   bare \`2026-05-17T09:00:00\` (no zone) — that gets interpreted as UTC and
   shifts hours off business hours.
 - If the caller is unspecific ("sometime soon", "next week"), propose 2–3
-  candidate slots after one check_availability call rather than asking them
+  candidate OPEN slots after one check_availability call rather than asking them
   to narrow further.
+
+BOOKING & PAYMENT — when the caller has agreed to a specific open slot and given
+their name + job summary, call book_appointment with that slot:
+- If a booking fee applies (Fee policy in the operator block), the system holds
+  the slot and texts the caller a secure payment link automatically. The slot is
+  NOT confirmed yet. Tell the caller their time is held and will be confirmed
+  once the deposit is paid — do NOT say it's booked/confirmed before payment.
+  You do not need to send the link yourself; the system sends it.
+- If no fee applies, book_appointment confirms immediately.
+- If book_appointment returns error \`slot_unavailable\`, the time is taken or
+  outside hours — apologize briefly and propose other open slots. Do NOT retry
+  the same slot.
+
+AFTER A BOOKING IS CONFIRMED (or held pending payment):
+- If the caller sends a closing pleasantry ("cool, thanks"), reply warmly and
+  briefly and wrap up — do not restart qualification or re-propose times.
+- If the caller volunteers extra job details (gate code, parking, scope notes),
+  acknowledge them so they're captured in the transcript, then close politely.
+- Do not invent new appointments or re-book unless the caller explicitly asks to
+  change or add something.
 
 Hard rules:
 - Stay strictly within the operator's trade category. If the request is outside
@@ -106,11 +136,13 @@ export function operatorBlock(operator: OperatorRow, nowIso: string): string {
         `If the caller's ZIP isn't in this list, treat as outside service area.`;
     }
   }
+  const businessHours = describeBusinessHours(asBusinessHours(operator.business_hours));
   return [
     `Operator: ${operator.business_name}`,
     `Category: ${operator.category ?? 'unspecified'}`,
     `Timezone: ${operator.timezone}`,
     `Now: ${nowIso}`,
+    `Business hours (${operator.timezone}): ${businessHours}`,
     serviceArea,
     `Fee policy: ${fee}`,
   ].join('\n');

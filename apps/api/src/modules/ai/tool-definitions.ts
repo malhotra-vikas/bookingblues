@@ -109,7 +109,7 @@ export const TOOL_DEFINITIONS: ReadonlyArray<OpenAI.Chat.Completions.ChatComplet
     function: {
       name: 'book_appointment',
       description:
-        'Create the appointment and the corresponding Google Calendar event. Only call after the caller has agreed to a specific slot and provided their name and the job summary.',
+        'Book or hold the appointment for an agreed slot. The slot MUST be within the operator\'s business hours (never a closed day or out-of-hours time). If a booking fee applies, this holds the slot and the system automatically texts the caller a secure payment link — the appointment is confirmed only after payment, so do not tell the caller it is confirmed yet. If no fee applies, it confirms immediately and creates the Google Calendar event. Only call after the caller has agreed to a specific slot and provided their name and the job summary. On error "slot_unavailable", propose other open slots instead of retrying.',
       parameters: {
         type: 'object',
         properties: {
@@ -125,20 +125,10 @@ export const TOOL_DEFINITIONS: ReadonlyArray<OpenAI.Chat.Completions.ChatComplet
       },
     },
   },
-  {
-    type: 'function',
-    function: {
-      name: 'request_payment_link',
-      description:
-        'Generate the secure Stripe Connect Checkout link for the booking fee and send it to the caller. Only call after book_appointment has succeeded.',
-      parameters: {
-        type: 'object',
-        properties: { appointment_id: { type: 'string', format: 'uuid' } },
-        required: ['appointment_id'],
-        additionalProperties: false,
-      },
-    },
-  },
+  // NOTE: `request_payment_link` is intentionally NOT exposed to the model.
+  // book_appointment now reserves the slot AND sends the payment link itself
+  // (Reserve→Pay→Confirm), so a separate model-driven tool would double-send.
+  // The handler + schema are retained for the manual/legacy path.
   {
     type: 'function',
     function: {

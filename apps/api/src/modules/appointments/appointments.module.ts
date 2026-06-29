@@ -8,6 +8,7 @@ import { CalendarModule } from '../calendar/calendar.module';
 import { ConversationsModule } from '../conversations/conversations.module';
 import { PaymentsModule } from '../payments/payments.module';
 
+import { BookingHoldsController } from './booking-holds.controller';
 import { BookingsService } from './bookings.service';
 import { IcsController } from './ics.controller';
 
@@ -21,7 +22,7 @@ import { IcsController } from './ics.controller';
     PaymentsModule,
     EmailModule,
   ],
-  controllers: [IcsController],
+  controllers: [IcsController, BookingHoldsController],
   providers: [BookingsService],
   exports: [BookingsService],
 })

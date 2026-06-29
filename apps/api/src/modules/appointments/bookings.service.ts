@@ -10,8 +10,13 @@ import { TwilioService } from '../../common/twilio/twilio.service';
 import { ENV_TOKEN } from '../../config/config.module';
 import type { Env } from '../../config/env';
 import { CalendarService } from '../calendar/calendar.service';
+import { asBusinessHours, slotWithinBusinessHours } from '../calendar/business-hours';
 import { ConversationsService } from '../conversations/conversations.service';
-import { bookingConfirmationSms, bookingFeeLine } from '../conversations/templates/sms-templates';
+import {
+  bookingConfirmationSms,
+  bookingFeeLine,
+  holdExpiredSms,
+} from '../conversations/templates/sms-templates';
 import { isBookingFeeCollectible } from '../ai/prompts';
 import { PaymentsService } from '../payments/payments.service';
 import { renderBookingSummary } from '../summaries/email-templates';
@@ -72,9 +77,7 @@ export class BookingsService {
      */
     chargeFeeIfEligible?: boolean;
   }): Promise<BookResult & { feeCheckoutUrl: string | null }> {
-    if (new Date(args.endIso).getTime() <= new Date(args.startIso).getTime()) {
-      throw new ValidationError('Appointment end must be after start');
-    }
+    this.assertSlotBookable(args.operator, args.startIso, args.endIso);
 
     // 1. Insert appointment row. Partial unique index on
     //    (operator_id, scheduled_for_start) where status in ('proposed','confirmed')
@@ -220,6 +223,259 @@ export class BookingsService {
     });
 
     return { appointmentId, icsUrl, operatorEventUrl, feeCheckoutUrl };
+  }
+
+  /**
+   * Validate a candidate slot against the operator's business hours (in their
+   * timezone) and basic sanity. Throws `ValidationError` — the AI tool layer
+   * catches it and feeds the reason back to the model to re-propose, so a
+   * closed-day/out-of-hours slot never reaches a real calendar event (the
+   * model proposed weekend slots despite Mon–Fri hours, QA 2026-06-29).
+   */
+  private assertSlotBookable(operator: OperatorRow, startIso: string, endIso: string): void {
+    if (new Date(endIso).getTime() <= new Date(startIso).getTime()) {
+      throw new ValidationError('Appointment end must be after start');
+    }
+    const check = slotWithinBusinessHours(
+      startIso,
+      endIso,
+      asBusinessHours(operator.business_hours),
+      operator.timezone,
+    );
+    if (!check.ok) {
+      throw new ValidationError(`That time isn't available: ${check.reason}`);
+    }
+  }
+
+  /**
+   * Reserve a slot pending payment (Reserve→Pay→Confirm, CLAUDE.md §9.5 — fee
+   * collected BEFORE the appointment is confirmed). Inserts a `proposed` row,
+   * which holds the slot via the partial unique index, but creates NO Google
+   * Calendar event and sends NO confirmation. `confirmPaidBooking` finalizes it
+   * once the Connect `payment_intent.succeeded` webhook lands; an unpaid hold is
+   * swept by `releaseExpiredHolds`.
+   */
+  async reserve(args: {
+    operator: OperatorRow;
+    conversationId: string | null;
+    callerPhoneE164: string;
+    callerName: string;
+    callerEmail?: string;
+    jobSummary: string;
+    urgency?: Urgency;
+    startIso: string;
+    endIso: string;
+  }): Promise<{ appointmentId: string }> {
+    this.assertSlotBookable(args.operator, args.startIso, args.endIso);
+
+    const { data: appt, error } = await this.supabase
+      .db()
+      .from('appointments')
+      .insert({
+        operator_id: args.operator.id,
+        conversation_id: args.conversationId,
+        caller_phone_e164: args.callerPhoneE164,
+        caller_name: args.callerName,
+        ...(args.callerEmail ? { caller_email: args.callerEmail } : {}),
+        job_summary: args.jobSummary,
+        scheduled_for_start: args.startIso,
+        scheduled_for_end: args.endIso,
+        status: 'proposed',
+        fee_status: 'pending',
+      })
+      .select('id')
+      .single();
+    if (error) {
+      if (error.code === '23505') {
+        throw new ConflictError('That slot was just taken — pick another time.');
+      }
+      throw error;
+    }
+    return { appointmentId: appt.id };
+  }
+
+  /**
+   * Finalize a reserved booking after its booking fee is paid. Called from the
+   * Connect `payment_intent.succeeded` handler. Idempotent: a second delivery
+   * (Stripe retries) is a no-op once the calendar event exists. Creates the
+   * Google event, flips the appointment to `confirmed`, sends the caller
+   * confirmation + operator email, and completes the conversation.
+   */
+  async confirmPaidBooking(appointmentId: string): Promise<void> {
+    const { data: appt, error } = await this.supabase
+      .db()
+      .from('appointments')
+      .select(
+        'id, operator_id, conversation_id, caller_phone_e164, caller_name, caller_email, job_summary, scheduled_for_start, scheduled_for_end, status, google_event_id',
+      )
+      .eq('id', appointmentId)
+      .maybeSingle();
+    if (error) throw error;
+    if (!appt) {
+      this.logger.warn({ appointmentId }, 'confirmPaidBooking: appointment not found');
+      return;
+    }
+    if (appt.google_event_id) {
+      // Already finalized (idempotent re-delivery) — nothing to do.
+      return;
+    }
+
+    const { data: operator, error: opErr } = await this.supabase
+      .db()
+      .from('operators')
+      .select('*')
+      .eq('id', appt.operator_id)
+      .single();
+    if (opErr) throw opErr;
+
+    let operatorEventUrl: string | null = null;
+    try {
+      const calendarRes = await this.calendar.insertEvent({
+        operatorId: operator.id,
+        summary: `${operator.business_name}: ${appt.job_summary.slice(0, 80)}`,
+        description: this.eventDescription({
+          callerName: appt.caller_name ?? '',
+          callerPhoneE164: appt.caller_phone_e164,
+          jobSummary: appt.job_summary,
+        }),
+        startIso: appt.scheduled_for_start,
+        endIso: appt.scheduled_for_end,
+        timeZone: operator.timezone,
+        attendeeEmails: appt.caller_email ? [appt.caller_email] : [],
+      });
+      operatorEventUrl = calendarRes.htmlLink;
+      await this.supabase
+        .db()
+        .from('appointments')
+        .update({ google_event_id: calendarRes.id, status: 'confirmed' })
+        .eq('id', appt.id);
+    } catch (err) {
+      // Payment succeeded but calendar failed — DO NOT cancel (the caller paid).
+      // Leave the row paid+proposed and alert via logs so a human can recover.
+      this.logger.error(
+        { appointmentId, err: (err as Error).message },
+        'confirmPaidBooking: calendar insert failed after payment — needs manual follow-up',
+      );
+      throw err;
+    }
+
+    if (appt.conversation_id) {
+      await this.sendConfirmationSms({
+        operator,
+        conversationId: appt.conversation_id,
+        callerPhoneE164: appt.caller_phone_e164,
+        startIso: appt.scheduled_for_start,
+        icsUrl: this.icsUrl(appt.id),
+        feeCheckoutUrl: null,
+      }).catch((smsErr) => {
+        this.logger.warn(
+          { appointmentId, err: (smsErr as Error).message },
+          'confirmPaidBooking: confirmation SMS failed (non-fatal)',
+        );
+      });
+
+      await this.supabase
+        .db()
+        .from('conversations')
+        .update({ status: 'completed', completed_at: new Date().toISOString(), outcome: 'booked' })
+        .eq('id', appt.conversation_id);
+    }
+
+    void this.sendOperatorBookingEmail({
+      operator,
+      appointmentId: appt.id,
+      conversationId: appt.conversation_id,
+      callerName: appt.caller_name ?? '',
+      callerPhoneE164: appt.caller_phone_e164,
+      callerEmail: appt.caller_email ?? null,
+      jobSummary: appt.job_summary,
+      startIso: appt.scheduled_for_start,
+      endIso: appt.scheduled_for_end,
+      operatorEventUrl,
+    }).catch((emailErr) => {
+      this.logger.warn(
+        { appointmentId, err: (emailErr as Error).message },
+        'confirmPaidBooking: operator email failed (non-fatal)',
+      );
+    });
+  }
+
+  /**
+   * Sweep reserved-but-unpaid holds older than the TTL, cancel them (freeing the
+   * slot via the partial unique index), and text the caller that the hold
+   * lapsed. Driven by an internal cron endpoint (same pattern as reminders).
+   * Idempotent: only acts on rows still `proposed` + fee `pending`.
+   */
+  async releaseExpiredHolds(ttlMinutes = 30): Promise<{ released: number }> {
+    const cutoffIso = new Date(Date.now() - ttlMinutes * 60_000).toISOString();
+    const { data: stale, error } = await this.supabase
+      .db()
+      .from('appointments')
+      .select('id, operator_id, conversation_id, caller_phone_e164, scheduled_for_start')
+      .eq('status', 'proposed')
+      .eq('fee_status', 'pending')
+      .lt('created_at', cutoffIso)
+      .limit(50);
+    if (error) throw error;
+    if (!stale || stale.length === 0) return { released: 0 };
+
+    let released = 0;
+    for (const appt of stale) {
+      const { error: updErr } = await this.supabase
+        .db()
+        .from('appointments')
+        .update({ status: 'cancelled', fee_status: 'expired' })
+        .eq('id', appt.id)
+        .eq('status', 'proposed'); // guard against a concurrent confirm
+      if (updErr) {
+        this.logger.warn(
+          { appointmentId: appt.id, err: updErr.message },
+          'releaseExpiredHolds: cancel failed',
+        );
+        continue;
+      }
+      released += 1;
+
+      const { data: operator } = await this.supabase
+        .db()
+        .from('operators')
+        .select('business_name, twilio_number_e164, timezone')
+        .eq('id', appt.operator_id)
+        .maybeSingle();
+      if (operator?.twilio_number_e164) {
+        const friendlyTime = new Date(appt.scheduled_for_start).toLocaleString('en-US', {
+          timeZone: operator.timezone,
+          weekday: 'short',
+          month: 'short',
+          day: 'numeric',
+          hour: 'numeric',
+          minute: '2-digit',
+        });
+        const body = holdExpiredSms(operator.business_name, friendlyTime);
+        try {
+          const send = await this.twilio.sendSms({
+            from: operator.twilio_number_e164,
+            to: appt.caller_phone_e164,
+            body,
+          });
+          if (appt.conversation_id) {
+            await this.conversations.appendMessage({
+              conversationId: appt.conversation_id,
+              role: 'system',
+              body: 'sid' in send ? body : `[skipped: ${send.skipped}] ${body}`,
+              ...('sid' in send ? { twilioMessageSid: send.sid } : {}),
+            });
+          }
+        } catch (smsErr) {
+          this.logger.warn(
+            { appointmentId: appt.id, err: (smsErr as Error).message },
+            'releaseExpiredHolds: hold-expired SMS failed',
+          );
+        }
+      }
+    }
+    this.logger.info({ released }, 'releaseExpiredHolds swept expired holds');
+    return { released };
   }
 
   private async sendOperatorBookingEmail(args: {

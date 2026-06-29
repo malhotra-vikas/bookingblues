@@ -79,6 +79,32 @@ export function paymentLinkSms(checkoutUrl: string): string {
   return `Reserve your slot with the booking fee here: ${checkoutUrl}`;
 }
 
+/**
+ * Sent when a fee-required slot is HELD pending payment (Reserve→Pay→Confirm).
+ * The slot is not confirmed until the deposit is paid; a single self-contained
+ * message so the link is never split across SMS (carrier filtering / §9.3 rate
+ * limit). The hold auto-expires if unpaid.
+ */
+export function reservationHoldSms(args: {
+  businessName: string;
+  friendlyTime: string;
+  feeCents: number;
+  checkoutUrl: string;
+}): string {
+  return (
+    `Almost done! Your ${args.friendlyTime} slot with ${args.businessName} is held for 30 min. ` +
+    `Pay the $${(args.feeCents / 100).toFixed(2)} booking fee to confirm it: ${args.checkoutUrl}`
+  );
+}
+
+/** Sent when a held (unpaid) reservation expires and the slot is released. */
+export function holdExpiredSms(businessName: string, friendlyTime: string): string {
+  return (
+    `Your held ${friendlyTime} slot with ${businessName} expired since the booking fee wasn't paid. ` +
+    `Reply here and we'll find you another time.`
+  );
+}
+
 /** Out-of-scope handoff — the caller's address is outside the service area. */
 export function outOfScopeAreaSms(businessName: string, zipList: string): string {
   return `Thanks for reaching out! ${businessName} only services ZIP codes ${zipList}. Your address is outside our area — best of luck finding a local pro.`;

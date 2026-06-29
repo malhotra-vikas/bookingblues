@@ -6,6 +6,8 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 export interface ConnectHandlerDeps {
   readonly db: SupabaseClient<Database>;
   readonly logger: PinoLogger;
+  /** Finalizes a reserved booking once its fee is paid (Reserve→Pay→Confirm). */
+  readonly confirmPaidBooking: (appointmentId: string) => Promise<void>;
 }
 
 /**
@@ -94,6 +96,11 @@ export async function onPaymentIntentSucceeded(
     .from('appointments')
     .update({ fee_status: 'paid' })
     .eq('id', payment.appointment_id);
+
+  // Reserve→Pay→Confirm: the slot was only HELD (status 'proposed', no calendar
+  // event) pending this payment. Now finalize — create the Google event, send
+  // confirmation, complete the conversation. Idempotent on retries.
+  await deps.confirmPaidBooking(payment.appointment_id);
 }
 
 export async function onChargeRefunded(

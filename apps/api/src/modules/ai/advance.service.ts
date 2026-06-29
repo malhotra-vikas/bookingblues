@@ -237,6 +237,13 @@ export class AdvanceService {
 
     let assistantText: string | null = null;
     let terminal: ToolResult | null = null;
+    // A non-terminal tool that wants to stop the loop and send one SMS without
+    // completing the conversation (e.g. reserve→pay: hold the slot, text the
+    // payment link, stay open awaiting payment).
+    let stopLoopResult: ToolResult | null = null;
+    // Out-of-band SMS from non-terminal tools that DON'T stop the loop — these
+    // were previously dropped (only terminal.outboundMessage was ever sent).
+    const pendingOutbound: string[] = [];
 
     for (let i = 0; i < MAX_TOOL_ITERATIONS; i += 1) {
       const completion = await this.openai.client_().chat.completions.create({
@@ -256,7 +263,7 @@ export class AdvanceService {
         break;
       }
 
-      let terminatedThisIter = false;
+      let stopThisIter = false;
       for (const call of toolCalls) {
         if (call.type !== 'function') continue;
         const result = await this.dispatchTool(call.function.name, call.function.arguments, ctx);
@@ -269,11 +276,16 @@ export class AdvanceService {
 
         if (result.state) {
           terminal = result;
-          terminatedThisIter = true;
+          stopThisIter = true;
+        } else if (result.stopLoop) {
+          stopLoopResult = result;
+          stopThisIter = true;
+        } else if (result.outboundMessage) {
+          pendingOutbound.push(result.outboundMessage);
         }
       }
 
-      if (terminatedThisIter) break;
+      if (stopThisIter) break;
     }
 
     // Apply terminal state first so it's reflected even if SMS send fails.
@@ -290,6 +302,25 @@ export class AdvanceService {
       return;
     }
 
+    // Non-terminal stop (reserve→pay): send the single payment-link SMS and
+    // keep the conversation open (awaiting the caller's payment).
+    if (stopLoopResult) {
+      if (stopLoopResult.outboundMessage) {
+        await this.sendBotSms(
+          operator.twilio_number_e164,
+          callerPhoneE164,
+          conversation.id,
+          stopLoopResult.outboundMessage,
+        );
+      }
+      await this.supabase
+        .db()
+        .from('conversations')
+        .update({ status: 'awaiting_caller' })
+        .eq('id', conversation.id);
+      return;
+    }
+
     if (assistantText && assistantText.trim().length > 0) {
       await this.sendBotSms(
         operator.twilio_number_e164,
@@ -297,6 +328,13 @@ export class AdvanceService {
         conversation.id,
         assistantText,
       );
+    }
+    // Flush any out-of-band SMS from non-terminal tools (e.g. a legacy
+    // request_payment_link call) so the link is never dropped.
+    for (const body of pendingOutbound) {
+      await this.sendBotSms(operator.twilio_number_e164, callerPhoneE164, conversation.id, body);
+    }
+    if ((assistantText && assistantText.trim().length > 0) || pendingOutbound.length > 0) {
       // Move conversation back to awaiting_caller after a non-terminal reply.
       await this.supabase
         .db()

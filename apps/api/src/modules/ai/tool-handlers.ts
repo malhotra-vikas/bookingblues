@@ -10,7 +10,9 @@ import {
   outOfScopeGenericSms,
   outOfScopeServiceSms,
   paymentLinkSms,
+  reservationHoldSms,
 } from '../conversations/templates/sms-templates';
+import { ConflictError, ValidationError } from '../../common/errors/app-error';
 import type { ConversationsService } from '../conversations/conversations.service';
 import type { PaymentsService } from '../payments/payments.service';
 import type { EscalationsService } from '../slack/escalations.service';
@@ -62,6 +64,14 @@ export interface ToolResult {
   readonly outboundMessage?: string;
   /** Stop the model loop and stop sending model output (used for spam). */
   readonly silentTerminate?: boolean;
+  /**
+   * Stop the model loop and send `outboundMessage` as the sole reply, WITHOUT
+   * marking the conversation terminal. Used by the Reserve→Pay→Confirm fee
+   * path: we hold the slot, send one self-contained payment-link SMS, and keep
+   * the conversation open (awaiting payment) so a single message carries the
+   * link (avoids the §9.3 rate-limit splitting it from a separate ack).
+   */
+  readonly stopLoop?: boolean;
 }
 
 export async function checkAvailability(
@@ -106,10 +116,7 @@ export async function bookAppointment(
   args: BookAppointmentArgs,
   ctx: ToolContext,
 ): Promise<ToolResult> {
-  // Delegate to the shared BookingsService so the AI path and the manual
-  // paths (`/bb book`, Slack button) share advisory lock, calendar insert,
-  // and confirmation SMS with the tap-to-add ICS link.
-  const result = await ctx.bookings.book({
+  const common = {
     operator: ctx.operator,
     conversationId: ctx.conversation.id,
     callerPhoneE164: ctx.callerPhoneE164,
@@ -119,22 +126,85 @@ export async function bookAppointment(
     urgency: args.urgency,
     startIso: args.start,
     endIso: args.end,
-    // AI path — don't double-audit (advance layer already logs).
-  });
-
-  return {
-    content: {
-      appointment_id: result.appointmentId,
-      ics_url: result.icsUrl,
-      // Honor the full §9.5 eligibility set — same predicate the prompt uses
-      // to decide whether to mention a fee. Prevents the bot from chaining
-      // `request_payment_link` when Connect isn't ready, which would error
-      // out and leave the caller hanging.
-      booking_fee_required: isBookingFeeCollectible(ctx.operator),
-    },
-    state: 'completed',
-    outcome: 'booked',
   };
+
+  // When a booking fee is collectible, collect it BEFORE confirming (§9.5):
+  // reserve the slot (held, no calendar event yet) and text a payment link.
+  // The Connect `payment_intent.succeeded` webhook confirms the booking.
+  if (isBookingFeeCollectible(ctx.operator)) {
+    let appointmentId: string;
+    try {
+      const reserved = await ctx.bookings.reserve(common);
+      appointmentId = reserved.appointmentId;
+    } catch (err) {
+      // A taken slot / closed-day / out-of-hours is a normal condition — feed
+      // it back to the model to re-propose, NEVER throw (a throw misfires the
+      // "AI failed" fallback + alert, QA 2026-06-29).
+      if (err instanceof ConflictError || err instanceof ValidationError) {
+        return { content: { error: 'slot_unavailable', message: err.message } };
+      }
+      throw err;
+    }
+
+    let session: { url: string; paymentId: string };
+    try {
+      session = await ctx.payments.createBookingFeeCheckout({
+        operatorId: ctx.operator.id,
+        appointmentId,
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      ctx.logger.warn({ appointmentId, err: message }, 'reserve: createBookingFeeCheckout failed');
+      return { content: { error: 'fee_unavailable', message } };
+    }
+
+    const friendlyTime = new Date(args.start).toLocaleString('en-US', {
+      timeZone: ctx.operator.timezone,
+      weekday: 'short',
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+    });
+    return {
+      content: {
+        appointment_id: appointmentId,
+        payment_required: true,
+        fee_cents: ctx.operator.booking_fee_cents,
+        payment_url: session.url,
+        status: 'held_pending_payment',
+      },
+      // Single self-contained SMS with the link; keep the conversation open
+      // (non-terminal) so the caller can pay, then the webhook confirms.
+      outboundMessage: reservationHoldSms({
+        businessName: ctx.operator.business_name,
+        friendlyTime,
+        feeCents: ctx.operator.booking_fee_cents!,
+        checkoutUrl: session.url,
+      }),
+      stopLoop: true,
+    };
+  }
+
+  // No fee collectible — book immediately (shared pipeline: advisory lock,
+  // calendar insert, confirmation SMS with the tap-to-add ICS link).
+  try {
+    const result = await ctx.bookings.book(common);
+    return {
+      content: {
+        appointment_id: result.appointmentId,
+        ics_url: result.icsUrl,
+        booking_fee_required: false,
+      },
+      state: 'completed',
+      outcome: 'booked',
+    };
+  } catch (err) {
+    if (err instanceof ConflictError || err instanceof ValidationError) {
+      return { content: { error: 'slot_unavailable', message: err.message } };
+    }
+    throw err;
+  }
 }
 
 export async function requestPaymentLink(

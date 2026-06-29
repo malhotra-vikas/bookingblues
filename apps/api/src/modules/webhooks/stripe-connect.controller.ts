@@ -10,6 +10,7 @@ import { AppError, WebhookSignatureError } from '../../common/errors/app-error';
 import { StripeService } from '../../common/stripe/stripe.service';
 import { SupabaseService } from '../../common/supabase/supabase.service';
 import { WebhookIdempotencyService } from '../../common/webhooks/webhook-idempotency.service';
+import { BookingsService } from '../appointments/bookings.service';
 import { dispatchConnectEvent } from './stripe-connect-event-handlers';
 
 @Controller('webhooks/stripe/connect')
@@ -19,6 +20,7 @@ export class StripeConnectController {
     private readonly stripe: StripeService,
     private readonly supabase: SupabaseService,
     private readonly idempotency: WebhookIdempotencyService,
+    private readonly bookings: BookingsService,
     private readonly logger: PinoLogger,
   ) {
     this.logger.setContext(StripeConnectController.name);
@@ -62,6 +64,7 @@ export class StripeConnectController {
       await dispatchConnectEvent(event, event.account, {
         db: this.supabase.db(),
         logger: this.logger,
+        confirmPaidBooking: (appointmentId) => this.bookings.confirmPaidBooking(appointmentId),
       });
       await this.idempotency.markProcessed(recorded.id);
     } catch (err) {

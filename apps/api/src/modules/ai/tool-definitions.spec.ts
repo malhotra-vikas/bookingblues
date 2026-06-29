@@ -55,7 +55,9 @@ describe('Tool argument schemas', () => {
     expect(parsed.urgency).toBe('normal');
   });
 
-  it('exposes all 7 tools by name', () => {
+  it('exposes the expected tools by name', () => {
+    // `request_payment_link` is intentionally not model-exposed — book_appointment
+    // now reserves the slot AND sends the payment link itself (Reserve→Pay→Confirm).
     const names = TOOL_DEFINITIONS.map((t) => t.function.name).sort();
     expect(names).toEqual([
       'book_appointment',
@@ -64,7 +66,6 @@ describe('Tool argument schemas', () => {
       'mark_out_of_scope',
       'mark_spam',
       'propose_slots',
-      'request_payment_link',
     ]);
   });
 });
