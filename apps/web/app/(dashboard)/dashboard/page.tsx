@@ -1,5 +1,6 @@
 import Link from 'next/link';
 
+import { AutoRefresh } from '../../../components/dashboard/AutoRefresh';
 import { PeriodSelector } from '../../../components/dashboard/PeriodSelector';
 import { ResolveConversationButton } from '../../../components/dashboard/ResolveConversationButton';
 import { TrialBanner } from '../../../components/TrialBanner';
@@ -139,7 +140,11 @@ export default async function DashboardPage({
         <div>
           <h1 className="text-2xl font-semibold dark:text-slate-100">Dashboard</h1>
           {hasMetrics && (
-            <p className="text-xs text-muted dark:text-slate-400 mt-1">Stats for {PERIOD_LABEL[period]}</p>
+            <p className="text-xs text-muted dark:text-slate-400 mt-1 flex items-center gap-2">
+              <span>Stats for {PERIOD_LABEL[period]}</span>
+              <span aria-hidden>·</span>
+              <AutoRefresh />
+            </p>
           )}
         </div>
         {hasMetrics ? (
