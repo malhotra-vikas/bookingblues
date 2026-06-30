@@ -89,6 +89,8 @@ async function bootstrap(): Promise<void> {
       // Short, clean booking-fee payment links sent over SMS (no /v1, no special
       // chars) that 302 to the long Stripe Checkout URL.
       { path: 'pay/(.*)', method: RequestMethod.ALL },
+      // Short "add to calendar" links (302 → the /v1/appointments/:id.ics ICS).
+      { path: 'cal/(.*)', method: RequestMethod.ALL },
     ],
   });
 

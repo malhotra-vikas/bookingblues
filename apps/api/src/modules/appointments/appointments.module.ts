@@ -10,6 +10,7 @@ import { PaymentsModule } from '../payments/payments.module';
 
 import { BookingHoldsController } from './booking-holds.controller';
 import { BookingsService } from './bookings.service';
+import { CalShortLinkController } from './cal-shortlink.controller';
 import { IcsController } from './ics.controller';
 
 @Module({
@@ -22,7 +23,7 @@ import { IcsController } from './ics.controller';
     PaymentsModule,
     EmailModule,
   ],
-  controllers: [IcsController, BookingHoldsController],
+  controllers: [IcsController, BookingHoldsController, CalShortLinkController],
   providers: [BookingsService],
   exports: [BookingsService],
 })

@@ -625,9 +625,10 @@ export class BookingsService {
     });
   }
 
-  /** Public, unauthenticated deep-link the caller can tap to add to their calendar. */
+  /** Public, unauthenticated deep-link the caller can tap to add to their calendar.
+   *  Short `/cal/:id` form (302 → the .ics) so it stays tappable in SMS. */
   icsUrl(appointmentId: string): string {
-    return `${this.env.API_URL}/v1/appointments/${appointmentId}.ics`;
+    return `${this.env.API_URL}/cal/${appointmentId}`;
   }
 
   /**
