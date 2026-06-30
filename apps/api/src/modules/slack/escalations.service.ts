@@ -46,6 +46,11 @@ const REASON_HUMAN: Record<EscalationReason, string> = {
 export class EscalationsService {
   /** Tracks the last outbound SMS time per conversation, for the §9.3 rate limit. */
   private readonly lastSmsAt = new Map<string, number>();
+  /** Conversations we've already posted a non-blocking emergency alert for, so a
+   *  burst of caller SMS ("flooding" / "it's gushing") posts ONE #hitl alert,
+   *  not one per message. In-memory — a restart may allow a rare duplicate,
+   *  which is harmless. */
+  private readonly emergencyAlerted = new Set<string>();
 
   constructor(
     private readonly supabase: SupabaseService,
@@ -124,6 +129,70 @@ export class EscalationsService {
       );
     }
     return { channelId: null, threadTs: null };
+  }
+
+  /**
+   * Non-blocking emergency heads-up in #hitl (Slice 17 emergency design — "always
+   * alert HITL, non-blocking; AI keeps engaging"). Fired by the emergency
+   * detector on the SMS path, INDEPENDENT of whether the model calls
+   * `escalate_to_human`. Crucially it does NOT create an escalation row or flip
+   * the conversation to `escalated` — the AI continues to book a serviceable
+   * emergency. It just guarantees a human SEES every emergency (the gap behind
+   * "bot said it was handing off but no HITL happened"). One alert per
+   * conversation. Best-effort — never throws.
+   */
+  async postEmergencyAlert(args: {
+    operator: OperatorRow;
+    conversation: ConversationRow;
+    callerPhoneE164: string;
+    reason: string;
+  }): Promise<void> {
+    if (this.emergencyAlerted.has(args.conversation.id)) return;
+    const hitl = this.slackApi.defaultChannelId();
+    if (!this.slackApi.isConfigured() || !hitl) return;
+    this.emergencyAlerted.add(args.conversation.id); // claim before await to dedup races
+    try {
+      // Make sure the #convos thread exists, then link to it.
+      const thread = await this.ensureConversationThread({
+        operator: args.operator,
+        conversation: args.conversation,
+      });
+      let permalink: string | null = null;
+      if (thread.channelId && thread.threadTs) {
+        try {
+          const r = await this.slackApi.getPermalink({
+            channel: thread.channelId,
+            messageTs: thread.threadTs,
+          });
+          if (r.ok && r.permalink) permalink = r.permalink;
+        } catch {
+          // non-fatal
+        }
+      }
+      let callerJobs: string | null = null;
+      try {
+        const jobs = await fetchCallerJobs(this.supabase.db(), args.operator.id, args.callerPhoneE164);
+        callerJobs = formatCallerJobsForSlack(jobs, args.operator.timezone);
+      } catch {
+        // non-fatal
+      }
+      const owner = await this.salesOwnerLabel(args.operator.user_id);
+      const last4 = args.callerPhoneE164.slice(-4);
+      const lines = [
+        `:rotating_light: *Emergency detected* — ${args.operator.business_name} · caller •••${last4} · convo \`${args.conversation.id.slice(0, 8)}\` · owner ${owner}`,
+        `*What:* ${args.reason}`,
+        `_The AI is engaging the caller now (and will book if serviceable). Jump into the conversation thread if a human needs to step in._`,
+      ];
+      if (callerJobs) lines.push('', callerJobs);
+      if (permalink) lines.push('', `Conversation thread: ${permalink}`);
+      await this.slackApi.postMessage({ channel: hitl, text: lines.join('\n') });
+    } catch (err) {
+      this.emergencyAlerted.delete(args.conversation.id); // allow a later retry
+      this.logger.warn(
+        { conversationId: args.conversation.id, err: (err as Error).message },
+        'postEmergencyAlert failed (non-fatal)',
+      );
+    }
   }
 
   /**

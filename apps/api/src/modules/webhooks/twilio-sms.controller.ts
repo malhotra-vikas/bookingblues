@@ -169,6 +169,23 @@ export class TwilioSmsController {
             const conversationId = convoFull.id;
 
             const sendAlert = (reason: string, source: 'keyword' | 'ai'): void => {
+              // Non-blocking HITL heads-up in #hitl — independent of whether the
+              // model later calls escalate_to_human. Guarantees a human sees the
+              // emergency even if the AI handles (or fumbles) it. Fire-and-forget.
+              this.escalations
+                .postEmergencyAlert({
+                  operator: operatorRow,
+                  conversation: convoFull,
+                  callerPhoneE164: callerFrom,
+                  reason,
+                })
+                .catch((err) => {
+                  this.logger.warn(
+                    { err: err instanceof Error ? err.message : String(err), operatorId, conversationId, source },
+                    'emergency HITL alert failed (non-fatal)',
+                  );
+                });
+
               const alert = emergencyAlertSms({ businessName, callerLast4, reason, callerFrom });
               this.twilio
                 .sendSms({ from: twilioFrom, to: operatorPhone, body: alert })
