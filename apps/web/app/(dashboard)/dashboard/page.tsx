@@ -1,5 +1,6 @@
 import Link from 'next/link';
 
+import { PeriodSelector } from '../../../components/dashboard/PeriodSelector';
 import { ResolveConversationButton } from '../../../components/dashboard/ResolveConversationButton';
 import { TrialBanner } from '../../../components/TrialBanner';
 import { ApiError, apiAsUser } from '../../../lib/api';
@@ -83,9 +84,30 @@ async function safeFetch<T>(path: string): Promise<T | { error: string }> {
   }
 }
 
-export default async function DashboardPage(): Promise<JSX.Element> {
+const PERIOD_LABEL: Record<string, string> = {
+  month: 'this month',
+  quarter: 'this quarter',
+  year: 'this year',
+  custom: 'custom range',
+};
+
+export default async function DashboardPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ period?: string; from?: string; to?: string }>;
+}): Promise<JSX.Element> {
+  const sp = await searchParams;
+  const period = ['month', 'quarter', 'year', 'custom'].includes(sp.period ?? '')
+    ? (sp.period as string)
+    : 'month';
+  const qs = new URLSearchParams({ period });
+  if (period === 'custom') {
+    if (sp.from) qs.set('from', sp.from);
+    if (sp.to) qs.set('to', sp.to);
+  }
+
   const [metricsR, conversationsR, appointmentsR] = await Promise.all([
-    safeFetch<Metrics>('/v1/dashboard/metrics'),
+    safeFetch<Metrics>(`/v1/dashboard/metrics?${qs.toString()}`),
     safeFetch<{ data: Conversation[] }>('/v1/conversations'),
     safeFetch<{ data: Appointment[] }>('/v1/appointments'),
   ]);
@@ -117,16 +139,17 @@ export default async function DashboardPage(): Promise<JSX.Element> {
         <div>
           <h1 className="text-2xl font-semibold dark:text-slate-100">Dashboard</h1>
           {hasMetrics && (
-            <p className="text-xs text-muted dark:text-slate-400 mt-1">
-              Stats for {new Date(metricsR.month_start_iso).toLocaleString('en-US', { month: 'long', year: 'numeric' })}
-            </p>
+            <p className="text-xs text-muted dark:text-slate-400 mt-1">Stats for {PERIOD_LABEL[period]}</p>
           )}
         </div>
         {hasMetrics ? (
-          <TrialBanner
-            status={metricsR.subscription_status}
-            trialEndsAt={metricsR.trial_ends_at}
-          />
+          <div className="flex flex-col items-end gap-2">
+            <TrialBanner
+              status={metricsR.subscription_status}
+              trialEndsAt={metricsR.trial_ends_at}
+            />
+            <PeriodSelector />
+          </div>
         ) : null}
       </header>
 
@@ -197,7 +220,14 @@ export default async function DashboardPage(): Promise<JSX.Element> {
               <tbody className="dark:text-slate-200">
                 {conversationsR.data.map((c) => (
                   <tr key={c.id} className="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/50">
-                    <td className="px-3 py-2 font-mono">{maskPhone(c.caller_phone_e164)}</td>
+                    <td className="px-3 py-2 font-mono">
+                      <Link
+                        href={`/conversations/${c.id}`}
+                        className="text-accent dark:text-accent-light no-underline hover:underline"
+                      >
+                        {maskPhone(c.caller_phone_e164)}
+                      </Link>
+                    </td>
                     <td className="px-3 py-2"><StatusBadge status={c.status} /></td>
                     <td className="px-3 py-2 text-muted dark:text-slate-400">{c.outcome ?? '—'}</td>
                     <td className="px-3 py-2 text-muted dark:text-slate-400 whitespace-nowrap">

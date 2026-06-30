@@ -6,6 +6,9 @@ import { conversationLimitForPlan } from '../billing/plan-limits';
 
 export interface DashboardMetrics {
   readonly month_start_iso: string;
+  /** Stats window the numbers below cover (selectable: month/quarter/year/custom). */
+  readonly range_start_iso: string;
+  readonly range_end_iso: string | null;
   /**
    * Conversation usage for the operator's current billing cycle (#usage). For
    * trials the window spans the trial; for paid it's the Stripe billing period.
@@ -39,7 +42,10 @@ export interface DashboardMetrics {
 export class DashboardService {
   constructor(private readonly supabase: SupabaseService) {}
 
-  async metrics(userId: string): Promise<DashboardMetrics> {
+  async metrics(
+    userId: string,
+    range?: { startIso: string; endIso?: string },
+  ): Promise<DashboardMetrics> {
     const { data: operator, error } = await this.supabase
       .db()
       .from('operators')
@@ -49,8 +55,11 @@ export class DashboardService {
     if (error) throw error;
     if (!operator) throw new NotFoundError('Operator not found');
 
-    const monthStart = startOfMonthUtc();
-    const monthStartIso = monthStart.toISOString();
+    const monthStartIso = startOfMonthUtc().toISOString();
+    // Stats window — selectable on the dashboard (month / quarter / year /
+    // custom). Defaults to the current calendar month.
+    const statsStartIso = range?.startIso ?? monthStartIso;
+    const statsEndIso = range?.endIso;
 
     // Usage window: the operator's current billing cycle (covers trials too).
     // Fall back to the calendar month if the subscription period isn't synced.
@@ -65,31 +74,37 @@ export class DashboardService {
     );
 
     const [convoTotal, convoOutOfScope, convoEscalated, convoActive] = await Promise.all([
-      this.count('conversations', operator.id, monthStartIso),
-      this.count('conversations', operator.id, monthStartIso, { outcome: 'out_of_scope' }),
-      this.count('conversations', operator.id, monthStartIso, { status: 'escalated' }),
-      this.count('conversations', operator.id, monthStartIso, {
-        statusIn: ['awaiting_caller', 'awaiting_bot', 'active'],
-      }),
+      this.count('conversations', operator.id, statsStartIso, undefined, statsEndIso),
+      this.count('conversations', operator.id, statsStartIso, { outcome: 'out_of_scope' }, statsEndIso),
+      this.count('conversations', operator.id, statsStartIso, { status: 'escalated' }, statsEndIso),
+      this.count(
+        'conversations',
+        operator.id,
+        statsStartIso,
+        { statusIn: ['awaiting_caller', 'awaiting_bot', 'active'] },
+        statsEndIso,
+      ),
     ]);
 
     const [apptTotal, apptConfirmed, apptCompleted, apptCancelled] = await Promise.all([
-      this.count('appointments', operator.id, monthStartIso),
-      this.count('appointments', operator.id, monthStartIso, { status: 'confirmed' }),
-      this.count('appointments', operator.id, monthStartIso, { status: 'completed' }),
-      this.count('appointments', operator.id, monthStartIso, { status: 'cancelled' }),
+      this.count('appointments', operator.id, statsStartIso, undefined, statsEndIso),
+      this.count('appointments', operator.id, statsStartIso, { status: 'confirmed' }, statsEndIso),
+      this.count('appointments', operator.id, statsStartIso, { status: 'completed' }, statsEndIso),
+      this.count('appointments', operator.id, statsStartIso, { status: 'cancelled' }, statsEndIso),
     ]);
 
     // The OPERATOR's "fee collected" is the deposit they keep — the gross charge
     // minus our platform application fee — NOT the platform's cut. (Showing the
     // $37.50 platform fee here confused operators; they want their deposit.)
-    const { data: feeRows, error: feeErr } = await this.supabase
+    let feeQuery = this.supabase
       .db()
       .from('payments')
       .select('amount_cents, application_fee_cents, status, created_at')
       .eq('operator_id', operator.id)
-      .gte('created_at', monthStartIso)
+      .gte('created_at', statsStartIso)
       .eq('status', 'succeeded');
+    if (statsEndIso) feeQuery = feeQuery.lt('created_at', statsEndIso);
+    const { data: feeRows, error: feeErr } = await feeQuery;
     if (feeErr) throw feeErr;
     const feeRevenue = (feeRows ?? []).reduce(
       (sum, r) => sum + ((r.amount_cents ?? 0) - (r.application_fee_cents ?? 0)),
@@ -97,7 +112,9 @@ export class DashboardService {
     );
 
     return {
-      month_start_iso: monthStartIso,
+      month_start_iso: statsStartIso,
+      range_start_iso: statsStartIso,
+      range_end_iso: statsEndIso ?? null,
       usage: {
         conversations_used: conversationsUsed,
         conversations_limit: conversationLimitForPlan(operator.plan),
@@ -154,4 +171,42 @@ export class DashboardService {
 function startOfMonthUtc(): Date {
   const now = new Date();
   return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1, 0, 0, 0, 0));
+}
+
+export type StatsPeriod = 'month' | 'quarter' | 'year' | 'custom';
+
+/**
+ * Resolve a dashboard stats window from a period selector. `custom` uses the
+ * provided from/to (ISO dates); the others are anchored to the current UTC date.
+ * Returns `endIso` only for `custom` (the rolling periods run through "now").
+ */
+export function computeStatsRange(
+  period: StatsPeriod | undefined,
+  from?: string,
+  to?: string,
+): { startIso: string; endIso?: string } {
+  const now = new Date();
+  const y = now.getUTCFullYear();
+  switch (period) {
+    case 'quarter': {
+      const q = Math.floor(now.getUTCMonth() / 3) * 3;
+      return { startIso: new Date(Date.UTC(y, q, 1)).toISOString() };
+    }
+    case 'year':
+      return { startIso: new Date(Date.UTC(y, 0, 1)).toISOString() };
+    case 'custom': {
+      const start = from ? new Date(from) : startOfMonthUtc();
+      const result: { startIso: string; endIso?: string } = {
+        startIso: Number.isNaN(start.getTime()) ? startOfMonthUtc().toISOString() : start.toISOString(),
+      };
+      if (to) {
+        const end = new Date(to);
+        if (!Number.isNaN(end.getTime())) result.endIso = end.toISOString();
+      }
+      return result;
+    }
+    case 'month':
+    default:
+      return { startIso: startOfMonthUtc().toISOString() };
+  }
 }

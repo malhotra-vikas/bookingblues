@@ -7,8 +7,8 @@ import type { AuthenticatedUser } from '../../common/auth/jwt-verifier.service';
 import { NotFoundError } from '../../common/errors/app-error';
 import { SupabaseService } from '../../common/supabase/supabase.service';
 import { BookingsService } from '../appointments/bookings.service';
-import type { DashboardMetrics } from './dashboard.service';
-import { DashboardService } from './dashboard.service';
+import type { DashboardMetrics, StatsPeriod } from './dashboard.service';
+import { DashboardService, computeStatsRange } from './dashboard.service';
 
 const PAGE_LIMIT = 50;
 
@@ -22,8 +22,15 @@ export class DashboardController {
   ) {}
 
   @Get('dashboard/metrics')
-  async metrics(@CurrentUser() user: AuthenticatedUser): Promise<DashboardMetrics> {
-    return this.service.metrics(user.userId);
+  async metrics(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query('period') period?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ): Promise<DashboardMetrics> {
+    const allowed: StatsPeriod[] = ['month', 'quarter', 'year', 'custom'];
+    const p = allowed.includes(period as StatsPeriod) ? (period as StatsPeriod) : 'month';
+    return this.service.metrics(user.userId, computeStatsRange(p, from, to));
   }
 
   @Get('conversations')
@@ -43,6 +50,35 @@ export class DashboardController {
     const { data, error } = await q;
     if (error) throw error;
     return { data: data ?? [] };
+  }
+
+  @Get('conversations/:id/messages')
+  async conversationMessages(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') conversationId: string,
+  ): Promise<{
+    conversation: Tables<'conversations'>;
+    messages: Pick<Tables<'messages'>, 'id' | 'role' | 'body' | 'created_at'>[];
+  }> {
+    const operatorId = await this.requireOperatorId(user.userId);
+    const { data: convo, error } = await this.supabase
+      .db()
+      .from('conversations')
+      .select('*')
+      .eq('id', conversationId)
+      .maybeSingle();
+    if (error) throw error;
+    if (!convo || convo.operator_id !== operatorId) {
+      throw new NotFoundError('Conversation not found');
+    }
+    const { data: messages, error: msgErr } = await this.supabase
+      .db()
+      .from('messages')
+      .select('id, role, body, created_at')
+      .eq('conversation_id', conversationId)
+      .order('created_at', { ascending: true });
+    if (msgErr) throw msgErr;
+    return { conversation: convo, messages: messages ?? [] };
   }
 
   @Post('conversations/:id/resolve')
