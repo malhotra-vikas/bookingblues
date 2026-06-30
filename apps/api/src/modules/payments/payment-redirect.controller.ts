@@ -7,6 +7,7 @@ import { StripeService } from '../../common/stripe/stripe.service';
 import { SupabaseService } from '../../common/supabase/supabase.service';
 import { ENV_TOKEN } from '../../config/config.module';
 import type { Env } from '../../config/env';
+import { expandUuid } from '../../common/util/uuid';
 
 /**
  * Public short-link that 302-redirects an SMS recipient to their Stripe
@@ -27,8 +28,9 @@ export class PaymentRedirectController {
     this.logger.setContext(PaymentRedirectController.name);
   }
 
-  @Get(':appointmentId')
-  async redirect(@Param('appointmentId') appointmentId: string, @Res() res: Response): Promise<void> {
+  @Get(':token')
+  async redirect(@Param('token') token: string, @Res() res: Response): Promise<void> {
+    const appointmentId = expandUuid(token);
     const result = (status: string): void =>
       res.redirect(302, `${this.env.APP_URL}/booking/result?status=${status}`);
 

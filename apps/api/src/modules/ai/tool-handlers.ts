@@ -6,6 +6,7 @@ import type { CalendarService } from '../calendar/calendar.service';
 import { isBookingFeeCollectible } from './prompts';
 import {
   addressConfirmedSms,
+  addressNoteAddedSms,
   escalationHandoffSms,
   outOfScopeAreaSms,
   outOfScopeGenericSms,
@@ -272,7 +273,7 @@ export async function collectServiceAddress(
   const { data: appt, error } = await ctx.supabase
     .db()
     .from('appointments')
-    .select('id, google_event_id, scheduled_for_start, job_summary, caller_name, caller_phone_e164')
+    .select('id, service_address, scheduled_for_start')
     .eq('conversation_id', ctx.conversation.id)
     .eq('status', 'confirmed')
     .order('created_at', { ascending: false })
@@ -285,7 +286,21 @@ export async function collectServiceAddress(
     };
   }
 
-  await ctx.bookings.setServiceAddress(appt.id, args.address);
+  // First time → save the address. If we already have one, the caller is adding
+  // access notes (gate code, keys, parking) — append them rather than overwrite
+  // or repeat the "got your address" confirmation (QA 2026-06-30).
+  const alreadyHadAddress = Boolean(appt.service_address && appt.service_address.trim());
+  const combined = alreadyHadAddress ? `${appt.service_address}; ${args.address}` : args.address;
+  await ctx.bookings.setServiceAddress(appt.id, combined);
+
+  if (alreadyHadAddress) {
+    return {
+      content: { ok: true, appointment_id: appt.id, appended: true },
+      state: 'completed',
+      outcome: 'booked',
+      outboundMessage: addressNoteAddedSms(),
+    };
+  }
 
   const friendlyTime = new Date(appt.scheduled_for_start).toLocaleString('en-US', {
     timeZone: ctx.operator.timezone,

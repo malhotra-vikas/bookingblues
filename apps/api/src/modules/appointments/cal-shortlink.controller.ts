@@ -4,6 +4,7 @@ import type { Response } from 'express';
 
 import { ENV_TOKEN } from '../../config/config.module';
 import type { Env } from '../../config/env';
+import { expandUuid } from '../../common/util/uuid';
 
 /**
  * Short, clean "add to calendar" link for SMS — `${API_URL}/cal/:appointmentId`
@@ -19,6 +20,6 @@ export class CalShortLinkController {
 
   @Get(':id')
   redirect(@Param('id') id: string, @Res() res: Response): void {
-    res.redirect(302, `${this.env.API_URL}/v1/appointments/${encodeURIComponent(id)}.ics`);
+    res.redirect(302, `${this.env.API_URL}/v1/appointments/${encodeURIComponent(expandUuid(id))}.ics`);
   }
 }

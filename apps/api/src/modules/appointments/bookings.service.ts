@@ -5,6 +5,7 @@ import type { Tables } from '@bookingblues/db-types';
 import { AuditLogService } from '../../common/audit/audit-log.service';
 import { EmailService } from '../../common/email/email.service';
 import { ConflictError, NotFoundError, ValidationError } from '../../common/errors/app-error';
+import { compactUuid } from '../../common/util/uuid';
 import { SupabaseService } from '../../common/supabase/supabase.service';
 import { TwilioService } from '../../common/twilio/twilio.service';
 import { ENV_TOKEN } from '../../config/config.module';
@@ -626,9 +627,10 @@ export class BookingsService {
   }
 
   /** Public, unauthenticated deep-link the caller can tap to add to their calendar.
-   *  Short `/cal/:id` form (302 → the .ics) so it stays tappable in SMS. */
+   *  Short, hyphen-free `/cal/:token` form (302 → the .ics) so it stays tappable
+   *  in SMS — hyphens in the UUID were breaking link detection. */
   icsUrl(appointmentId: string): string {
-    return `${this.env.API_URL}/cal/${appointmentId}`;
+    return `${this.env.API_URL}/cal/${compactUuid(appointmentId)}`;
   }
 
   /**

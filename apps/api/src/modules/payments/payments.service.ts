@@ -12,6 +12,7 @@ import { SupabaseService } from '../../common/supabase/supabase.service';
 import { ENV_TOKEN } from '../../config/config.module';
 import type { Env } from '../../config/env';
 import { platformTakeRateBpsForPlan } from '../billing/plan-policy';
+import { compactUuid } from '../../common/util/uuid';
 import { computeBookingFeeCharge } from './pricing';
 
 @Injectable()
@@ -192,10 +193,10 @@ export class PaymentsService {
       })
       .eq('id', args.appointmentId);
 
-    // Hand back a short, branded link (no special chars → tappable in SMS) that
-    // 302s to the long Stripe Checkout URL. The raw `session.url` would break
-    // SMS link detection at its `#`/`%` fragment.
-    return { url: `${this.env.API_URL}/pay/${args.appointmentId}`, paymentId: data.id };
+    // Hand back a short, branded, hyphen-free link (tappable in SMS) that 302s to
+    // the long Stripe Checkout URL. The raw `session.url` would break at its
+    // `#`/`%` fragment, and a hyphenated UUID breaks link detection at the first `-`.
+    return { url: `${this.env.API_URL}/pay/${compactUuid(args.appointmentId)}`, paymentId: data.id };
   }
 
   /**

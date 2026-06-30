@@ -59,6 +59,11 @@ export function addressConfirmedSms(friendlyTime: string): string {
   return `Perfect — got your address. You're all set for ${friendlyTime}. See you then!`;
 }
 
+/** Acknowledgement when the caller adds extra access notes after the address. */
+export function addressNoteAddedSms(): string {
+  return `Got it — I've added that to your appointment notes for the tech.`;
+}
+
 /**
  * Stable substring present in the degraded-mode handoff, used to dedupe re-sends
  * (AdvanceService queries messages for this marker). Keep in sync with
