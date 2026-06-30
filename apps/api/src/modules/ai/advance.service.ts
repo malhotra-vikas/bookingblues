@@ -18,6 +18,10 @@ import {
 import { BookingsService } from '../appointments/bookings.service';
 import { PaymentsService } from '../payments/payments.service';
 import { EscalationsService } from '../slack/escalations.service';
+import {
+  fetchCallerJobs,
+  formatCallerJobsForPrompt,
+} from '../appointments/caller-history';
 import { assembleSystemPrompt, wrapCallerMessage } from './prompts';
 import {
   bookAppointment,
@@ -243,7 +247,12 @@ export class AdvanceService {
           .maybeSingle()
       : { data: null };
 
-    const messages = await this.buildMessages(operator, category, conversation.id);
+    const messages = await this.buildMessages(
+      operator,
+      category,
+      conversation.id,
+      callerPhoneE164,
+    );
 
     let assistantText: string | null = null;
     let terminal: ToolResult | null = null;
@@ -469,11 +478,30 @@ export class AdvanceService {
     operator: OperatorRow,
     category: Tables<'categories'> | null,
     conversationId: string,
+    callerPhoneE164: string,
   ): Promise<OpenAI.Chat.Completions.ChatCompletionMessageParam[]> {
+    // Caller history lets the bot recognise a returning caller who already has
+    // a job on file and escalate (instead of double-booking) when they want to
+    // discuss/change an existing one. Best-effort — never block the reply.
+    let callerHistory: string | null = null;
+    try {
+      const jobs = await fetchCallerJobs(this.supabase.db(), operator.id, callerPhoneE164);
+      // Exclude THIS conversation's own booking — otherwise the post-booking
+      // address-collection turn would see the job it just made as an "existing
+      // job" and escalate instead of saving the address.
+      const priorJobs = jobs.filter((j) => j.conversationId !== conversationId);
+      callerHistory = formatCallerJobsForPrompt(priorJobs, operator.timezone);
+    } catch (err) {
+      this.logger.warn(
+        { conversationId, err: (err as Error).message },
+        'caller-history fetch failed (non-fatal); prompt omits it',
+      );
+    }
     const system = assembleSystemPrompt({
       operator,
       category,
       nowIso: new Date().toISOString(),
+      callerHistory,
     });
     const { data: history, error } = await this.supabase
       .db()

@@ -43,7 +43,7 @@ export class ConversationsService {
   async getOrCreate(
     operatorId: string,
     callerPhoneE164: string,
-    opts: { resumeCompleted?: boolean } = {},
+    opts: { resumeCompleted?: boolean; freshIfBooked?: boolean } = {},
   ): Promise<ConversationRow> {
     // A bare inbound SMS shortly after a booking is almost always a follow-up,
     // so we reopen the just-completed conversation (resume window below). But a
@@ -51,7 +51,7 @@ export class ConversationsService {
     // got a fresh greeting. Reopening their completed convo there is the bug the
     // operator saw ("called again about a new issue, the old conversation
     // restarted"). The voice path passes `resumeCompleted: false`.
-    const { resumeCompleted = true } = opts;
+    const { resumeCompleted = true, freshIfBooked = false } = opts;
     const { data: existing, error: lookupErr } = await this.supabase
       .db()
       .from('conversations')
@@ -63,7 +63,24 @@ export class ConversationsService {
       .limit(1)
       .maybeSingle();
     if (lookupErr) throw lookupErr;
-    if (existing) return existing;
+    if (existing) {
+      // A new call when the most-recent open conversation already produced a
+      // confirmed booking = a NEW job. That conversation is just sitting in
+      // `awaiting_caller` to collect the address (post-booking wrap-up), but
+      // it's a finished booking — continuing it would graft an unrelated new
+      // job onto a paid appointment (the bug the operator hit).
+      //   EXCEPTION: `escalated` is owned by a human live in the Slack thread
+      //   (ADR 0010). Reuse it so the caller's new call stays bridged to that
+      //   thread instead of spawning an orphaned second conversation.
+      if (
+        freshIfBooked &&
+        existing.status !== 'escalated' &&
+        (await this.hasConfirmedAppointment(existing.id))
+      ) {
+        return this.create(operatorId, callerPhoneE164);
+      }
+      return existing;
+    }
 
     // Resume-recent-completed window: a follow-up SMS shortly after a booking
     // ("can I get an estimate?") used to spawn a fresh convo with a fresh
@@ -106,6 +123,20 @@ export class ConversationsService {
     }
 
     return this.create(operatorId, callerPhoneE164);
+  }
+
+  /** True if this conversation already produced a real booking (paid, or an
+   *  unpaid immediate-danger booking — both land as `confirmed`). */
+  private async hasConfirmedAppointment(conversationId: string): Promise<boolean> {
+    const { data, error } = await this.supabase
+      .db()
+      .from('appointments')
+      .select('id')
+      .eq('conversation_id', conversationId)
+      .eq('status', 'confirmed')
+      .limit(1);
+    if (error) throw error;
+    return (data ?? []).length > 0;
   }
 
   private async create(operatorId: string, callerPhoneE164: string): Promise<ConversationRow> {

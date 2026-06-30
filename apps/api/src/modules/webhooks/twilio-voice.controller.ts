@@ -219,9 +219,13 @@ export class TwilioVoiceController {
   ): Promise<void> {
     if (!callerPhone || !operator.twilio_number_e164) return;
     // A new inbound call is a new job — never reopen a just-completed convo
-    // (the resume window is for SMS follow-ups only). See ConversationsService.
+    // (the resume window is for SMS follow-ups only), and never continue a
+    // conversation that already produced a confirmed booking (it's only open
+    // to collect the address). See ConversationsService. `escalated` is the
+    // one exception and is handled there.
     const convo = await this.conversations.getOrCreate(operator.id, callerPhone, {
       resumeCompleted: false,
+      freshIfBooked: true,
     });
     // A2P 10DLC requires the first message in any conversation to disclose
     // opt-out + message-rate language (CTIA + carrier guidelines). Twilio

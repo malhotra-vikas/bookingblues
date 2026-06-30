@@ -174,10 +174,15 @@ export function assembleSystemPrompt(args: {
   operator: OperatorRow;
   category: CategoryRow | null;
   nowIso: string;
+  /** Optional caller-history block (see caller-history.formatCallerJobsForPrompt). */
+  callerHistory?: string | null;
 }): string {
   const sections = [STATIC_FRAME, operatorBlock(args.operator, args.nowIso)];
   if (args.category?.system_prompt_template) {
     sections.push(args.category.system_prompt_template);
+  }
+  if (args.callerHistory) {
+    sections.push(args.callerHistory);
   }
   return sections.join('\n\n---\n\n');
 }

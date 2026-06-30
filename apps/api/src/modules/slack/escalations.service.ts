@@ -6,6 +6,7 @@ import { AuditLogService } from '../../common/audit/audit-log.service';
 import { AppError, NotFoundError } from '../../common/errors/app-error';
 import { SupabaseService } from '../../common/supabase/supabase.service';
 import { TwilioService } from '../../common/twilio/twilio.service';
+import { fetchCallerJobs, formatCallerJobsForSlack } from '../appointments/caller-history';
 import { ConversationsService } from '../conversations/conversations.service';
 
 import { SlackApiClient } from './slack-api.client';
@@ -279,10 +280,23 @@ export class EscalationsService {
           }
         }
         const owner = await this.salesOwnerLabel(args.operator.user_id);
+        // Give the human picking up the caller's full job history (upcoming,
+        // in-progress, completed, cancelled) so they have context with zero
+        // lookup — especially for "I want to talk about my previous job".
+        let callerJobs: string | null = null;
+        try {
+          const jobs = await fetchCallerJobs(this.supabase.db(), args.operator.id, args.callerPhoneE164);
+          callerJobs = formatCallerJobsForSlack(jobs, args.operator.timezone);
+        } catch (err) {
+          this.logger.warn(
+            { operatorId: args.operator.id, err: (err as Error).message },
+            'caller-history fetch for alarm failed (non-fatal)',
+          );
+        }
         const post = await this.slackApi.postMessage({
           channel: hitlChannel,
-          text: this.alarmText(args, convoPermalink, owner),
-          blocks: this.alarmBlocks(args, convoPermalink, owner),
+          text: this.alarmText(args, convoPermalink, owner, callerJobs),
+          blocks: this.alarmBlocks(args, convoPermalink, owner, callerJobs),
         });
         if (post.ok && post.ts) {
           channelId = post.channel ?? hitlChannel;
@@ -779,6 +793,7 @@ export class EscalationsService {
     args: { operator: OperatorRow; conversation: ConversationRow; callerPhoneE164: string; reason: EscalationReason; reasonText?: string; openedBy: 'bot' | 'caller' | 'operator' },
     permalink: string | null,
     owner: string,
+    callerJobs: string | null,
   ): string {
     const last4 = args.callerPhoneE164.slice(-4);
     const reasonHuman = REASON_HUMAN[args.reason];
@@ -787,6 +802,7 @@ export class EscalationsService {
       `${args.operator.business_name} · caller •••${last4} · convo \`${args.conversation.id.slice(0, 8)}\` · owner ${owner}`,
     ];
     if (args.reasonText) lines.push('', `*Why:* ${args.reasonText}`);
+    if (callerJobs) lines.push('', callerJobs);
     if (permalink) lines.push('', `Transcript & live updates: ${permalink}`);
     lines.push(
       '',
@@ -799,6 +815,7 @@ export class EscalationsService {
     args: { operator: OperatorRow; conversation: ConversationRow; callerPhoneE164: string; reason: EscalationReason; reasonText?: string },
     permalink: string | null,
     owner: string,
+    callerJobs: string | null,
   ): ReadonlyArray<unknown> {
     const last4 = args.callerPhoneE164.slice(-4);
     const reasonHuman = REASON_HUMAN[args.reason];
@@ -814,6 +831,7 @@ export class EscalationsService {
         ],
       },
       args.reasonText ? { type: 'section', text: { type: 'mrkdwn', text: `*Why:* ${args.reasonText}` } } : null,
+      callerJobs ? { type: 'section', text: { type: 'mrkdwn', text: callerJobs } } : null,
       permalink
         ? {
             type: 'section',
