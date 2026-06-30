@@ -84,17 +84,19 @@ export class EscalationsService {
     }
     try {
       const last4 = args.conversation.caller_phone_e164.slice(-4);
+      const owner = await this.salesOwnerLabel(args.operator.user_id);
+      const convoShort = args.conversation.id.slice(0, 8);
       const post = await this.slackApi.postMessage({
         channel: convosChannel,
         text:
-          `:eyes: *New conversation* — ${args.operator.business_name} · caller •••${last4} · convo \`${args.conversation.id.slice(0, 8)}\``,
+          `:eyes: *New conversation* — ${args.operator.business_name} · caller •••${last4} · convo \`${convoShort}\` · owner ${owner}`,
         blocks: [
           {
             type: 'context',
             elements: [
               {
                 type: 'mrkdwn',
-                text: `:eyes: *${args.operator.business_name}* · caller •••${last4} · convo \`${args.conversation.id.slice(0, 8)}\` · _new conversation_`,
+                text: `:eyes: *${args.operator.business_name}* · caller •••${last4} · convo \`${convoShort}\` · owner ${owner} · _new conversation_`,
               },
             ],
           },
@@ -121,6 +123,28 @@ export class EscalationsService {
       );
     }
     return { channelId: null, threadTs: null };
+  }
+
+  /**
+   * Resolve the BB sales-team member who owns this operator (claimed the lead
+   * in #bb-leads). Prefer a Slack mention so the header both NAMES the owner
+   * and lets them follow their lead's live conversations; fall back to the
+   * stored username, then `_unclaimed_`. Best-effort — never throws.
+   */
+  private async salesOwnerLabel(operatorUserId: string): Promise<string> {
+    try {
+      const { data } = await this.supabase
+        .db()
+        .from('lead_claims')
+        .select('claimed_by_slack_user_id, claimed_by_slack_username')
+        .eq('user_id', operatorUserId)
+        .maybeSingle();
+      if (data?.claimed_by_slack_user_id) return `<@${data.claimed_by_slack_user_id}>`;
+      if (data?.claimed_by_slack_username) return `@${data.claimed_by_slack_username}`;
+    } catch (err) {
+      this.logger.warn({ err: (err as Error).message }, 'salesOwnerLabel lookup failed (non-fatal)');
+    }
+    return '_unclaimed_';
   }
 
   /**
@@ -153,6 +177,11 @@ export class EscalationsService {
    * Always runs — pre- and post-escalation. Replaces the old
    * forwardCallerSmsToSlack which was gated on the conversation being in
    * `escalated` state.
+   *
+   * When an escalation is open, the human is actively working the #hitl thread
+   * (not #convos), so we ALSO mirror the caller's reply there — otherwise the
+   * agent's question gets an answer that only shows up in #convos and they
+   * never see it (the bug the operator hit).
    */
   async echoCallerMessageToConversationThread(args: {
     conversation: ConversationRow;
@@ -160,13 +189,37 @@ export class EscalationsService {
   }): Promise<void> {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const cv = args.conversation as any;
+    const last4 = args.conversation.caller_phone_e164.slice(-4);
+    const text = `📲 Caller (•••${last4}): ${args.body}`;
+
+    // Mirror into the open #hitl escalation thread first (where a human is live).
+    try {
+      const esc = await this.findOpenForConversation(args.conversation.id);
+      if (
+        esc?.slack_channel_id &&
+        esc.slack_thread_ts &&
+        // Avoid a double-post if the escalation lives in the same thread.
+        !(esc.slack_channel_id === cv.slack_channel_id && esc.slack_thread_ts === cv.slack_thread_ts)
+      ) {
+        await this.slackApi.postMessage({
+          channel: esc.slack_channel_id,
+          threadTs: esc.slack_thread_ts,
+          text,
+        });
+      }
+    } catch (err) {
+      this.logger.warn(
+        { conversationId: args.conversation.id, err: (err as Error).message },
+        'echo caller msg to #hitl escalation thread failed (non-fatal)',
+      );
+    }
+
     if (!cv.slack_channel_id || !cv.slack_thread_ts) return;
     try {
-      const last4 = args.conversation.caller_phone_e164.slice(-4);
       await this.slackApi.postMessage({
         channel: cv.slack_channel_id,
         threadTs: cv.slack_thread_ts,
-        text: `📲 Caller (•••${last4}): ${args.body}`,
+        text,
       });
     } catch (err) {
       this.logger.warn(
@@ -225,10 +278,11 @@ export class EscalationsService {
             // Non-fatal; fall through to alarm without permalink.
           }
         }
+        const owner = await this.salesOwnerLabel(args.operator.user_id);
         const post = await this.slackApi.postMessage({
           channel: hitlChannel,
-          text: this.alarmText(args, convoPermalink),
-          blocks: this.alarmBlocks(args, convoPermalink),
+          text: this.alarmText(args, convoPermalink, owner),
+          blocks: this.alarmBlocks(args, convoPermalink, owner),
         });
         if (post.ok && post.ts) {
           channelId = post.channel ?? hitlChannel;
@@ -719,32 +773,18 @@ export class EscalationsService {
     if (error) throw error;
   }
 
-  private async lastTurns(
-    conversationId: string,
-    n: number,
-  ): Promise<Array<{ role: string; body: string }>> {
-    const { data, error } = await this.supabase
-      .db()
-      .from('messages')
-      .select('role, body, created_at')
-      .eq('conversation_id', conversationId)
-      .order('created_at', { ascending: false })
-      .limit(n);
-    if (error) throw error;
-    return (data ?? []).reverse().map((m) => ({ role: m.role, body: m.body }));
-  }
-
   // ── Slack message formatting (escalation alarm in #hitl) ───────────────
 
   private alarmText(
     args: { operator: OperatorRow; conversation: ConversationRow; callerPhoneE164: string; reason: EscalationReason; reasonText?: string; openedBy: 'bot' | 'caller' | 'operator' },
     permalink: string | null,
+    owner: string,
   ): string {
     const last4 = args.callerPhoneE164.slice(-4);
     const reasonHuman = REASON_HUMAN[args.reason];
     const lines = [
       `:rotating_light: *Needs a human* — ${reasonHuman} (opened by ${args.openedBy})`,
-      `${args.operator.business_name} · caller •••${last4} · convo \`${args.conversation.id.slice(0, 8)}\``,
+      `${args.operator.business_name} · caller •••${last4} · convo \`${args.conversation.id.slice(0, 8)}\` · owner ${owner}`,
     ];
     if (args.reasonText) lines.push('', `*Why:* ${args.reasonText}`);
     if (permalink) lines.push('', `Transcript & live updates: ${permalink}`);
@@ -758,6 +798,7 @@ export class EscalationsService {
   private alarmBlocks(
     args: { operator: OperatorRow; conversation: ConversationRow; callerPhoneE164: string; reason: EscalationReason; reasonText?: string },
     permalink: string | null,
+    owner: string,
   ): ReadonlyArray<unknown> {
     const last4 = args.callerPhoneE164.slice(-4);
     const reasonHuman = REASON_HUMAN[args.reason];
@@ -768,7 +809,7 @@ export class EscalationsService {
         elements: [
           {
             type: 'mrkdwn',
-            text: `*${args.operator.business_name}* · caller •••${last4} · convo \`${args.conversation.id.slice(0, 8)}\` · ${reasonHuman}`,
+            text: `*${args.operator.business_name}* · caller •••${last4} · convo \`${args.conversation.id.slice(0, 8)}\` · owner ${owner} · ${reasonHuman}`,
           },
         ],
       },
