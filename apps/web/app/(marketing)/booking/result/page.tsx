@@ -32,15 +32,17 @@ const COPY: Record<Status, { emoji: string; title: string; body: string }> = {
   },
 };
 
-export default function BookingResultPage({
+export default async function BookingResultPage({
   searchParams,
 }: {
-  searchParams: { status?: string };
-}): JSX.Element {
+  // Next 16: searchParams is async (a Promise) and must be awaited.
+  searchParams: Promise<{ status?: string }>;
+}): Promise<JSX.Element> {
+  const { status: rawStatus } = await searchParams;
   const status: Status = (['paid', 'cancelled', 'expired', 'unavailable'] as const).includes(
-    searchParams.status as Status,
+    rawStatus as Status,
   )
-    ? (searchParams.status as Status)
+    ? (rawStatus as Status)
     : 'unavailable';
   const { emoji, title, body } = COPY[status];
 
