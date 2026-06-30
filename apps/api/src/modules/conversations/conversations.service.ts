@@ -40,7 +40,18 @@ export class ConversationsService {
    * Slice 5 only writes the default `awaiting_bot` status; Slice 7 owns the
    * full state machine (CLAUDE.md §12).
    */
-  async getOrCreate(operatorId: string, callerPhoneE164: string): Promise<ConversationRow> {
+  async getOrCreate(
+    operatorId: string,
+    callerPhoneE164: string,
+    opts: { resumeCompleted?: boolean } = {},
+  ): Promise<ConversationRow> {
+    // A bare inbound SMS shortly after a booking is almost always a follow-up,
+    // so we reopen the just-completed conversation (resume window below). But a
+    // new *phone call* is an unambiguous new job: the caller dialed in again and
+    // got a fresh greeting. Reopening their completed convo there is the bug the
+    // operator saw ("called again about a new issue, the old conversation
+    // restarted"). The voice path passes `resumeCompleted: false`.
+    const { resumeCompleted = true } = opts;
     const { data: existing, error: lookupErr } = await this.supabase
       .db()
       .from('conversations')
@@ -59,6 +70,10 @@ export class ConversationsService {
     // #convos thread, and the bot would restart vetting from scratch. If the
     // last terminal convo for this (operator, caller) ended within 60min,
     // reopen it so transcript + Slack thread stay continuous.
+    if (!resumeCompleted) {
+      return this.create(operatorId, callerPhoneE164);
+    }
+
     const cutoffIso = new Date(Date.now() - RESUME_COMPLETED_WINDOW_MS).toISOString();
     const { data: recent } = await this.supabase
       .db()
@@ -90,6 +105,10 @@ export class ConversationsService {
       return reopened;
     }
 
+    return this.create(operatorId, callerPhoneE164);
+  }
+
+  private async create(operatorId: string, callerPhoneE164: string): Promise<ConversationRow> {
     const { data: created, error: insertErr } = await this.supabase
       .db()
       .from('conversations')
