@@ -143,14 +143,16 @@ export class SlackWebhooksController {
       // (single platform workspace — channel alone no longer identifies the
       // operator). Bot's own messages are ignored.
       const ev = body.event;
-      if (ev.type === 'message' && !ev.bot_id && ev.thread_ts && ev.channel && ev.user && ev.text && ev.ts) {
+      const isHumanMessage =
+        ev.type === 'message' && !ev.bot_id && !ev.subtype && Boolean(ev.channel && ev.user && ev.text && ev.ts);
+      if (isHumanMessage && ev.thread_ts) {
         const result = await this.escalations
           .forwardAgentReplyToSms({
-            channelId: ev.channel,
+            channelId: ev.channel!,
             threadTs: ev.thread_ts,
-            slackMessageTs: ev.ts,
-            slackUserId: ev.user,
-            text: ev.text,
+            slackMessageTs: ev.ts!,
+            slackUserId: ev.user!,
+            text: ev.text!,
           })
           .catch((err) => {
             this.logger.warn({ err: (err as Error).message }, 'forwardAgentReplyToSms failed');
@@ -161,10 +163,18 @@ export class SlackWebhooksController {
         // land". Surface the failure as an in-thread reply so the agent can
         // retry rather than think it went through.
         if (!result.delivered) {
-          await this.postDeliveryFailure(ev.channel, ev.thread_ts, result.reason ?? 'unknown', ev.user).catch(
+          await this.postDeliveryFailure(ev.channel!, ev.thread_ts, result.reason ?? 'unknown', ev.user!).catch(
             () => undefined,
           );
         }
+      } else if (isHumanMessage && !ev.thread_ts) {
+        // A top-level (non-threaded) message in #hitl or #convos: the agent
+        // almost certainly meant to text the caller, but we can't bridge it —
+        // a channel has many conversation threads, so there's no way to know
+        // which caller they meant. Replying at the channel root silently goes
+        // nowhere (the bug behind "the HITL reply never reached the caller").
+        // Nudge them to reply *inside the thread* instead of dropping it.
+        await this.nudgeReplyInThread(ev.channel!, ev.ts!).catch(() => undefined);
       }
       await this.idempotency.markProcessed(recorded.id);
     } catch (err) {
@@ -863,6 +873,27 @@ export class SlackWebhooksController {
       channel: channelId,
       threadTs,
       text: `<@${slackUserId}> heads up: ${friendly}`,
+    });
+  }
+
+  /**
+   * A human posted a top-level (non-threaded) message in #hitl or #convos.
+   * We can't bridge it (a channel hosts many conversation threads — no way to
+   * know the intended caller), so instead of dropping it silently we reply
+   * under their message telling them to use the thread. Only fires for our two
+   * operational channels to avoid nagging on unrelated chatter elsewhere.
+   */
+  private async nudgeReplyInThread(channelId: string, messageTs: string): Promise<void> {
+    const ours = new Set(
+      [this.slackApi.defaultChannelId(), this.slackApi.convosChannelId()].filter(Boolean) as string[],
+    );
+    if (!ours.has(channelId)) return;
+    await this.slackApi.postMessage({
+      channel: channelId,
+      threadTs: messageTs,
+      text:
+        '💡 To text the caller, reply *inside the conversation thread* (open it from the alarm or the ' +
+        '#convos monitoring thread). Messages posted to the channel itself are not sent to anyone.',
     });
   }
 }
