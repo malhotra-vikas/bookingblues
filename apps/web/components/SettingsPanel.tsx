@@ -18,6 +18,7 @@ interface Operator {
   booking_fee_enabled: boolean;
   booking_fee_cents: number | null;
   emergency_visit_fee_cents: number | null;
+  allow_unpaid_emergency_booking: boolean;
   business_hours: Record<string, { start: string; end: string }[]> | null;
   subscription_status: string | null;
   plan: string | null;
@@ -97,6 +98,9 @@ export function SettingsPanel({ operator }: { operator: Operator }): JSX.Element
       ? (operator.emergency_visit_fee_cents / 100).toFixed(2)
       : '',
   );
+  const [allowUnpaidEmergency, setAllowUnpaidEmergency] = useState(
+    operator.allow_unpaid_emergency_booking,
+  );
   const [hours, setHours] = useState<Record<string, DayHours>>(() =>
     initDayHours(operator.business_hours),
   );
@@ -169,6 +173,7 @@ export function SettingsPanel({ operator }: { operator: Operator }): JSX.Element
           booking_fee_enabled: feeEnabled,
           ...(cents != null ? { booking_fee_cents: cents } : {}),
           emergency_visit_fee_cents: emergencyCents,
+          allow_unpaid_emergency_booking: allowUnpaidEmergency,
         }),
       });
       if (!res.ok) {
@@ -364,6 +369,21 @@ export function SettingsPanel({ operator }: { operator: Operator }): JSX.Element
               <p className="mt-1 text-xs text-muted dark:text-slate-400">
                 Charged to the caller in addition to the deposit on emergency jobs (active
                 flooding, gas, etc.). Same platform fee applies. Leave blank for none.
+              </p>
+            </Field>
+            <Field label="Allow booking without payment in life-safety emergencies">
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={allowUnpaidEmergency}
+                  onChange={(e) => setAllowUnpaidEmergency(e.target.checked)}
+                />
+                <span>Let the AI book immediate-danger jobs (gas, CO, sparks, active flooding) without taking payment first</span>
+              </label>
+              <p className="mt-1 text-xs text-muted dark:text-slate-400">
+                When on, the AI books these jobs right away so your tech can respond fast, and
+                flags them on the dashboard + calendar invite as <strong>collect on site</strong>.
+                When off, the AI collects the deposit + emergency fee up front like any other booking.
               </p>
             </Field>
             {feeCents > 0 && (

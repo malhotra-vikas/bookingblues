@@ -4,7 +4,7 @@ import type { Tables } from '@bookingblues/db-types';
 
 import { AuditLogService } from '../../common/audit/audit-log.service';
 import { EmailService } from '../../common/email/email.service';
-import { ConflictError, ValidationError } from '../../common/errors/app-error';
+import { ConflictError, NotFoundError, ValidationError } from '../../common/errors/app-error';
 import { SupabaseService } from '../../common/supabase/supabase.service';
 import { TwilioService } from '../../common/twilio/twilio.service';
 import { ENV_TOKEN } from '../../config/config.module';
@@ -77,6 +77,13 @@ export class BookingsService {
      * itself via `request_payment_link` so it can phrase the message.
      */
     chargeFeeIfEligible?: boolean;
+    /**
+     * Booked WITHOUT taking payment (immediate-danger emergency path). Flags the
+     * appointment for on-site collection and records the amount owed in fee_cents.
+     */
+    collectPaymentOnSite?: boolean;
+    /** Amount owed, recorded on the appointment (used with collectPaymentOnSite). */
+    feeCents?: number;
   }): Promise<BookResult & { feeCheckoutUrl: string | null }> {
     this.assertSlotBookable(args.operator, args.startIso, args.endIso);
 
@@ -96,6 +103,8 @@ export class BookingsService {
         scheduled_for_start: args.startIso,
         scheduled_for_end: args.endIso,
         status: 'confirmed',
+        ...(args.collectPaymentOnSite ? { collect_payment_on_site: true } : {}),
+        ...(args.feeCents != null ? { fee_cents: args.feeCents } : {}),
       })
       .select('id')
       .single();
@@ -114,7 +123,12 @@ export class BookingsService {
       const calendarRes = await this.calendar.insertEvent({
         operatorId: args.operator.id,
         summary: `${args.operator.business_name}: ${args.jobSummary.slice(0, 80)}`,
-        description: this.eventDescription(args),
+        description: this.eventDescription({
+          ...args,
+          ...(args.collectPaymentOnSite && args.feeCents != null
+            ? { payoutLine: `⚠ COLLECT ${this.dollars(args.feeCents)} ON SITE — emergency booking, not prepaid.` }
+            : {}),
+        }),
         startIso: args.startIso,
         endIso: args.endIso,
         timeZone: args.operator.timezone,
@@ -504,6 +518,48 @@ export class BookingsService {
     }
     this.logger.info({ released }, 'releaseExpiredHolds swept expired holds');
     return { released };
+  }
+
+  /**
+   * Save the caller's full property address on an appointment and patch it onto
+   * the Google Calendar event's `location`. Used by the AI's
+   * `collect_service_address` tool AND the operator's manual "Mark resolved"
+   * (when they enter an address they gathered by phone). Calendar patch is
+   * best-effort — the address is saved regardless.
+   */
+  async setServiceAddress(appointmentId: string, address: string): Promise<void> {
+    const { data: appt, error } = await this.supabase
+      .db()
+      .from('appointments')
+      .select('id, operator_id, google_event_id, job_summary, caller_name, caller_phone_e164')
+      .eq('id', appointmentId)
+      .maybeSingle();
+    if (error) throw error;
+    if (!appt) throw new NotFoundError('Appointment not found');
+
+    await this.supabase
+      .db()
+      .from('appointments')
+      .update({ service_address: address })
+      .eq('id', appt.id);
+
+    if (appt.google_event_id) {
+      try {
+        await this.calendar.patchEvent({
+          operatorId: appt.operator_id,
+          eventId: appt.google_event_id,
+          location: address,
+          description:
+            `Caller: ${appt.caller_name ?? ''} ${appt.caller_phone_e164}\n` +
+            `Address: ${address}\n\n${appt.job_summary}`,
+        });
+      } catch (err) {
+        this.logger.warn(
+          { appointmentId, err: (err as Error).message },
+          'setServiceAddress: calendar patch failed (address still saved)',
+        );
+      }
+    }
   }
 
   private async sendOperatorBookingEmail(args: {

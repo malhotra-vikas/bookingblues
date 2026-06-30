@@ -64,16 +64,14 @@ export class DashboardService {
       periodEndIso ?? undefined,
     );
 
-    const [convoTotal, convoBooked, convoOutOfScope, convoEscalated, convoActive] =
-      await Promise.all([
-        this.count('conversations', operator.id, monthStartIso),
-        this.count('conversations', operator.id, monthStartIso, { outcome: 'booked' }),
-        this.count('conversations', operator.id, monthStartIso, { outcome: 'out_of_scope' }),
-        this.count('conversations', operator.id, monthStartIso, { status: 'escalated' }),
-        this.count('conversations', operator.id, monthStartIso, {
-          statusIn: ['awaiting_caller', 'awaiting_bot', 'active'],
-        }),
-      ]);
+    const [convoTotal, convoOutOfScope, convoEscalated, convoActive] = await Promise.all([
+      this.count('conversations', operator.id, monthStartIso),
+      this.count('conversations', operator.id, monthStartIso, { outcome: 'out_of_scope' }),
+      this.count('conversations', operator.id, monthStartIso, { status: 'escalated' }),
+      this.count('conversations', operator.id, monthStartIso, {
+        statusIn: ['awaiting_caller', 'awaiting_bot', 'active'],
+      }),
+    ]);
 
     const [apptTotal, apptConfirmed, apptCompleted, apptCancelled] = await Promise.all([
       this.count('appointments', operator.id, monthStartIso),
@@ -108,7 +106,12 @@ export class DashboardService {
       },
       conversations: {
         total: convoTotal,
-        booked: convoBooked,
+        // "Booked" = jobs actually on the calendar (confirmed + completed
+        // appointments), NOT just conversations with outcome='booked' — a
+        // conversation can end abandoned/awaiting while its appointment is
+        // confirmed (e.g. paid booking still collecting the address), which
+        // undercounted bookings on the dashboard (QA 2026-06-29).
+        booked: apptConfirmed + apptCompleted,
         out_of_scope: convoOutOfScope,
         escalated: convoEscalated,
         active: convoActive,

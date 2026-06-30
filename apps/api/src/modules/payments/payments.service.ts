@@ -33,6 +33,7 @@ export class PaymentsService {
   async ensureFeeEligible(operatorId: string): Promise<{
     operatorId: string;
     feeCents: number;
+    emergencyFeeCents: number;
     plan: string | null;
     connectAccountId: string;
   }> {
@@ -40,7 +41,7 @@ export class PaymentsService {
       .db()
       .from('operators')
       .select(
-        'id, plan, booking_fee_enabled, booking_fee_cents, subscription_status, stripe_connect_account_id, stripe_connect_charges_enabled, stripe_connect_payouts_enabled',
+        'id, plan, booking_fee_enabled, booking_fee_cents, emergency_visit_fee_cents, subscription_status, stripe_connect_account_id, stripe_connect_charges_enabled, stripe_connect_payouts_enabled',
       )
       .eq('id', operatorId)
       .maybeSingle();
@@ -62,6 +63,7 @@ export class PaymentsService {
     return {
       operatorId: op.id,
       feeCents: op.booking_fee_cents,
+      emergencyFeeCents: op.emergency_visit_fee_cents ?? 0,
       plan: op.plan,
       connectAccountId: op.stripe_connect_account_id,
     };
@@ -75,6 +77,8 @@ export class PaymentsService {
   async createBookingFeeCheckout(args: {
     operatorId: string;
     appointmentId: string;
+    /** Emergency booking — adds the operator's emergency visit fee to the charge. */
+    emergency?: boolean;
   }): Promise<{ url: string; paymentId: string }> {
     const eligibility = await this.ensureFeeEligible(args.operatorId);
     // Take rate is per-plan (Solo 10% / Crew 15% / Fleet 20%), charged on top of
@@ -84,6 +88,7 @@ export class PaymentsService {
       platformTakeRateBpsForPlan(eligibility.plan) ?? this.env.PLATFORM_TAKE_RATE_BPS;
     const pricing = computeBookingFeeCharge({
       depositCents: eligibility.feeCents,
+      ...(args.emergency ? { emergencyFeeCents: eligibility.emergencyFeeCents } : {}),
       takeRateBps,
       minPlatformFeeCents: this.env.MIN_PLATFORM_FEE_CENTS,
     });

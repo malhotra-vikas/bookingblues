@@ -130,6 +130,9 @@ export class OperatorsService {
     if (patch.emergency_visit_fee_cents !== undefined) {
       update.emergency_visit_fee_cents = patch.emergency_visit_fee_cents;
     }
+    if (patch.allow_unpaid_emergency_booking !== undefined) {
+      update.allow_unpaid_emergency_booking = patch.allow_unpaid_emergency_booking;
+    }
     if (patch.service_zip_codes !== undefined) {
       // De-dupe + sort for stable storage and easier diffing.
       update.service_zip_codes = [...new Set(patch.service_zip_codes)].sort();

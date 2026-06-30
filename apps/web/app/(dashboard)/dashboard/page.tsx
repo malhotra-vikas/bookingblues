@@ -1,5 +1,6 @@
 import Link from 'next/link';
 
+import { ResolveConversationButton } from '../../../components/dashboard/ResolveConversationButton';
 import { TrialBanner } from '../../../components/TrialBanner';
 import { ApiError, apiAsUser } from '../../../lib/api';
 
@@ -36,6 +37,7 @@ interface Appointment {
   status: string;
   fee_status: string;
   fee_cents: number | null;
+  collect_payment_on_site: boolean;
 }
 
 function formatDollars(cents: number): string {
@@ -189,6 +191,7 @@ export default async function DashboardPage(): Promise<JSX.Element> {
                   <th className="px-3 py-2 text-left">Status</th>
                   <th className="px-3 py-2 text-left">Outcome</th>
                   <th className="px-3 py-2 text-left">Last message</th>
+                  <th className="px-3 py-2 text-left"></th>
                 </tr>
               </thead>
               <tbody className="dark:text-slate-200">
@@ -199,6 +202,9 @@ export default async function DashboardPage(): Promise<JSX.Element> {
                     <td className="px-3 py-2 text-muted dark:text-slate-400">{c.outcome ?? '—'}</td>
                     <td className="px-3 py-2 text-muted dark:text-slate-400 whitespace-nowrap">
                       {relativeTime(c.last_message_at)}
+                    </td>
+                    <td className="px-3 py-2 whitespace-nowrap">
+                      <ResolveConversationButton conversationId={c.id} status={c.status} />
                     </td>
                   </tr>
                 ))}
@@ -251,7 +257,16 @@ export default async function DashboardPage(): Promise<JSX.Element> {
                     </td>
                     <td className="px-3 py-2"><StatusBadge status={a.status} /></td>
                     <td className="px-3 py-2 whitespace-nowrap">
-                      {a.fee_cents != null && a.fee_status !== 'none' ? (
+                      {a.collect_payment_on_site ? (
+                        <span className="flex items-center gap-1.5">
+                          {a.fee_cents != null ? (
+                            <span className="font-medium">{formatDollars(a.fee_cents)}</span>
+                          ) : null}
+                          <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
+                            collect on site
+                          </span>
+                        </span>
+                      ) : a.fee_cents != null && a.fee_status !== 'none' ? (
                         <span className="flex items-center gap-1.5">
                           <span className="font-medium">{formatDollars(a.fee_cents)}</span>
                           <FeeBadge status={a.fee_status} />

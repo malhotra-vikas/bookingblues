@@ -128,4 +128,57 @@ export class ConversationsService {
       .eq('id', args.conversationId);
     if (bumpErr) throw bumpErr;
   }
+
+  /**
+   * Auto-close conversations idle for `idleHours` so they don't linger
+   * (the post-booking flow leaves a conversation in `awaiting_caller` to collect
+   * the address — if the caller goes quiet it would otherwise stay open forever).
+   * Escalated conversations are LEFT ALONE — a human owns them (§12). A
+   * conversation with a confirmed appointment closes as completed/booked;
+   * otherwise abandoned/timeout. Driven by an internal cron (same pattern as the
+   * booking-holds sweeper).
+   */
+  async closeStale(idleHours = 24): Promise<{ closed: number }> {
+    const cutoffIso = new Date(Date.now() - idleHours * 3_600_000).toISOString();
+    const OPEN = ['active', 'awaiting_caller', 'awaiting_bot'] as const;
+    const { data: stale, error } = await this.supabase
+      .db()
+      .from('conversations')
+      .select('id')
+      .in('status', OPEN as unknown as string[])
+      .lt('last_message_at', cutoffIso)
+      .limit(200);
+    if (error) throw error;
+    if (!stale || stale.length === 0) return { closed: 0 };
+
+    let closed = 0;
+    for (const c of stale) {
+      const { data: appts } = await this.supabase
+        .db()
+        .from('appointments')
+        .select('service_address')
+        .eq('conversation_id', c.id)
+        .eq('status', 'confirmed');
+      const booked = (appts ?? []).length > 0;
+
+      // CRITICAL: never close a booked conversation that's still missing the
+      // service address — keep it open so the address can still be collected
+      // (caller reply, or the operator's manual "Mark resolved + add address").
+      const bookedButNoAddress = booked && (appts ?? []).every((a) => !a.service_address);
+      if (bookedButNoAddress) continue;
+
+      const { error: updErr } = await this.supabase
+        .db()
+        .from('conversations')
+        .update({
+          status: booked ? 'completed' : 'abandoned',
+          completed_at: new Date().toISOString(),
+          outcome: booked ? 'booked' : 'timeout',
+        })
+        .eq('id', c.id)
+        .in('status', OPEN as unknown as string[]); // guard against a concurrent reopen
+      if (!updErr) closed += 1;
+    }
+    return { closed };
+  }
 }

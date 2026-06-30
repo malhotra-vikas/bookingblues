@@ -16,6 +16,7 @@ const baseOperator: Tables<'operators'> = {
   booking_fee_enabled: false,
   booking_fee_cents: null,
   emergency_visit_fee_cents: null,
+  allow_unpaid_emergency_booking: false,
   stripe_customer_id: null,
   stripe_subscription_id: null,
   stripe_price_id: null,

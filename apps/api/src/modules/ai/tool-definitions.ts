@@ -39,6 +39,13 @@ export const BookAppointmentArgs = z.object({
   caller_email: z.string().email().optional(),
   job_summary: z.string().min(1).max(500),
   urgency: z.enum(['low', 'normal', 'high', 'emergency']).default('normal'),
+  /**
+   * True only for life-safety emergencies (gas/CO smell, sparks/exposed wires,
+   * active major flooding, structural collapse). When the operator allows it,
+   * such a booking is made WITHOUT taking payment first (tech rushes out, collects
+   * on site). Otherwise treated like a normal emergency (charge deposit+emergency fee).
+   */
+  immediate_danger: z.boolean().optional(),
 });
 export type BookAppointmentArgs = z.infer<typeof BookAppointmentArgs>;
 
@@ -143,6 +150,7 @@ export const TOOL_DEFINITIONS: ReadonlyArray<OpenAI.Chat.Completions.ChatComplet
           caller_email: { type: 'string', format: 'email' },
           job_summary: { type: 'string' },
           urgency: { type: 'string', enum: ['low', 'normal', 'high', 'emergency'] },
+          immediate_danger: { type: 'boolean' },
         },
         required: ['start', 'end', 'caller_name', 'job_summary'],
         additionalProperties: false,

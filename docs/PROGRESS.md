@@ -404,8 +404,30 @@ differently. Not launch-blocking but hurts the conversation UX.
 
 **Deferred (not launch-blocking), to test later:** subscription Update / upgrade / downgrade
 (ties to the self-serve plan-change feature) and the remaining §8 operator cancel/deactivate edge
-cases (live-sub immediate B1, period-end B2 — only the dead-sub +2 case was verified). Remaining
-big E2E: **§11 full SMS booking + fee loop** (needs Stripe Connect onboarding).
+cases (live-sub immediate B1, period-end B2 — only the dead-sub +2 case was verified).
+
+### §11 full booking + fee loop — ✅ PASS (2026-06-29)
+The complete value loop ran clean end-to-end on prod (operator cd / Chicken Dinner): call →
+press-1 consent → AI vetting → service-area **radius** check (08821 in 30mi of 08820) →
+business-hours-aware weekday slot (weekend/after-hours refused) → **reserve (held, no calendar
+event yet)** → short branded payment link (`api.keeprsteady.com/pay/:id` → 302 to Stripe) → pay
+(test card) → `payment_intent.succeeded` Connect webhook → `confirmPaidBooking` creates the Google
+Calendar event + personalized confirmation SMS → **caller replies with full property address →
+`collect_service_address` patches it onto the invite's location** → graceful close. Plus: 30-min
+unpaid-hold sweeper (Railway cron, verified `{released:N}`), turn-cap scoped to the current
+engagement, and the operator's **deposit ($250) + payout (net of our fee + Stripe)** surfaced on
+the dashboard / calendar / email (commit `1684641`).
+
+**Infra wired this session:** Stripe Connect enabled + platform-profile loss-liability completed;
+`/connect/sync` + "Recheck status" (pull capability flags without waiting on a webhook); Connect
+webhook endpoint (`account.updated` + `payment_intent.*` + `charge.refunded`) with
+`STRIPE_CONNECT_WEBHOOK_SECRET`; booking-holds cron repointed to `/v1/internal/booking-holds/release`
+(was firing the reminder URL by mistake).
+
+**Known follow-ups (not blocking):** the `/booking/result` post-payment page needed a Next-16
+`await searchParams` fix (uncommitted at time of writing); appointment-invite configurability
+backlog (conversation link on invite, per-operator visit duration, multi-truck capacity) — see the
+"Appointment / invite configurability backlog" section.
 
 ### Launch-readiness session — 2026-06-17 (while A2P campaign in review)
 
@@ -1558,6 +1580,39 @@ The investments that compound.
   Phone question**, and fix the event title template (was "Host | Host"). Alternative
   considered: build our own demo-request form on `/contact` (name/email/phone → email
   sales) for full control — bigger change, deferred unless we want to drop the Cal embed.
+
+---
+
+## 🗓️ Appointment / invite configurability backlog (requested 2026-06-29)
+
+Surfaced during the §11 booking-loop testing. Tracked, not yet built.
+
+- [ ] **Conversation link on the calendar invite** — add a deep link in the event
+  body so the technician can open the live conversation and read up-to-date
+  caller details (and any post-booking messages) before/at the visit. Needs an
+  operator-authed (or signed-token) conversation view URL to embed in
+  `eventDescription` / the booking email.
+- [ ] **Operator-configurable service-visit duration** — appointment length is
+  currently hardcoded to **60 min** (`check_availability` 60-min slots; booking
+  uses the model's start/end). Marketing/FAQ copy says **90 min** — copy and code
+  disagree. Add a per-operator `appointment_duration_minutes` setting (Settings +
+  onboarding), thread it through availability + booking, and reconcile the FAQ.
+- [ ] **Multi-truck / multi-tech capacity (a.k.a. 2b)** — let an operator say how
+  many techs/trucks they have so the AI can accept **N concurrent bookings** in
+  the same slot (utilize the whole crew) instead of one-at-a-time. Requires a
+  per-operator capacity setting + relaxing the single-slot advisory lock / partial
+  unique index to allow up to `capacity` confirmed appointments per
+  `(operator_id, slot_start)`, and a free/busy check that counts concurrent jobs.
+
+### Related smaller cleanups (also from 2026-06-29 testing)
+- [ ] **`job_summary` hygiene** — the AI sometimes folds fee/scheduling chatter
+  into `job_summary` (showed up as "Fee No Fee" in a calendar body). Tighten the
+  prompt so `job_summary` stays purely the work to be done.
+- [ ] **Operator absorbs Stripe processing** — with Direct Charges the operator
+  nets `deposit − Stripe fee` (~$241.36 on a $250 deposit). If we want the operator
+  to keep a clean $250, add the Stripe fee to what the caller pays. Pricing
+  decision, not a bug. (The calendar invite + dashboard now show the operator's
+  actual net/payout.)
 
 ---
 

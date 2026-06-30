@@ -144,10 +144,46 @@ export async function bookAppointment(
     endIso: args.end,
   };
 
+  const feeCollectible = isBookingFeeCollectible(ctx.operator);
+  const isEmergency = args.urgency === 'emergency' || args.immediate_danger === true;
+  const unpaidDanger =
+    args.immediate_danger === true && ctx.operator.allow_unpaid_emergency_booking === true;
+  // Operator's gross take for an emergency = deposit + emergency visit fee.
+  const operatorTakeCents =
+    (ctx.operator.booking_fee_cents ?? 0) +
+    (isEmergency ? ctx.operator.emergency_visit_fee_cents ?? 0 : 0);
+
+  // Immediate-danger AND the operator opted in to unpaid emergency bookings:
+  // book NOW without payment (tech rushes out), flag for on-site collection.
+  if (feeCollectible && unpaidDanger) {
+    try {
+      await ctx.bookings.book({
+        ...common,
+        collectPaymentOnSite: true,
+        feeCents: operatorTakeCents,
+      });
+    } catch (err) {
+      if (err instanceof ConflictError || err instanceof ValidationError) {
+        return { content: { error: 'slot_unavailable', message: err.message } };
+      }
+      throw err;
+    }
+    return {
+      content: {
+        status: 'confirmed_payment_on_site',
+        amount_owed_cents: operatorTakeCents,
+        note: 'Emergency booked without prepayment; flagged for on-site collection.',
+      },
+      // book() already sent the confirmation (which asks for the address) — keep
+      // the conversation open so `collect_service_address` can finalize.
+      stopLoop: true,
+    };
+  }
+
   // When a booking fee is collectible, collect it BEFORE confirming (§9.5):
   // reserve the slot (held, no calendar event yet) and text a payment link.
-  // The Connect `payment_intent.succeeded` webhook confirms the booking.
-  if (isBookingFeeCollectible(ctx.operator)) {
+  // Emergencies add the operator's emergency visit fee to the charge.
+  if (feeCollectible) {
     let appointmentId: string;
     try {
       const reserved = await ctx.bookings.reserve(common);
@@ -167,6 +203,7 @@ export async function bookAppointment(
       session = await ctx.payments.createBookingFeeCheckout({
         operatorId: ctx.operator.id,
         appointmentId,
+        ...(isEmergency ? { emergency: true } : {}),
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -186,7 +223,8 @@ export async function bookAppointment(
       content: {
         appointment_id: appointmentId,
         payment_required: true,
-        fee_cents: ctx.operator.booking_fee_cents,
+        fee_cents: operatorTakeCents,
+        emergency: isEmergency,
         payment_url: session.url,
         status: 'held_pending_payment',
       },
@@ -195,7 +233,7 @@ export async function bookAppointment(
       outboundMessage: reservationHoldSms({
         businessName: ctx.operator.business_name,
         friendlyTime,
-        feeCents: ctx.operator.booking_fee_cents!,
+        feeCents: operatorTakeCents,
         checkoutUrl: session.url,
         callerName: args.caller_name,
       }),
@@ -247,32 +285,7 @@ export async function collectServiceAddress(
     };
   }
 
-  await ctx.supabase
-    .db()
-    .from('appointments')
-    .update({ service_address: args.address })
-    .eq('id', appt.id);
-
-  // Patch the Google Calendar event so the tech sees the address in `location`.
-  if (appt.google_event_id) {
-    try {
-      await ctx.calendar.patchEvent({
-        operatorId: ctx.operator.id,
-        eventId: appt.google_event_id,
-        location: args.address,
-        description:
-          `Caller: ${appt.caller_name ?? ''} ${appt.caller_phone_e164}\n` +
-          `Address: ${args.address}\n\n${appt.job_summary}`,
-      });
-    } catch (err) {
-      // Address is saved on the appointment regardless; calendar patch is
-      // best-effort (operator can see it in the dashboard / booking email).
-      ctx.logger.warn(
-        { appointmentId: appt.id, err: (err as Error).message },
-        'collect_service_address: calendar patch failed (address still saved)',
-      );
-    }
-  }
+  await ctx.bookings.setServiceAddress(appt.id, args.address);
 
   const friendlyTime = new Date(appt.scheduled_for_start).toLocaleString('en-US', {
     timeZone: ctx.operator.timezone,

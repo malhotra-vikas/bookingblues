@@ -122,6 +122,7 @@ export type Database = {
           reminder_sent_at: string | null;
           scheduled_for_end: string;
           scheduled_for_start: string;
+          collect_payment_on_site: boolean;
           service_address: string | null;
           status: Database["public"]["Enums"]["appointment_status"];
           updated_at: string;
@@ -143,6 +144,7 @@ export type Database = {
           reminder_sent_at?: string | null;
           scheduled_for_end: string;
           scheduled_for_start: string;
+          collect_payment_on_site?: boolean;
           service_address?: string | null;
           status?: Database["public"]["Enums"]["appointment_status"];
           updated_at?: string;
@@ -164,6 +166,7 @@ export type Database = {
           reminder_sent_at?: string | null;
           scheduled_for_end?: string;
           scheduled_for_start?: string;
+          collect_payment_on_site?: boolean;
           service_address?: string | null;
           status?: Database["public"]["Enums"]["appointment_status"];
           updated_at?: string;
@@ -475,6 +478,7 @@ export type Database = {
       operators: {
         Row: {
           booking_fee_cents: number | null;
+          allow_unpaid_emergency_booking: boolean;
           booking_fee_enabled: boolean;
           emergency_visit_fee_cents: number | null;
           business_hours: Json;
@@ -513,6 +517,7 @@ export type Database = {
         };
         Insert: {
           booking_fee_cents?: number | null;
+          allow_unpaid_emergency_booking?: boolean;
           booking_fee_enabled?: boolean;
           emergency_visit_fee_cents?: number | null;
           business_hours?: Json;
@@ -551,6 +556,7 @@ export type Database = {
         };
         Update: {
           booking_fee_cents?: number | null;
+          allow_unpaid_emergency_booking?: boolean;
           booking_fee_enabled?: boolean;
           emergency_visit_fee_cents?: number | null;
           business_hours?: Json;

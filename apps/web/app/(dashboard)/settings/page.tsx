@@ -14,6 +14,7 @@ interface Operator {
   booking_fee_enabled: boolean;
   booking_fee_cents: number | null;
   emergency_visit_fee_cents: number | null;
+  allow_unpaid_emergency_booking: boolean;
   business_hours: Record<string, { start: string; end: string }[]> | null;
   subscription_status: string | null;
   plan: string | null;
