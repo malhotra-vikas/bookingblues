@@ -173,7 +173,8 @@ export class PaymentsService {
       throw error;
     }
 
-    // Stamp the appointment with the checkout session id + pending status. The
+    // Stamp the appointment with the checkout session id + pending status + the
+    // operator's deposit (what they collect, = charge − our platform fee). The
     // PI id is backfilled on the webhook (null here at creation).
     await this.supabase
       .db()
@@ -182,6 +183,7 @@ export class PaymentsService {
         ...(paymentIntentId ? { fee_payment_intent_id: paymentIntentId } : {}),
         fee_checkout_session_id: session.id,
         fee_status: 'pending',
+        fee_cents: pricing.chargeCents - pricing.applicationFeeCents,
       })
       .eq('id', args.appointmentId);
 

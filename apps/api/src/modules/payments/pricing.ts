@@ -82,6 +82,32 @@ export interface BookingFeeChargeResult {
  * because the fee is added on top, `application_fee_amount` is always well
  * below `charge − processing` for any deposit at or above the min fee.
  */
+/**
+ * Estimate Stripe's processing fee on a charge (US card pricing, 2.9% + 30¢).
+ * With Direct Charges the connected account (operator) absorbs this, so it's
+ * deducted from their take. This is an estimate for display; the exact fee is on
+ * the Stripe balance transaction.
+ */
+export function estimateStripeFeeCents(chargeCents: number): number {
+  if (chargeCents <= 0) return 0;
+  return Math.ceil(chargeCents * STRIPE_PCT) + STRIPE_FIXED_CENTS;
+}
+
+/**
+ * What the operator actually nets from a booking-fee charge: the gross charge
+ * minus our platform application fee minus Stripe processing. For invoice/
+ * calendar display ("the money you made on this booking").
+ */
+export function operatorNetCents(args: {
+  chargeCents: number;
+  applicationFeeCents: number;
+}): number {
+  return Math.max(
+    0,
+    args.chargeCents - args.applicationFeeCents - estimateStripeFeeCents(args.chargeCents),
+  );
+}
+
 export function computeBookingFeeCharge(input: BookingFeeChargeInput): BookingFeeChargeResult {
   // The operator's net base = deposit + emergency surcharge (both kept by the
   // operator). The platform take is computed on that combined base, on top.

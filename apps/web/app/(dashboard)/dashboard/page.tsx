@@ -35,6 +35,7 @@ interface Appointment {
   scheduled_for_end: string;
   status: string;
   fee_status: string;
+  fee_cents: number | null;
 }
 
 function formatDollars(cents: number): string {
@@ -249,7 +250,16 @@ export default async function DashboardPage(): Promise<JSX.Element> {
                       <div className="truncate">{a.job_summary}</div>
                     </td>
                     <td className="px-3 py-2"><StatusBadge status={a.status} /></td>
-                    <td className="px-3 py-2"><FeeBadge status={a.fee_status} /></td>
+                    <td className="px-3 py-2 whitespace-nowrap">
+                      {a.fee_cents != null && a.fee_status !== 'none' ? (
+                        <span className="flex items-center gap-1.5">
+                          <span className="font-medium">{formatDollars(a.fee_cents)}</span>
+                          <FeeBadge status={a.fee_status} />
+                        </span>
+                      ) : (
+                        <FeeBadge status={a.fee_status} />
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>

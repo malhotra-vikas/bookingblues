@@ -82,16 +82,19 @@ export class DashboardService {
       this.count('appointments', operator.id, monthStartIso, { status: 'cancelled' }),
     ]);
 
+    // The OPERATOR's "fee collected" is the deposit they keep — the gross charge
+    // minus our platform application fee — NOT the platform's cut. (Showing the
+    // $37.50 platform fee here confused operators; they want their deposit.)
     const { data: feeRows, error: feeErr } = await this.supabase
       .db()
       .from('payments')
-      .select('application_fee_cents, status, created_at')
+      .select('amount_cents, application_fee_cents, status, created_at')
       .eq('operator_id', operator.id)
       .gte('created_at', monthStartIso)
       .eq('status', 'succeeded');
     if (feeErr) throw feeErr;
     const feeRevenue = (feeRows ?? []).reduce(
-      (sum, r) => sum + (r.application_fee_cents ?? 0),
+      (sum, r) => sum + ((r.amount_cents ?? 0) - (r.application_fee_cents ?? 0)),
       0,
     );
 

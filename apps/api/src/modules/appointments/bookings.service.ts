@@ -19,6 +19,7 @@ import {
 } from '../conversations/templates/sms-templates';
 import { isBookingFeeCollectible } from '../ai/prompts';
 import { PaymentsService } from '../payments/payments.service';
+import { operatorNetCents } from '../payments/pricing';
 import { renderBookingSummary } from '../summaries/email-templates';
 
 type OperatorRow = Tables<'operators'>;
@@ -333,6 +334,21 @@ export class BookingsService {
       .single();
     if (opErr) throw opErr;
 
+    // Operator payout line for the invite — what they net after our fee + Stripe.
+    const { data: pay } = await this.supabase
+      .db()
+      .from('payments')
+      .select('amount_cents, application_fee_cents')
+      .eq('appointment_id', appt.id)
+      .eq('type', 'booking_fee')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    const payoutLine = pay
+      ? `Your payout: ${this.dollars(operatorNetCents({ chargeCents: pay.amount_cents, applicationFeeCents: pay.application_fee_cents ?? 0 }))} ` +
+        `(deposit ${this.dollars(pay.amount_cents - (pay.application_fee_cents ?? 0))} less card processing)`
+      : undefined;
+
     let operatorEventUrl: string | null = null;
     try {
       const calendarRes = await this.calendar.insertEvent({
@@ -342,6 +358,7 @@ export class BookingsService {
           callerName: appt.caller_name ?? '',
           callerPhoneE164: appt.caller_phone_e164,
           jobSummary: appt.job_summary,
+          ...(payoutLine ? { payoutLine } : {}),
         }),
         startIso: appt.scheduled_for_start,
         endIso: appt.scheduled_for_end,
@@ -596,14 +613,25 @@ export class BookingsService {
     return lines.join('\r\n') + '\r\n';
   }
 
+  private dollars(cents: number): string {
+    return `$${(cents / 100).toFixed(2)}`;
+  }
+
   private eventDescription(args: {
     callerName: string;
     callerPhoneE164: string;
     urgency?: Urgency;
     jobSummary: string;
+    /** Optional "you made $X on this booking" line (after fees), shown to the operator. */
+    payoutLine?: string;
   }): string {
     const urgency = args.urgency ?? 'normal';
-    return `Caller: ${args.callerName} ${args.callerPhoneE164}\nUrgency: ${urgency}\n\n${args.jobSummary}`;
+    return (
+      `Caller: ${args.callerName} ${args.callerPhoneE164}\n` +
+      `Urgency: ${urgency}\n` +
+      (args.payoutLine ? `${args.payoutLine}\n` : '') +
+      `\n${args.jobSummary}`
+    );
   }
 
   private async sendConfirmationSms(args: {
