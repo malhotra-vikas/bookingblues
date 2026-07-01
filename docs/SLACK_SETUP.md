@@ -59,7 +59,7 @@ to the email fallback path (Slice 10), and the conversation still flips to
 In the BB Slack workspace, in each channel:
 
 ```
-/invite @bookingblues
+/invite @KeeprSteady
 ```
 
 Run in `#hitl` AND `#convos`. Without this, `chat.postMessage` returns
@@ -115,7 +115,7 @@ joins on `(channel_id, thread_ts)` to find the right escalation.
 - **`url_verification` fails** — signing-secret mismatch. Update env,
   restart API, click "Retry" in Slack dashboard.
 - **`chat.postMessage` returns `not_in_channel`** — the bot is not in the
-  channel `SLACK_DEFAULT_CHANNEL_ID` points to. Run `/invite @BookingBlues`
+  channel `SLACK_DEFAULT_CHANNEL_ID` points to. Run `/invite @KeeprSteady`
   in that channel.
 - **Escalation posts but in-thread replies don't bridge to SMS** — confirm
   "Event Subscriptions" → "Subscribe to bot events" includes

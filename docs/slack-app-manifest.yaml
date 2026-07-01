@@ -1,46 +1,49 @@
-# BookingBlues — Slack app manifest (ADR 0010)
+# BookingBlues / KeeprSteady — Slack app manifest (ADR 0010)
 #
 # What this is: the YAML you paste into api.slack.com/apps → "Create New App"
-# → "From an app manifest" → pick the BookingBlues workspace. Slack creates
+# → "From an app manifest" → pick the company (BB-team) workspace. Slack creates
 # the app with the scopes, slash command, event subscriptions, and
 # interactivity URLs pre-filled.
 #
-# Per ADR 0010, the app is installed **once** into the BookingBlues internal
-# workspace — there is no per-operator OAuth flow, no `oauth_config.redirect_urls`,
-# and no public distribution. All operators' escalations land in the channel
-# pointed to by SLACK_DEFAULT_CHANNEL_ID.
+# Per ADR 0010, the app is installed **once** into the company workspace — there
+# is no per-operator OAuth flow, no `oauth_config.redirect_urls`, and no public
+# distribution. All operators' escalations land in the channel pointed to by
+# SLACK_DEFAULT_CHANNEL_ID.
 #
-# After Slack creates the app:
+# URLs below are already set to the production API (https://api.keeprsteady.com).
+# For a staging app, swap the host in all three request URLs.
+#
+# After Slack creates the app (full runbook: docs/SLACK_SETUP.md):
 #   1. "OAuth & Permissions" → "Install to Workspace" → approve scopes
 #   2. Copy the "Bot User OAuth Token" (xoxb-…)        → SLACK_BOT_TOKEN
 #   3. Basic Information → "Signing Secret"            → SLACK_SIGNING_SECRET
-#   4. In Slack, get the `#hitl` channel ID            → SLACK_DEFAULT_CHANNEL_ID
-#   5. `/invite @BookingBlues` in `#hitl`              (otherwise not_in_channel)
-#
-# IMPORTANT — replace `https://bookingbluesapi-production.up.railway.app` with
-# your actual API URL before pasting. The manifest is just YAML; you can also
-# edit each URL in the Slack dashboard after creation.
+#   4. Create #hitl, #convos, #bb-leads; copy each channel ID →
+#        SLACK_DEFAULT_CHANNEL_ID (#hitl), SLACK_CONVOS_CHANNEL_ID (#convos),
+#        SLACK_CHANNEL_LEADS_ID (#bb-leads)
+#   5. `/invite @KeeprSteady` in each of those channels (else not_in_channel)
+#   6. Deploy the API with the new SLACK_SIGNING_SECRET *before* re-verifying the
+#      Event Subscriptions URL (the signature guard rejects otherwise).
 
 display_information:
-  name: BookingBlues
+  name: KeeprSteady
   description: Human-in-the-loop for missed-call bookings — pages our team when the bot needs help.
   background_color: "#1e40af"
   long_description: >-
-    BookingBlues converts missed calls into booked appointments. When the AI
+    KeeprSteady converts missed calls into booked appointments. When the AI
     bot can't make progress, a caller asks for a human, or staff flag a thread
-    from the admin dashboard, BookingBlues posts an escalation in #hitl and
+    from the admin dashboard, KeeprSteady posts an escalation in #hitl and
     bridges the SMS conversation: reply in-thread to send an SMS to the
     caller; use /bb back-to-bot to hand control back to the AI.
 
 features:
   bot_user:
-    display_name: BookingBlues
+    display_name: KeeprSteady
     always_online: true
 
   slash_commands:
     - command: /bb
-      url: https://bookingbluesapi-production.up.railway.app/webhooks/slack/commands
-      description: BookingBlues commands — try `/bb help`
+      url: https://api.keeprsteady.com/webhooks/slack/commands
+      description: KeeprSteady commands — try `/bb help`
       usage_hint: "[resolve | back-to-bot | close-spam | show-number | book <ISO>]"
       should_escape: false
 
@@ -53,10 +56,15 @@ oauth_config:
       - groups:history
       - groups:read
       - commands
+      # reactions:write — the bridge marks agents' in-thread replies with a ⏳
+      # reaction at send time, then swaps it to ✅/❌ on the Twilio delivery
+      # callback. Without this scope those reactions.add/remove calls fail
+      # (silently — they're best-effort). Also used by the emergency alert flow.
+      - reactions:write
 
 settings:
   event_subscriptions:
-    request_url: https://bookingbluesapi-production.up.railway.app/webhooks/slack/events
+    request_url: https://api.keeprsteady.com/webhooks/slack/events
     bot_events:
       # Catch agent replies inside escalation threads so we can bridge them
       # back to the caller as SMS. The bridge service ignores anything outside
@@ -66,7 +74,7 @@ settings:
 
   interactivity:
     is_enabled: true
-    request_url: https://bookingbluesapi-production.up.railway.app/webhooks/slack/interactivity
+    request_url: https://api.keeprsteady.com/webhooks/slack/interactivity
 
   org_deploy_enabled: false
   socket_mode_enabled: false
