@@ -343,6 +343,21 @@ export class SlackWebhooksController {
     const conversationId = action.value ?? '';
     if (!conversationId) return { ok: true };
 
+    // Payment-request button works whether or not an escalation is still open —
+    // a manual "Book a slot" resolves the escalation, but the human may still
+    // want to send the deposit link afterward. Resolve straight from the convo.
+    if (action.action_id === 'esc_send_payment') {
+      await this.escalations
+        .sendPaymentRequest({
+          conversationId,
+          slackChannelId: payload.channel?.id ?? this.slackApi.defaultChannelId() ?? '',
+          slackThreadTs: payload.message?.thread_ts ?? payload.message?.ts ?? null,
+          slackUserId,
+        })
+        .catch((err) => this.logger.warn({ err: (err as Error).message }, 'sendPaymentRequest failed'));
+      return { ok: true };
+    }
+
     const esc = await this.escalations.findOpenForConversation(conversationId);
     if (!esc) {
       if (responseUrl) {
@@ -606,7 +621,7 @@ export class SlackWebhooksController {
             text: {
               type: 'mrkdwn',
               text:
-                'Books the appointment in the operator\'s calendar and texts the caller a tap-to-add calendar link. 60-minute slot.',
+                "Books the appointment in the operator's calendar and texts the caller a tap-to-add calendar link. Uses the operator's standard visit length.",
             },
           },
           {
@@ -677,10 +692,8 @@ export class SlackWebhooksController {
       return { response_action: 'errors', errors };
     }
 
-    const startIso = new Date(startTs * 1000).toISOString();
-    const endIso = new Date((startTs + 60 * 60) * 1000).toISOString();
-
-    // Load the operator row (needed for timezone + twilio number + business name).
+    // Load the operator row (needed for timezone + twilio number + business name
+    // + visit length).
     const { data: op, error: opErr } = await this.supabase
       .db()
       .from('operators')
@@ -690,6 +703,9 @@ export class SlackWebhooksController {
     if (opErr) {
       return { response_action: 'errors', errors: { start: `Operator lookup failed: ${opErr.message}` } };
     }
+
+    const startIso = new Date(startTs * 1000).toISOString();
+    const endIso = new Date((startTs + (op.visit_duration_min ?? 60) * 60) * 1000).toISOString();
 
     try {
       const result = await this.bookings.book({

@@ -19,7 +19,10 @@ interface Operator {
   booking_fee_cents: number | null;
   emergency_visit_fee_cents: number | null;
   allow_unpaid_emergency_booking: boolean;
+  visit_duration_min: number;
   business_hours: Record<string, { start: string; end: string }[]> | null;
+  service_zip_codes: string[] | null;
+  service_radius_zones: Array<{ center_zip: string; radius_miles: number }> | null;
   subscription_status: string | null;
   plan: string | null;
   plan_cadence: string | null;
@@ -101,9 +104,18 @@ export function SettingsPanel({ operator }: { operator: Operator }): JSX.Element
   const [allowUnpaidEmergency, setAllowUnpaidEmergency] = useState(
     operator.allow_unpaid_emergency_booking,
   );
+  const [visitDuration, setVisitDuration] = useState(String(operator.visit_duration_min ?? 60));
   const [hours, setHours] = useState<Record<string, DayHours>>(() =>
     initDayHours(operator.business_hours),
   );
+
+  // Service area (lifted from the onboarding wizard so coverage is editable later).
+  const [zipsText, setZipsText] = useState((operator.service_zip_codes ?? []).join(', '));
+  const [zones, setZones] = useState<Array<{ center_zip: string; radius_miles: number }>>(
+    operator.service_radius_zones ?? [],
+  );
+  const [zoneCenter, setZoneCenter] = useState('');
+  const [zoneRadius, setZoneRadius] = useState('30');
   const hoursInvalid = DAYS.some(({ key }) => {
     const d = hours[key];
     return d?.open && !(d.start < d.end);
@@ -123,6 +135,8 @@ export function SettingsPanel({ operator }: { operator: Operator }): JSX.Element
     const stripe = customerPays > 0 ? Math.ceil(customerPays * 0.029) + 30 : 0;
     return { base: baseCents, platform, customerPays, stripe, youReceive: Math.max(0, customerPays - platform - stripe) };
   };
+  const durationMin = Math.min(480, Math.max(15, Math.round(Number(visitDuration || '60') || 60)));
+  const durationInvalid = !/^\d+$/.test(visitDuration.trim()) || durationMin !== Number(visitDuration);
   const feeCents = Math.max(0, Math.round(Number(feeDollars || '0') * 100));
   const emergencyCents = Math.max(0, Math.round(Number(emergencyFeeDollars || '0') * 100));
   const deposit = charge(feeCents);
@@ -174,6 +188,7 @@ export function SettingsPanel({ operator }: { operator: Operator }): JSX.Element
           ...(cents != null ? { booking_fee_cents: cents } : {}),
           emergency_visit_fee_cents: emergencyCents,
           allow_unpaid_emergency_booking: allowUnpaidEmergency,
+          visit_duration_min: durationMin,
         }),
       });
       if (!res.ok) {
@@ -183,6 +198,53 @@ export function SettingsPanel({ operator }: { operator: Operator }): JSX.Element
       setInfo('Saved.');
       router.refresh();
     });
+  }
+
+  async function saveServiceArea(): Promise<void> {
+    await run('save-area', async () => {
+      const zips = zipsText
+        .split(/[\s,]+/)
+        .map((z) => z.trim())
+        .filter(Boolean);
+      const invalid = zips.filter((z) => !/^\d{5}$/.test(z));
+      if (invalid.length > 0) {
+        throw new Error(
+          `These don't look like 5-digit US ZIP codes: ${invalid.slice(0, 3).join(', ')}${
+            invalid.length > 3 ? ` and ${invalid.length - 3} more` : ''
+          }`,
+        );
+      }
+      const res = await authedFetch('/v1/operators/me', {
+        method: 'PATCH',
+        body: JSON.stringify({ service_zip_codes: zips, service_radius_zones: zones }),
+      });
+      if (!res.ok) {
+        const detail = await res.json().catch(() => ({}));
+        throw new Error(detail.detail ?? `Save failed (${res.status})`);
+      }
+      setInfo('Service area saved.');
+      router.refresh();
+    });
+  }
+
+  function addZone(): void {
+    setError(null);
+    if (!/^\d{5}$/.test(zoneCenter.trim())) {
+      setError('Zone center must be a 5-digit US ZIP code.');
+      return;
+    }
+    const r = Number(zoneRadius);
+    if (!Number.isFinite(r) || r < 1 || r > 500) {
+      setError('Radius must be a whole number between 1 and 500 miles.');
+      return;
+    }
+    setZones([...zones, { center_zip: zoneCenter.trim(), radius_miles: Math.floor(r) }]);
+    setZoneCenter('');
+    setZoneRadius('30');
+  }
+
+  function removeZone(idx: number): void {
+    setZones(zones.filter((_, i) => i !== idx));
   }
 
   async function saveHours(): Promise<void> {
@@ -270,7 +332,24 @@ export function SettingsPanel({ operator }: { operator: Operator }): JSX.Element
         <Field label="Your mobile (read-only)" hint="Set at signup. Reach us to change.">
           <div className="text-sm font-mono text-muted dark:text-slate-300">{formatE164(operator.personal_phone_e164)}</div>
         </Field>
-        <SaveButton busy={busy === 'save'} onClick={saveProfile} />
+        <Field
+          label="Visit length (minutes)"
+          hint="How long each appointment runs. The AI proposes and books slots of exactly this length. 15–480."
+        >
+          <input
+            type="number"
+            min={15}
+            max={480}
+            step={15}
+            value={visitDuration}
+            onChange={(e) => setVisitDuration(e.target.value.replace(/\D/g, '').slice(0, 3))}
+            className="rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 dark:text-slate-100 px-3 py-2 text-sm w-32"
+          />
+          {durationInvalid ? (
+            <span className="ml-2 text-xs text-red-600">must be a whole number 15–480</span>
+          ) : null}
+        </Field>
+        <SaveButton busy={busy === 'save'} onClick={saveProfile} disabled={durationInvalid} />
       </Card>
 
       {/* ── Business hours ───────────────────────────────────────────── */}
@@ -319,6 +398,76 @@ export function SettingsPanel({ operator }: { operator: Operator }): JSX.Element
           })}
         </div>
         <SaveButton busy={busy === 'save-hours'} onClick={saveHours} disabled={hoursInvalid} />
+      </Card>
+
+      {/* ── Service area ─────────────────────────────────────────────── */}
+      <Card
+        title="Service area"
+        description="ZIP codes you cover. The AI books only jobs inside this area and sends out-of-area callers a polite handoff. Leave both blank to accept any address."
+      >
+        <div className="space-y-4">
+          <Field
+            label="ZIPs you cover explicitly"
+            hint="Comma, space, or newline separated. Each must be a 5-digit US ZIP. We de-dupe + sort."
+          >
+            <textarea
+              value={zipsText}
+              onChange={(e) => setZipsText(e.target.value)}
+              placeholder="e.g. 90210, 90211, 90212"
+              rows={2}
+              className="w-full rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 dark:text-slate-100 px-3 py-2 text-sm font-mono"
+            />
+          </Field>
+
+          <div>
+            <label className="block text-sm font-medium text-ink dark:text-slate-200 mb-1">
+              Radius zones (everything within X miles of a center ZIP)
+            </label>
+            <div className="space-y-1">
+              {zones.map((zone, idx) => (
+                <div
+                  key={`${zone.center_zip}-${idx}`}
+                  className="flex items-center gap-3 rounded-md border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-3 py-1.5 text-sm"
+                >
+                  <span className="font-mono">{zone.radius_miles} mi</span>
+                  <span className="text-muted dark:text-slate-400">around</span>
+                  <span className="font-mono">{zone.center_zip}</span>
+                  <button
+                    type="button"
+                    onClick={() => removeZone(idx)}
+                    className="ml-auto text-xs text-red-700 hover:underline"
+                  >
+                    Remove
+                  </button>
+                </div>
+              ))}
+            </div>
+            <div className="mt-2 flex items-center gap-2">
+              <input
+                placeholder="Center ZIP"
+                value={zoneCenter}
+                onChange={(e) => setZoneCenter(e.target.value.replace(/\D/g, '').slice(0, 5))}
+                className="rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 dark:text-slate-100 px-3 py-1.5 text-sm font-mono w-32"
+              />
+              <input
+                placeholder="30"
+                value={zoneRadius}
+                onChange={(e) => setZoneRadius(e.target.value.replace(/\D/g, '').slice(0, 3))}
+                className="rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 dark:text-slate-100 px-3 py-1.5 text-sm w-20"
+              />
+              <span className="text-xs text-muted dark:text-slate-400">miles</span>
+              <button
+                type="button"
+                onClick={addZone}
+                className="rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 dark:text-slate-100 px-3 py-1.5 text-sm hover:bg-slate-50"
+              >
+                + Add zone
+              </button>
+            </div>
+          </div>
+
+          <SaveButton busy={busy === 'save-area'} onClick={saveServiceArea} />
+        </div>
       </Card>
 
       {/* ── Booking fee + economics ──────────────────────────────────── */}

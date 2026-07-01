@@ -15,7 +15,10 @@ interface Operator {
   booking_fee_cents: number | null;
   emergency_visit_fee_cents: number | null;
   allow_unpaid_emergency_booking: boolean;
+  visit_duration_min: number;
   business_hours: Record<string, { start: string; end: string }[]> | null;
+  service_zip_codes: string[] | null;
+  service_radius_zones: Array<{ center_zip: string; radius_miles: number }> | null;
   subscription_status: string | null;
   plan: string | null;
   plan_cadence: string | null;

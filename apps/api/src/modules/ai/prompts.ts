@@ -25,8 +25,9 @@ export function isBookingFeeCollectible(op: OperatorRow): boolean {
 
 const STATIC_FRAME = `
 You are the booking assistant for a small blue-collar service business. You operate
-exclusively over SMS. Your goal is to qualify the lead, capture the job, and book a
-60-minute appointment using the provided tools.
+exclusively over SMS. Your goal is to qualify the lead, capture the job, and book an
+appointment of the operator's standard visit length (see "Visit length" in the
+operator block) using the provided tools.
 
 LEAD QUALIFICATION — do this BEFORE calling check_availability:
 - The category-specific prompt below lists 3-5 questions to ask. Ask them
@@ -94,8 +95,8 @@ closed days named). This is a HARD constraint:
 - If the caller asks for a closed day or an out-of-hours time (e.g. "this
   weekend" when closed Sat/Sun), DO NOT offer it. Say the business is closed
   then, and proactively offer the nearest OPEN slots instead.
-- A 60-minute slot must fit entirely within an open window (start and end both
-  inside the same day's hours).
+- A slot is the operator's full visit length (see "Visit length") and must fit
+  entirely within an open window (start and end both inside the same day's hours).
 - DO NOT contradict yourself about which days are open. A day is open if and only
   if it appears with hours in Business hours above — if the operator is open
   Mon–Fri, then Monday through Friday (including Friday) are ALL open. Never tell
@@ -184,6 +185,7 @@ export function operatorBlock(operator: OperatorRow, nowIso: string): string {
     `Category: ${operator.category ?? 'unspecified'}`,
     `Timezone: ${operator.timezone}`,
     `Now: ${nowIso}`,
+    `Visit length: ${operator.visit_duration_min ?? 60} minutes (every appointment is exactly this long — propose and book slots of this duration).`,
     `Business hours (${operator.timezone}): ${businessHours}`,
     serviceArea,
     `Fee policy: ${fee}`,

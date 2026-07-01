@@ -481,6 +481,7 @@ export type Database = {
           allow_unpaid_emergency_booking: boolean;
           booking_fee_enabled: boolean;
           emergency_visit_fee_cents: number | null;
+          visit_duration_min: number;
           business_hours: Json;
           business_name: string;
           category: string | null;
@@ -520,6 +521,7 @@ export type Database = {
           allow_unpaid_emergency_booking?: boolean;
           booking_fee_enabled?: boolean;
           emergency_visit_fee_cents?: number | null;
+          visit_duration_min?: number;
           business_hours?: Json;
           business_name: string;
           category?: string | null;
@@ -559,6 +561,7 @@ export type Database = {
           allow_unpaid_emergency_booking?: boolean;
           booking_fee_enabled?: boolean;
           emergency_visit_fee_cents?: number | null;
+          visit_duration_min?: number;
           business_hours?: Json;
           business_name?: string;
           category?: string | null;

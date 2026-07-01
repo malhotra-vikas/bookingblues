@@ -35,6 +35,7 @@ export const UpdateOperatorSchema = z
     booking_fee_cents: z.number().int().min(0).optional().nullable(),
     emergency_visit_fee_cents: z.number().int().min(0).optional().nullable(),
     allow_unpaid_emergency_booking: z.boolean().optional(),
+    visit_duration_min: z.number().int().min(15).max(480).optional(),
     service_zip_codes: z
       .array(z.string().regex(/^\d{5}$/, 'must be a 5-digit US ZIP code'))
       .max(500, 'too many ZIPs — set a smaller list (or contact support if you really cover that many)')

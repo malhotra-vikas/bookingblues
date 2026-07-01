@@ -8,6 +8,8 @@ import { SupabaseService } from '../../common/supabase/supabase.service';
 import { TwilioService } from '../../common/twilio/twilio.service';
 import { fetchCallerJobs, formatCallerJobsForSlack } from '../appointments/caller-history';
 import { ConversationsService } from '../conversations/conversations.service';
+import { paymentLinkSms } from '../conversations/templates/sms-templates';
+import { PaymentsService } from '../payments/payments.service';
 
 import { SlackApiClient } from './slack-api.client';
 
@@ -58,9 +60,109 @@ export class EscalationsService {
     private readonly twilio: TwilioService,
     private readonly conversations: ConversationsService,
     private readonly audit: AuditLogService,
+    private readonly payments: PaymentsService,
     private readonly logger: PinoLogger,
   ) {
     this.logger.setContext(EscalationsService.name);
+  }
+
+  /**
+   * "💳 Send payment request" button (emergency design item 17d). A human on the
+   * HITL thread fires a Stripe Connect checkout link to the caller for their
+   * appointment — used when the AI didn't collect (e.g. it escalated, or a human
+   * manually booked). Includes the operator's emergency visit fee (this is the
+   * emergency-handling surface); if the operator hasn't configured one it's just
+   * the deposit. Best-effort, all outcomes reported back in-thread. Does NOT
+   * require an open escalation (a manual book resolves it first).
+   */
+  async sendPaymentRequest(args: {
+    conversationId: string;
+    slackChannelId: string;
+    slackThreadTs: string | null;
+    slackUserId: string;
+  }): Promise<void> {
+    const reply = async (text: string): Promise<void> => {
+      try {
+        await this.slackApi.postMessage({
+          channel: args.slackChannelId,
+          ...(args.slackThreadTs ? { threadTs: args.slackThreadTs } : {}),
+          text,
+        });
+      } catch {
+        // non-fatal
+      }
+    };
+
+    // Resolve conversation → operator + caller.
+    const { data: convo } = await this.supabase
+      .db()
+      .from('conversations')
+      .select('id, operator_id, caller_phone_e164')
+      .eq('id', args.conversationId)
+      .maybeSingle();
+    if (!convo) return reply('⚠ Could not find that conversation.');
+
+    // Most recent chargeable appointment (proposed or confirmed, not cancelled).
+    const { data: appts } = await this.supabase
+      .db()
+      .from('appointments')
+      .select('id, status, fee_status, scheduled_for_start')
+      .eq('conversation_id', convo.id)
+      .in('status', ['proposed', 'confirmed'])
+      .order('created_at', { ascending: false })
+      .limit(1);
+    const appt = appts?.[0];
+    if (!appt) {
+      return reply(
+        `⚠ <@${args.slackUserId}> no bookable appointment on this conversation yet — use *📅 Book a slot* first, then send the payment request.`,
+      );
+    }
+    if (appt.fee_status === 'paid') {
+      return reply(`✅ <@${args.slackUserId}> the deposit for this appointment is already paid — nothing to send.`);
+    }
+
+    const { data: op } = await this.supabase
+      .db()
+      .from('operators')
+      .select('twilio_number_e164')
+      .eq('id', convo.operator_id)
+      .maybeSingle();
+    if (!op?.twilio_number_e164) {
+      return reply('⚠ Operator has no Twilio number — cannot text a payment link.');
+    }
+
+    // Create the checkout link (emergency = include emergency fee if configured).
+    let url: string;
+    try {
+      const res = await this.payments.createBookingFeeCheckout({
+        operatorId: convo.operator_id,
+        appointmentId: appt.id,
+        emergency: true,
+      });
+      url = res.url;
+    } catch (err) {
+      // ensureFeeEligible throws AppError (fee not enabled / Connect not ready).
+      const msg = err instanceof AppError ? err.message : 'unexpected error';
+      return reply(`⚠ <@${args.slackUserId}> couldn't create a payment link: ${msg}. Check the operator's booking-fee + Stripe Connect setup.`);
+    }
+
+    // Text the caller.
+    const send = await this.twilio.sendSms({
+      from: op.twilio_number_e164,
+      to: convo.caller_phone_e164,
+      body: paymentLinkSms(url),
+    });
+    const last4 = convo.caller_phone_e164.slice(-4);
+    if ('skipped' in send) {
+      return reply(`⚠ Payment link created but SMS was skipped (${send.skipped}). Link: ${url}`);
+    }
+    await this.conversations.appendMessage({
+      conversationId: convo.id,
+      role: 'system',
+      body: paymentLinkSms(url),
+      twilioMessageSid: send.sid,
+    });
+    await reply(`💳 <@${args.slackUserId}> sent a payment request to the caller (•••${last4}).`);
   }
 
   // ── conversation monitoring thread (every convo, in #convos) ────────────
@@ -916,6 +1018,7 @@ export class EscalationsService {
           { type: 'button', action_id: 'esc_close', text: { type: 'plain_text', text: '✓ Close', emoji: true }, value: args.conversation.id },
           { type: 'button', action_id: 'esc_show_number', text: { type: 'plain_text', text: '👁 Show number', emoji: true }, value: args.conversation.id },
           { type: 'button', action_id: 'esc_book', text: { type: 'plain_text', text: '📅 Book a slot', emoji: true }, style: 'primary', value: args.conversation.id },
+          { type: 'button', action_id: 'esc_send_payment', text: { type: 'plain_text', text: '💳 Send payment request', emoji: true }, value: args.conversation.id },
         ],
       },
     ].filter(Boolean);
