@@ -4,6 +4,7 @@ import { PinoLogger } from 'nestjs-pino';
 import { z } from 'zod';
 
 import { ZodBodyPipe } from '../../common/pipes/zod-body.pipe';
+import { SupabaseService } from '../../common/supabase/supabase.service';
 import { ENV_TOKEN } from '../../config/config.module';
 import type { Env } from '../../config/env';
 import { SlackApiClient } from '../slack/slack-api.client';
@@ -15,6 +16,13 @@ const NotifyLeadSchema = z.object({
   phone_e164: z
     .string()
     .regex(/^\+[1-9]\d{6,14}$/, 'phone must be E.164 (+15551234567)'),
+  /**
+   * Optional sales-rep referral entered at signup (the rep's Slack member ID,
+   * e.g. `U0B1AJTVA9J`). If it matches a known rep, the lead is pre-assigned to
+   * them so it can't be claimed by anyone else. Anything unrecognized is
+   * ignored and the lead posts as normally claimable.
+   */
+  sales_ref: z.string().trim().max(40).optional(),
 });
 
 type NotifyLeadDto = z.infer<typeof NotifyLeadSchema>;
@@ -36,8 +44,14 @@ export function buildLeadBlocks(args: {
   adminUrl: string;
   /** Override the header line (e.g. when a lead is re-released for claiming). */
   headline?: string;
+  /**
+   * When set, the lead is PRE-ASSIGNED to this rep (referral at signup). We drop
+   * the Claim button and show a lock banner so no one else can grab it — same
+   * shape as a manually-claimed lead.
+   */
+  preassignedSlackUserId?: string;
 }): ReadonlyArray<unknown> {
-  return [
+  const info = [
     {
       type: 'section',
       text: {
@@ -52,6 +66,25 @@ export function buildLeadBlocks(args: {
         { type: 'mrkdwn', text: `*Phone*\n${maskPhone(args.phoneE164)}` },
       ],
     },
+  ];
+
+  if (args.preassignedSlackUserId) {
+    return [
+      ...info,
+      {
+        type: 'context',
+        elements: [
+          {
+            type: 'mrkdwn',
+            text: `:lock: Pre-assigned to <@${args.preassignedSlackUserId}> (referral at signup)`,
+          },
+        ],
+      },
+    ];
+  }
+
+  return [
+    ...info,
     {
       type: 'actions',
       block_id: `lead_actions_${args.userId}`,
@@ -90,6 +123,7 @@ export function buildLeadBlocks(args: {
 export class LeadsController {
   constructor(
     private readonly slack: SlackApiClient,
+    private readonly supabase: SupabaseService,
     private readonly logger: PinoLogger,
     @Inject(ENV_TOKEN) private readonly env: Env,
   ) {
@@ -106,9 +140,17 @@ export class LeadsController {
       return { ok: true };
     }
 
+    // Referral pre-assignment: if the signup carried a valid sales-rep Slack ID,
+    // claim the lead for that rep right now so it can't be grabbed by anyone
+    // else. Best-effort — a bad/unknown ref just falls through to a claimable
+    // post; nothing here may block the lead notification.
+    const preassigned = body.sales_ref ? await this.resolveAndPreassign(body) : null;
+
     const adminUrl = `${this.env.APP_URL.replace(/\/$/, '')}/admin/leads`;
     const businessName = body.business_name;
-    const fallbackText = `New lead: ${businessName} · ${body.email} · ${maskPhone(body.phone_e164)}`;
+    const fallbackText = preassigned
+      ? `New lead: ${businessName} · pre-assigned to <@${preassigned.slackUserId}>`
+      : `New lead: ${businessName} · ${body.email} · ${maskPhone(body.phone_e164)}`;
 
     try {
       await this.slack.postMessage({
@@ -120,6 +162,7 @@ export class LeadsController {
           businessName,
           phoneE164: body.phone_e164,
           adminUrl,
+          ...(preassigned ? { preassignedSlackUserId: preassigned.slackUserId } : {}),
         }),
       });
     } catch (err) {
@@ -130,5 +173,56 @@ export class LeadsController {
     }
 
     return { ok: true };
+  }
+
+  /**
+   * Resolve a signup referral (a rep's Slack member ID) to a known sales rep and
+   * pre-assign this lead to them by writing the `lead_claims` row. Returns the
+   * rep on success, null if the ref is unknown or anything fails — the caller
+   * then posts a normally-claimable lead. Never throws.
+   */
+  private async resolveAndPreassign(
+    body: NotifyLeadDto,
+  ): Promise<{ slackUserId: string; slackUsername: string | null } | null> {
+    // Slack member IDs are uppercase (U…/W…); normalize so casing/whitespace in
+    // the typed referral doesn't cause a miss.
+    const ref = (body.sales_ref ?? '').trim().toUpperCase();
+    if (!/^[UW][A-Z0-9]{6,}$/.test(ref)) return null;
+    try {
+      // Only a linked, promoted rep can receive a referral (guards against a
+      // lead pre-assigning to an arbitrary Slack ID).
+      const { data: rep } = await this.supabase
+        .db()
+        .from('sales_slack_links')
+        .select('slack_user_id, slack_username')
+        .eq('slack_user_id', ref)
+        .maybeSingle();
+      if (!rep) {
+        this.logger.info({ ref }, 'leads: referral did not match a known sales rep — posting as claimable');
+        return null;
+      }
+
+      const { error } = await this.supabase
+        .db()
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        .from('lead_claims' as any)
+        .upsert(
+          {
+            user_id: body.user_id,
+            claimed_by_slack_user_id: rep.slack_user_id,
+            claimed_by_slack_username: rep.slack_username,
+            claimed_at: new Date().toISOString(),
+          },
+          { onConflict: 'user_id' },
+        );
+      if (error) {
+        this.logger.warn({ err: error.message, ref }, 'leads: pre-assign upsert failed — posting as claimable');
+        return null;
+      }
+      return { slackUserId: rep.slack_user_id, slackUsername: rep.slack_username };
+    } catch (err) {
+      this.logger.warn({ err: (err as Error).message, ref }, 'leads: pre-assign errored — posting as claimable');
+      return null;
+    }
   }
 }

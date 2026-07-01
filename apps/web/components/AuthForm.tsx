@@ -17,6 +17,7 @@ export function AuthForm({ mode }: { mode: 'login' | 'signup' }): JSX.Element {
   const [password, setPassword] = useState('');
   const [businessName, setBusinessName] = useState('');
   const [phone, setPhone] = useState('');
+  const [salesRef, setSalesRef] = useState('');
   const [consent, setConsent] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -77,6 +78,7 @@ export function AuthForm({ mode }: { mode: 'login' | 'signup' }): JSX.Element {
               email: normalizedEmail,
               business_name: trimmedName,
               phone_e164: phoneE164,
+              ...(salesRef.trim() ? { sales_ref: salesRef.trim() } : {}),
             }),
             keepalive: true,
           }).catch(() => {
@@ -125,6 +127,14 @@ export function AuthForm({ mode }: { mode: 'login' | 'signup' }): JSX.Element {
             autoComplete="tel"
             required
             hint="We'll text this number when sales reaches out. Keep it the same number that takes your customer calls."
+          />
+          <Field
+            id="sales_ref"
+            label="Sales rep reference (optional)"
+            placeholder="e.g. U0B1AJTVA9J"
+            value={salesRef}
+            onChange={setSalesRef}
+            hint="Referred by one of our reps? Enter the reference they gave you so they stay your point of contact."
           />
         </>
       )}
