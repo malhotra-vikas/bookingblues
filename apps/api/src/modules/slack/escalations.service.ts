@@ -655,6 +655,19 @@ export class EscalationsService {
       operatorId = convo.operator_id;
       conversationId = convo.id;
       callerPhoneE164 = convo.caller_phone_e164;
+
+      // Human replied in the #convos monitoring thread. If the AI still owns
+      // this conversation (no open escalation), treat the reply as a TAKEOVER:
+      // open an escalation so the AI pauses AND the #hitl alarm with its
+      // controls (Book / Send payment / Resume AI / Close) appears. Without this
+      // the human could only free-text the caller — no way to book or collect.
+      // Idempotent + best-effort: never blocks the bridge below.
+      await this.maybeEscalateOnTakeover(convo.id, args.slackUserId).catch((err) =>
+        this.logger.warn(
+          { conversationId: convo.id, err: (err as Error).message },
+          'auto-escalate on takeover failed (non-fatal)',
+        ),
+      );
     }
 
     // §9.3 rate limit (8s/conversation outbound).
@@ -719,6 +732,44 @@ export class EscalationsService {
     }
 
     return { delivered: true };
+  }
+
+  /**
+   * A human replied in a #convos monitoring thread. If the conversation isn't
+   * already owned by a human (no open escalation), open one now so the AI pauses
+   * and the #hitl alarm + controls appear — i.e. "engaging in the thread = taking
+   * over." Idempotent (no-op if already escalated). openEscalation does NOT text
+   * the caller a handoff line, so the caller only receives the human's actual
+   * message (bridged separately) — no duplicate.
+   */
+  private async maybeEscalateOnTakeover(conversationId: string, slackUserId: string): Promise<void> {
+    const existing = await this.findOpenForConversation(conversationId);
+    if (existing) return;
+
+    const { data: convoRow } = await this.supabase
+      .db()
+      .from('conversations')
+      .select('*')
+      .eq('id', conversationId)
+      .maybeSingle();
+    if (!convoRow || convoRow.status === 'escalated') return;
+
+    const { data: opRow } = await this.supabase
+      .db()
+      .from('operators')
+      .select('*')
+      .eq('id', convoRow.operator_id)
+      .maybeSingle();
+    if (!opRow) return;
+
+    await this.openEscalation({
+      operator: opRow,
+      conversation: convoRow,
+      callerPhoneE164: convoRow.caller_phone_e164,
+      reason: 'operator_forced',
+      reasonText: `<@${slackUserId}> jumped into the conversation thread — taking over from the AI.`,
+      openedBy: 'operator',
+    });
   }
 
   /** Look up a conversation by the Slack thread its monitoring post lives in. */
