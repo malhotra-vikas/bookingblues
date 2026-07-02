@@ -4,6 +4,7 @@ import type { ReactNode } from 'react';
 
 import { Reveal } from '../../components/Reveal';
 import { BRAND, TRIAL_COPY } from '../../lib/brand';
+import { getPlanPrices, usd } from '../../lib/plans';
 
 export const metadata: Metadata = {
   title: `${BRAND.name} — AI booking assistant for home-service businesses`,
@@ -12,7 +13,8 @@ export const metadata: Metadata = {
   alternates: { canonical: '/' },
 };
 
-export default function HomePage(): JSX.Element {
+export default async function HomePage(): Promise<JSX.Element> {
+  const prices = await getPlanPrices();
   return (
     <div>
       {/* ── Hero ───────────────────────────────────────────────────────── */}
@@ -182,7 +184,7 @@ export default function HomePage(): JSX.Element {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200">
-                <CompareRow label="Monthly cost" a="$400–$1,200" b="$25–$75" c="$325 starting" />
+                <CompareRow label="Monthly cost" a="$400–$1,200" b="$25–$75" c={`${usd(prices.solo.monthlyUsd)} starting`} />
                 <CompareRow label="Availability" a="Office hours, often US-only" b="24/7" c="24/7" />
                 <CompareRow label="Avg response time" a="3–8 min" b="<10 sec (canned)" c="<10 sec" />
                 <CompareRow label="Books on your calendar" a="Sometimes" b="No" c="Yes — direct to Google Calendar" />

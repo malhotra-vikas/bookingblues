@@ -17,6 +17,11 @@ export interface PlanPrices {
   annualUsd: number;
 }
 
+/** Format a whole-dollar amount for prose, e.g. 1499 → "$1,499". */
+export function usd(amount: number): string {
+  return `$${amount.toLocaleString()}`;
+}
+
 /** brand.ts constants as the fallback price map (used if the API/Stripe is down). */
 function fallbackPrices(): Record<PlanSlug, PlanPrices> {
   return Object.fromEntries(

@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 
 import { BRAND, TERMS } from '../../../lib/brand';
+import { getPlanPrices, usd } from '../../../lib/plans';
 
 export const metadata: Metadata = {
   title: 'Terms of Service — KeeprSteady',
@@ -9,7 +10,8 @@ export const metadata: Metadata = {
   alternates: { canonical: '/terms' },
 };
 
-export default function TermsPage(): JSX.Element {
+export default async function TermsPage(): Promise<JSX.Element> {
+  const prices = await getPlanPrices();
   return (
     <article className="px-6 py-12 max-w-3xl mx-auto">
       <header>
@@ -51,17 +53,17 @@ export default function TermsPage(): JSX.Element {
         <p>{BRAND.name} offers three subscription tiers:</p>
         <ul>
           <li>
-            <strong>Solo — $325/month:</strong> Up to 80 AI conversations/mo. Optional deposit
+            <strong>Solo — {usd(prices.solo.monthlyUsd)}/month:</strong> Up to 80 AI conversations/mo. Optional deposit
             collection (10% platform fee).
           </li>
           <li>
-            <strong>Crew — $650/month:</strong> Up to 500 AI conversations/mo. Deposit collection
+            <strong>Crew — {usd(prices.crew.monthlyUsd)}/month:</strong> Up to 500 AI conversations/mo. Deposit collection
             on by default, disableable in onboarding. Subscriber sets deposit amount and receives
             100% of it; {BRAND.name} adds 15% on top charged to the End User via Stripe Connect
             application fee. Overages billed at $15 per 50 additional conversations.
           </li>
           <li>
-            <strong>Fleet — $1,499/month:</strong> Up to 1,500 AI conversations/mo. Deposit
+            <strong>Fleet — {usd(prices.fleet.monthlyUsd)}/month:</strong> Up to 1,500 AI conversations/mo. Deposit
             collection is mandatory and cannot be disabled. Subscriber sets deposit amount and
             receives 100% of it; {BRAND.name} adds 20% on top charged to the End User via Stripe
             Connect application fee. Overages billed at $15 per 50 additional conversations.
