@@ -47,7 +47,14 @@ export class OperatorsService {
     // Signup stashes business_name + personal_phone_e164 in user_metadata
     // (Supabase Auth). Read it and insert the row idempotently. Returns null
     // if signup metadata is missing — the controller surfaces a clear error.
-    return this.tryBootstrapFromAuthMetadata(userId);
+    const bootstrapped = await this.tryBootstrapFromAuthMetadata(userId);
+    this.logger.info(
+      { userId, bootstrapped: Boolean(bootstrapped), operatorId: bootstrapped?.id },
+      bootstrapped
+        ? 'getByUserId: no existing operator — bootstrapped from auth metadata'
+        : 'getByUserId: no operator row AND bootstrap returned null (missing signup metadata?)',
+    );
+    return bootstrapped;
   }
 
   private async tryBootstrapFromAuthMetadata(userId: string): Promise<OperatorRow | null> {
@@ -105,6 +112,20 @@ export class OperatorsService {
   }
 
   async update(userId: string, patch: UpdateOperator): Promise<OperatorRow> {
+    // DEBUG (obs 1/2 — onboarding saves not persisting). Correlate a failing
+    // PATCH by userId. Logs the fields touched + the values relevant to the two
+    // reports (category, service area). Safe to keep — no PII.
+    this.logger.info(
+      {
+        userId,
+        patchKeys: Object.keys(patch),
+        category: patch.category,
+        service_zip_codes: patch.service_zip_codes,
+        service_radius_zones: patch.service_radius_zones,
+      },
+      'operators.update: received PATCH',
+    );
+
     const existing = await this.getByUserIdRequired(userId);
 
     // Plumbing-only MVP gate (PROGRESS.md Slice 16). Reject categories the
@@ -112,6 +133,10 @@ export class OperatorsService {
     // them. The FK check below catches *unknown* slugs; this catches
     // *disabled* ones with a clearer error.
     if (patch.category !== undefined && !this.env.ENABLED_CATEGORY_SET.has(patch.category)) {
+      this.logger.warn(
+        { userId, category: patch.category, enabled: [...this.env.ENABLED_CATEGORY_SET] },
+        'operators.update: category rejected — not in ENABLED_CATEGORY_SET',
+      );
       throw new ValidationError(
         `Category "${patch.category}" is not currently enabled. Available: ${[...this.env.ENABLED_CATEGORY_SET].join(', ')}.`,
         { path: ['category'] },
@@ -173,6 +198,10 @@ export class OperatorsService {
       .select('*')
       .single();
     if (error) {
+      this.logger.warn(
+        { userId, operatorId: existing.id, code: error.code, msg: error.message, updateKeys: Object.keys(update) },
+        'operators.update: DB update failed',
+      );
       // Foreign-key violation on category slug — surface as 400.
       if (error.code === '23503') {
         throw new ValidationError(`Unknown category: ${patch.category ?? '<unknown>'}`);
@@ -183,6 +212,17 @@ export class OperatorsService {
       }
       throw error;
     }
+    this.logger.info(
+      {
+        userId,
+        operatorId: existing.id,
+        changed: Object.keys(update),
+        category: data.category,
+        service_zip_codes: data.service_zip_codes,
+        service_radius_zones: data.service_radius_zones,
+      },
+      'operators.update: persisted',
+    );
     return data;
   }
 

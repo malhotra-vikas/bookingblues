@@ -692,16 +692,47 @@ export class SlackWebhooksController {
       return { response_action: 'errors', errors };
     }
 
-    // Load the operator row (needed for timezone + twilio number + business name
-    // + visit length).
+    // The actual booking (Google Calendar insert + confirmation SMS) takes
+    // several seconds — well over Slack's ~3s view_submission deadline. Awaiting
+    // it here made Slack show "We had some trouble connecting" even though the
+    // booking succeeded. So we ACK immediately (empty {} closes the modal) and
+    // finish the booking in the background, reporting the result via response_url.
+    void this.completeBookingAsync({ meta, startTs, callerName, jobSummary, slackUserId }).catch(
+      (err) =>
+        this.logger.error(
+          { err: (err as Error).message, meta },
+          'completeBookingAsync threw (unexpected)',
+        ),
+    );
+    return {};
+  }
+
+  /** Slow part of the Slack manual booking — runs AFTER the modal is acked. */
+  private async completeBookingAsync(args: {
+    meta: BookModalMetadata;
+    startTs: number;
+    callerName: string;
+    jobSummary: string;
+    slackUserId: string;
+  }): Promise<void> {
+    const { meta, startTs, callerName, jobSummary, slackUserId } = args;
+    const notify = async (text: string): Promise<void> => {
+      if (meta.responseUrl) {
+        await postToResponseUrl(meta.responseUrl, { response_type: 'in_channel', text }).catch(
+          () => undefined,
+        );
+      }
+    };
+
     const { data: op, error: opErr } = await this.supabase
       .db()
       .from('operators')
       .select('*')
       .eq('id', meta.operatorId)
       .single();
-    if (opErr) {
-      return { response_action: 'errors', errors: { start: `Operator lookup failed: ${opErr.message}` } };
+    if (opErr || !op) {
+      await notify(`⚠ <@${slackUserId}> booking failed — operator lookup error: ${opErr?.message ?? 'not found'}.`);
+      return;
     }
 
     const startIso = new Date(startTs * 1000).toISOString();
@@ -725,39 +756,25 @@ export class SlackWebhooksController {
 
       // Resolve the escalation (if any) — the booking is the resolution.
       if (meta.escalationId) {
-        await this.escalations.resolveEscalation({
-          escalationId: meta.escalationId,
-          resolvedByUserId: null,
-          outcome: 'booked',
-        }).catch((err) => {
-          this.logger.warn(
-            { escalationId: meta.escalationId, err: (err as Error).message },
-            'resolveEscalation after manual book failed (non-fatal)',
+        await this.escalations
+          .resolveEscalation({ escalationId: meta.escalationId, resolvedByUserId: null, outcome: 'booked' })
+          .catch((err) =>
+            this.logger.warn(
+              { escalationId: meta.escalationId, err: (err as Error).message },
+              'resolveEscalation after manual book failed (non-fatal)',
+            ),
           );
-        });
       }
 
-      // Surface success back to the channel via response_url if we have one
-      // (button-click path); otherwise just close the modal silently — the
-      // confirmation SMS already went out.
-      if (meta.responseUrl) {
-        const feeNote = result.feeCheckoutUrl ? ' Booking-fee Checkout link sent.' : '';
-        await postToResponseUrl(meta.responseUrl, {
-          response_type: 'in_channel',
-          text:
-            `📅 <@${slackUserId}> booked ${callerName} for ${new Date(startIso).toUTCString()}. ` +
-            `ICS link sent to caller.${feeNote}`,
-        });
-      }
-
-      return {};
+      const feeNote = result.feeCheckoutUrl ? ' Booking-fee Checkout link sent.' : '';
+      await notify(
+        `📅 <@${slackUserId}> booked ${callerName} for ${new Date(startIso).toUTCString()}. ` +
+          `ICS link sent to caller.${feeNote}`,
+      );
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       this.logger.warn({ err: msg, meta }, 'manual book failed');
-      return {
-        response_action: 'errors',
-        errors: { start: `Couldn't book: ${msg.slice(0, 180)}` },
-      };
+      await notify(`⚠ <@${slackUserId}> couldn't book: ${msg.slice(0, 180)}`);
     }
   }
 
