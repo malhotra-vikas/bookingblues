@@ -45,7 +45,7 @@ export default function FaqPage(): JSX.Element {
     },
     {
       q: 'How do plans and pricing work?',
-      a: 'Solo $49/mo includes 80 AI conversations/mo; deposit collection is off by default and you can enable it anytime (KeeprSteady adds 10% on top, charged to the customer). Crew $650/mo includes 500 conversations; deposit is on by default and can be disabled in onboarding (we add 15% on top); overages are billed at $15 per 50 additional conversations. Fleet $1,499/mo includes 1,500 conversations; deposit collection is mandatory at this tier (we add 20% on top); overages same as Crew. Annual billing saves you 2 months on every plan.',
+      a: 'Solo $325/mo includes 80 AI conversations/mo; deposit collection is off by default and you can enable it anytime (KeeprSteady adds 10% on top, charged to the customer). Crew $650/mo includes 500 conversations; deposit is on by default and can be disabled in onboarding (we add 15% on top); overages are billed at $15 per 50 additional conversations. Fleet $1,499/mo includes 1,500 conversations; deposit collection is mandatory at this tier (we add 20% on top); overages same as Crew. Annual billing saves you 2 months on every plan.',
     },
     {
       q: 'How do overages work on Crew and Fleet?',

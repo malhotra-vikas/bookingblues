@@ -4,11 +4,16 @@ import Link from 'next/link';
 import { useState, type ReactNode } from 'react';
 
 import { Reveal } from '../../../components/Reveal';
-import { PLANS, depositLabel, type Plan } from '../../../lib/brand';
+import { PLANS, depositLabel, type Plan, type PlanSlug } from '../../../lib/brand';
+import { type PlanPrices } from '../../../lib/plans';
 
 type Cadence = 'monthly' | 'annual';
 
-export function PricingTiers(): JSX.Element {
+export function PricingTiers({
+  prices,
+}: {
+  prices: Record<PlanSlug, PlanPrices>;
+}): JSX.Element {
   const [cadence, setCadence] = useState<Cadence>('monthly');
 
   return (
@@ -31,7 +36,7 @@ export function PricingTiers(): JSX.Element {
       <div className="mt-8 grid gap-5 lg:grid-cols-3 items-stretch">
         {PLANS.map((plan, i) => (
           <Reveal key={plan.slug} delay={i * 110} className="h-full">
-            <TierCard plan={plan} cadence={cadence} />
+            <TierCard plan={plan} cadence={cadence} price={prices[plan.slug]} />
           </Reveal>
         ))}
       </div>
@@ -65,10 +70,21 @@ function CadenceTab({
   );
 }
 
-function TierCard({ plan, cadence }: { plan: Plan; cadence: Cadence }): JSX.Element {
+function TierCard({
+  plan,
+  cadence,
+  price,
+}: {
+  plan: Plan;
+  cadence: Cadence;
+  price?: PlanPrices;
+}): JSX.Element {
+  // Live Stripe prices (via /v1/plans); fall back to the brand.ts constants.
+  const monthlyUsd = price?.monthlyUsd ?? plan.monthlyPriceUsd;
+  const annualUsd = price?.annualUsd ?? plan.annualPriceUsd;
   const monthlyEquivalent =
-    cadence === 'annual' ? Math.round((plan.annualPriceUsd / 12) * 100) / 100 : plan.monthlyPriceUsd;
-  const annualSavings = plan.monthlyPriceUsd * 12 - plan.annualPriceUsd;
+    cadence === 'annual' ? Math.round((annualUsd / 12) * 100) / 100 : monthlyUsd;
+  const annualSavings = monthlyUsd * 12 - annualUsd;
   const recommended = plan.recommended;
 
   return (
@@ -93,17 +109,17 @@ function TierCard({ plan, cadence }: { plan: Plan; cadence: Cadence }): JSX.Elem
             recommended ? 'text-gradient' : 'text-ink dark:text-slate-100'
           }`}
         >
-          ${cadence === 'annual' ? monthlyEquivalent.toLocaleString() : plan.monthlyPriceUsd.toLocaleString()}
+          ${cadence === 'annual' ? monthlyEquivalent.toLocaleString() : monthlyUsd.toLocaleString()}
         </span>
         <span className="text-base text-muted">/mo</span>
       </div>
       {cadence === 'annual' ? (
         <p className="mt-1 text-xs text-emerald-700 dark:text-emerald-300">
-          ${plan.annualPriceUsd.toLocaleString()}/yr — save ${annualSavings.toLocaleString()}
+          ${annualUsd.toLocaleString()}/yr — save ${annualSavings.toLocaleString()}
         </p>
       ) : (
         <p className="mt-1 text-xs text-muted">
-          Prefer annual? ${plan.annualPriceUsd.toLocaleString()}/yr — 2 months free vs. monthly
+          Prefer annual? ${annualUsd.toLocaleString()}/yr — 2 months free vs. monthly
         </p>
       )}
 

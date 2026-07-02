@@ -60,8 +60,8 @@ export const PLANS: readonly Plan[] = [
   {
     slug: 'solo',
     name: 'Solo',
-    monthlyPriceUsd: 49,
-    annualPriceUsd: 490,
+    monthlyPriceUsd: 325,
+    annualPriceUsd: 3_250,
     conversationsPerMonth: 80,
     approxMessagesPerMonth: 960,
     platformFeePct: 10,

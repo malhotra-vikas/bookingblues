@@ -25,6 +25,7 @@ import { ConversationsModule } from './modules/conversations/conversations.modul
 import { DashboardModule } from './modules/dashboard/dashboard.module';
 import { HealthController } from './modules/health/health.controller';
 import { LeadsModule } from './modules/leads/leads.module';
+import { PlansModule } from './modules/plans/plans.module';
 import { MeModule } from './modules/me/me.module';
 import { OperatorsModule } from './modules/operators/operators.module';
 import { PaymentsModule } from './modules/payments/payments.module';
@@ -70,6 +71,7 @@ import { WebhooksModule } from './modules/webhooks/webhooks.module';
     AdminModule,
     SlackModule,
     LeadsModule,
+    PlansModule,
     ConsentModule,
     SalesModule,
     SummariesModule,

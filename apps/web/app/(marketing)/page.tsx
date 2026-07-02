@@ -182,7 +182,7 @@ export default function HomePage(): JSX.Element {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200">
-                <CompareRow label="Monthly cost" a="$400–$1,200" b="$25–$75" c="$49 starting" />
+                <CompareRow label="Monthly cost" a="$400–$1,200" b="$25–$75" c="$325 starting" />
                 <CompareRow label="Availability" a="Office hours, often US-only" b="24/7" c="24/7" />
                 <CompareRow label="Avg response time" a="3–8 min" b="<10 sec (canned)" c="<10 sec" />
                 <CompareRow label="Books on your calendar" a="Sometimes" b="No" c="Yes — direct to Google Calendar" />

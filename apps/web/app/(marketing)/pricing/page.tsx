@@ -2,16 +2,18 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 
 import { BRAND, TRIAL_COPY } from '../../../lib/brand';
+import { getPlanPrices } from '../../../lib/plans';
 import { PricingTiers } from './PricingTiers';
 
 export const metadata: Metadata = {
   title: 'Pricing — KeeprSteady AI Dispatcher',
   description:
-    'Solo at $49/mo, Crew at $650/mo, Fleet at $1,499/mo. No long-term contracts. Try free for 7 days.',
+    'Solo, Crew, and Fleet plans. No long-term contracts. Try free for 7 days.',
   alternates: { canonical: '/pricing' },
 };
 
-export default function PricingPage(): JSX.Element {
+export default async function PricingPage(): Promise<JSX.Element> {
+  const prices = await getPlanPrices();
   return (
     <div className="px-6 py-12 max-w-5xl mx-auto">
       <header className="text-center max-w-2xl mx-auto">
@@ -24,7 +26,7 @@ export default function PricingPage(): JSX.Element {
         </p>
       </header>
 
-      <PricingTiers />
+      <PricingTiers prices={prices} />
 
       {/* ── HITL trust signal ───────────────────────────────────────────── */}
       <section className="mt-12 rounded-xl border border-slate-200 bg-slate-50 dark:bg-slate-900 dark:border-slate-800 p-6 max-w-3xl mx-auto">

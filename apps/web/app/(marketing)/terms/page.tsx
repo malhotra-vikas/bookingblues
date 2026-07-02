@@ -51,7 +51,7 @@ export default function TermsPage(): JSX.Element {
         <p>{BRAND.name} offers three subscription tiers:</p>
         <ul>
           <li>
-            <strong>Solo — $49/month:</strong> Up to 80 AI conversations/mo. Optional deposit
+            <strong>Solo — $325/month:</strong> Up to 80 AI conversations/mo. Optional deposit
             collection (10% platform fee).
           </li>
           <li>
