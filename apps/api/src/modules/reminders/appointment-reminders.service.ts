@@ -15,11 +15,11 @@ type OperatorRow = Tables<'operators'>;
  * appointment falls inside the window sends it, then `reminder_sent_at` is
  * stamped so later runs skip it (CLAUDE.md §9.6).
  *
- * 24h lead (1440 min): callers get a full day's notice to arrange access or
- * call the operator to reschedule. NOTE: a booking made <24h out is already
- * inside the window, so it gets its reminder on the next cron run — correct.
+ * TEMPORARY: 60 min for same-day testing of the new reschedule-routing copy.
+ * Flip to `24 * 60` (24h) once verified. A booking made inside the window gets
+ * its reminder on the next cron run (every 15 min in prod) — correct.
  */
-const REMINDER_LEAD_MINUTES = 24 * 60;
+const REMINDER_LEAD_MINUTES = 60;
 
 export interface RunRemindersResult {
   readonly window_minutes: number;
@@ -41,7 +41,8 @@ export class AppointmentRemindersService {
   }
 
   /**
-   * Send the 1-hour-before reminder for every confirmed, upcoming appointment
+   * Send the pre-appointment reminder (REMINDER_LEAD_MINUTES) for every
+   * confirmed, upcoming appointment
    * that hasn't been reminded yet. Idempotent: each appointment is stamped with
    * `reminder_sent_at` once handled, so re-running (or a cron retry burst) won't
    * double-send. Designed to be triggered by external cron.
