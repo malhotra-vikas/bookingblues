@@ -531,7 +531,7 @@ If any gate is false, the bot does not call `request_payment_link` and proceeds 
 
 - Confirmation SMS to caller and Operator immediately after `book_appointment` succeeds.
 - Email confirmation to Operator (always) and caller (if email captured) via Resend.
-- 1-hour-before reminder to caller (cron job via pg-boss).
+- 24-hour-before reminder to caller (cron job). Reschedule/cancel is NOT bot-handled; the reminder directs the caller to call the operator's registered business number directly (`AppointmentRemindersService.REMINDER_LEAD_MINUTES`).
 - All outbound SMS templates live in `apps/api/src/modules/conversations/templates/`. No inline strings.
 
 ---
@@ -664,7 +664,7 @@ GET    /v1/oauth/google/callback         # Auth-protected, completes calendar co
        turn cap reached -----------> [escalated]   (NON-TERMINAL — Slice 7.5)
 ```
 
-Implementation: enum stored in `conversations.status`. Transitions wrapped in DB transaction. `pg-boss` handles delayed jobs (24h abandonment, 1h reminder, fee timeout).
+Implementation: enum stored in `conversations.status`. Transitions wrapped in DB transaction. `pg-boss` handles delayed jobs (24h abandonment, 24h-before reminder, fee timeout).
 
 **`escalated` is non-terminal** (Slice 7.5). When a conversation is `escalated`:
 - The AI advance loop **does not** run on new caller SMS; the SMS webhook bridges

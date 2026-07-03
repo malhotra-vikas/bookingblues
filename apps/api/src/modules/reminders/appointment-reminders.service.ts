@@ -14,8 +14,12 @@ type OperatorRow = Tables<'operators'>;
  * run more frequently than this (e.g. every 15 min); the first run in which an
  * appointment falls inside the window sends it, then `reminder_sent_at` is
  * stamped so later runs skip it (CLAUDE.md §9.6).
+ *
+ * 24h lead (1440 min): callers get a full day's notice to arrange access or
+ * call the operator to reschedule. NOTE: a booking made <24h out is already
+ * inside the window, so it gets its reminder on the next cron run — correct.
  */
-const REMINDER_LEAD_MINUTES = 60;
+const REMINDER_LEAD_MINUTES = 24 * 60;
 
 export interface RunRemindersResult {
   readonly window_minutes: number;
@@ -98,7 +102,13 @@ export class AppointmentRemindersService {
         hour: 'numeric',
         minute: '2-digit',
       });
-      const body = appointmentReminderSms(operator.business_name, friendlyTime);
+      // Direct reschedule/cancel to the operator's registered business number —
+      // the AI doesn't handle those (see appointmentReminderSms).
+      const body = appointmentReminderSms(
+        operator.business_name,
+        friendlyTime,
+        operator.personal_phone_e164,
+      );
 
       try {
         const send = await this.twilio.sendSms({

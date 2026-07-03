@@ -167,10 +167,29 @@ export function emergencyAlertSms(args: {
   );
 }
 
-/** 1-hour-before appointment reminder to the caller (CLAUDE.md §9.6). */
-export function appointmentReminderSms(businessName: string, friendlyTime: string): string {
-  return (
-    `Reminder: your appointment with ${businessName} is coming up at ${friendlyTime}. ` +
-    `Reply here if you need to reschedule.`
-  );
+/** Pretty-print a US E.164 number for SMS, e.g. +14155551234 → (415) 555-1234. */
+export function formatUsPhone(e164: string | null | undefined): string {
+  const m = (e164 ?? '').match(/^\+1(\d{3})(\d{3})(\d{4})$/);
+  return m ? `(${m[1]}) ${m[2]}-${m[3]}` : (e164 ?? '');
+}
+
+/**
+ * 1-hour-before appointment reminder to the caller (CLAUDE.md §9.6).
+ *
+ * The AI does NOT handle reschedule/cancellation, so we must NOT invite the
+ * caller to "reply here" for changes (that reopens a completed conversation and
+ * the bot fumbles it). Instead, direct reschedule/cancel requests to the
+ * operator directly, on the business number they registered at signup.
+ */
+export function appointmentReminderSms(
+  businessName: string,
+  friendlyTime: string,
+  operatorPhoneE164?: string | null,
+): string {
+  const base = `Reminder: your appointment with ${businessName} is coming up at ${friendlyTime}.`;
+  const phone = formatUsPhone(operatorPhoneE164);
+  const change = phone
+    ? ` Need to reschedule or cancel? Please call ${businessName} directly at ${phone}.`
+    : ` Need to reschedule or cancel? Please call ${businessName} directly.`;
+  return base + change;
 }
