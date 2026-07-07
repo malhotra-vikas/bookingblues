@@ -19,7 +19,7 @@ type OperatorRow = Tables<'operators'>;
  * Flip to `24 * 60` (24h) once verified. A booking made inside the window gets
  * its reminder on the next cron run (every 15 min in prod) — correct.
  */
-const REMINDER_LEAD_MINUTES = 60;
+const REMINDER_LEAD_MINUTES = 24 * 60;
 
 export interface RunRemindersResult {
   readonly window_minutes: number;
