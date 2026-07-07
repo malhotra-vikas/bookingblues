@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 
+import { AddLeadForm } from '../../components/sales/AddLeadForm';
 import { SalesImpersonateButton } from '../../components/sales/SalesImpersonateButton';
 import { apiAsUser } from '../../lib/api';
 
@@ -28,16 +29,22 @@ export default async function SalesLeadsPage(): Promise<JSX.Element> {
       <div>
         <h1 className="text-2xl font-semibold tracking-tight text-ink">My leads</h1>
         <p className="mt-1 text-sm text-muted">
-          Leads you claimed in Slack. Use “Login as” to help a client through onboarding — every
-          session is audit-logged.
+          Clients you signed or claimed in Slack. Use “Login as” to help a client through
+          onboarding — every session is audit-logged.
         </p>
       </div>
 
+      <AddLeadForm />
+
       {leads.length === 0 ? (
-        <p className="rounded-lg border border-slate-200 bg-white px-4 py-6 text-sm text-muted">
-          No claimed leads yet. Claim a lead in the #bb-leads Slack channel and it’ll show up here.
-          (If you just got set up, an admin needs to link your Slack ID to this account.)
-        </p>
+        <div className="rounded-lg border border-slate-200 bg-white px-4 py-8 text-center">
+          <p className="text-sm font-medium text-ink">No leads yet</p>
+          <p className="mx-auto mt-1 max-w-md text-sm text-muted">
+            Your leads show up here when you <strong>add a client</strong> using the form above, or
+            when you <strong>claim a lead</strong> in the <span className="font-mono">#bb-leads</span>{' '}
+            Slack channel. Newly-signed clients you add are assigned to you automatically.
+          </p>
+        </div>
       ) : (
         <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
           <table className="w-full text-sm">

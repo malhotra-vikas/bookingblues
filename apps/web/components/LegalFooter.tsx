@@ -51,6 +51,9 @@ export function LegalFooter({ variant }: { variant: 'marketing' | 'auth' }): JSX
           <Link href="/contact" className="no-underline hover:text-ink dark:hover:text-slate-100">
             Contact
           </Link>
+          <Link href="/careers" className="no-underline hover:text-ink dark:hover:text-slate-100">
+            Careers
+          </Link>
           <Link href="/privacy" className="no-underline hover:text-ink dark:hover:text-slate-100">
             Privacy Policy
           </Link>

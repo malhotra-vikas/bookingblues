@@ -160,4 +160,95 @@ export class SalesService {
 
     return { action_link: impersonationConfirmLink(this.env.APP_URL, data.properties.hashed_token) };
   }
+
+  /** Slack id + username for a rep, or null if unlinked. */
+  private async slackLinkFor(
+    salesUserId: string,
+  ): Promise<{ slackUserId: string; slackUsername: string | null } | null> {
+    const { data, error } = await this.supabase
+      .db()
+      .from('sales_slack_links')
+      .select('slack_user_id, slack_username')
+      .eq('user_id', salesUserId)
+      .maybeSingle();
+    if (error) throw error;
+    return data ? { slackUserId: data.slack_user_id, slackUsername: data.slack_username } : null;
+  }
+
+  /**
+   * A sales rep onboards a new client on their behalf. Creates the client's auth
+   * user (invite email → they set a password and land in onboarding, same as
+   * self-signup), stashing business name + mobile in user_metadata so the
+   * operator row bootstraps correctly on first login. The lead is auto-claimed
+   * for the rep so it's theirs from the start.
+   */
+  async createLead(args: {
+    email: string;
+    businessName: string;
+    phoneE164: string;
+    actor: SalesActorContext;
+  }): Promise<{ lead_user_id: string; email: string }> {
+    const link = await this.slackLinkFor(args.actor.salesUserId);
+    if (!link) {
+      throw new ForbiddenError(
+        'Your account is not linked to a Slack identity yet — an admin must link it before you can add clients.',
+      );
+    }
+
+    // Invite the client. Supabase creates the user and emails an invite; the
+    // redirect lands them in onboarding after they set a password. business_name
+    // + personal_phone_e164 mirror the self-signup metadata the operator
+    // bootstrap reads (OperatorsService.tryBootstrapFromAuthMetadata).
+    const { data, error } = await this.supabase.db().auth.admin.inviteUserByEmail(args.email, {
+      data: { business_name: args.businessName, personal_phone_e164: args.phoneE164 },
+      redirectTo: `${this.env.APP_URL}/auth/callback?next=/onboarding`,
+    });
+    if (error || !data?.user) {
+      // Most common: the email already has an account.
+      const already = /already|registered|exists/i.test(error?.message ?? '');
+      throw new AppError({
+        code: already ? 'sales.lead_email_taken' : 'sales.lead_create_failed',
+        status: already ? 409 : 502,
+        detail: already
+          ? 'That email already has a KeeprSteady account — it may already be a lead or an existing operator.'
+          : `Could not create the client account: ${error?.message ?? 'unknown error'}`,
+      });
+    }
+    const leadUserId = data.user.id;
+
+    const { error: claimErr } = await this.supabase
+      .db()
+      .from('lead_claims')
+      .upsert(
+        {
+          user_id: leadUserId,
+          claimed_by_slack_user_id: link.slackUserId,
+          claimed_by_slack_username: link.slackUsername,
+          claimed_at: new Date().toISOString(),
+        },
+        { onConflict: 'user_id' },
+      );
+    if (claimErr) {
+      // The account exists but the claim didn't stick — surface loudly rather
+      // than leaving an untagged lead. Admin can re-tag via /admin/sales.
+      throw new AppError({
+        code: 'sales.lead_claim_failed',
+        status: 502,
+        detail: `Client account created but auto-assign failed: ${claimErr.message}`,
+      });
+    }
+
+    await this.audit.write({
+      actorUserId: args.actor.salesUserId,
+      operatorId: null,
+      action: 'sales.lead_create',
+      resourceType: 'auth.user',
+      resourceId: leadUserId,
+      metadata: { email: args.email, business_name: args.businessName, slack_user_id: link.slackUserId },
+      ipAddress: args.actor.ipAddress,
+      userAgent: args.actor.userAgent,
+    });
+
+    return { lead_user_id: leadUserId, email: args.email };
+  }
 }
