@@ -151,9 +151,6 @@ export function ApplyForm(): JSX.Element {
         className="w-full rounded-xl bg-brand-sheen px-4 py-3 text-base font-semibold text-white shadow-glow disabled:opacity-50">
         {busy ? 'Submitting…' : 'Submit application →'}
       </button>
-      <p className="text-center text-xs text-muted">
-        Sends straight to {BRAND.applyEmail} — no email client needed.
-      </p>
     </form>
   );
 }
