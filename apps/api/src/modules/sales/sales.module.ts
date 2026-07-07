@@ -1,14 +1,15 @@
 import { Module } from '@nestjs/common';
 
 import { SupabaseModule } from '../../common/supabase/supabase.module';
+import { SlackModule } from '../slack/slack.module';
 
 import { SalesController } from './sales.controller';
 import { SalesService } from './sales.service';
 
-// AuthModule (SalesGuard) and AuditModule (AuditLogService) are @Global; only
-// SupabaseModule needs importing here.
+// AuthModule (SalesGuard) and AuditModule (AuditLogService) are @Global.
+// SlackModule provides SlackApiClient for the #new-leads announcement.
 @Module({
-  imports: [SupabaseModule],
+  imports: [SupabaseModule, SlackModule],
   controllers: [SalesController],
   providers: [SalesService],
 })
