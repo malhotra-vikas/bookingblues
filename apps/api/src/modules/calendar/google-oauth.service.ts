@@ -6,8 +6,12 @@ import { ENV_TOKEN } from '../../config/config.module';
 import type { Env } from '../../config/env';
 
 const SCOPES = [
+  // Create/update/delete the appointment events KeeprSteady books.
   'https://www.googleapis.com/auth/calendar.events',
-  'https://www.googleapis.com/auth/calendar.readonly',
+  // Read-only free/busy availability ONLY (freeBusy.query). Narrower than
+  // calendar.readonly — easier for Google's sensitive-scope reviewers to
+  // approve, and it's all we actually read (see CalendarService.freeBusy).
+  'https://www.googleapis.com/auth/calendar.freebusy',
   'https://www.googleapis.com/auth/userinfo.email',
 ];
 
