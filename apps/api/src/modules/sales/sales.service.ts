@@ -2,6 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 
 import { AuditLogService } from '../../common/audit/audit-log.service';
 import { impersonationConfirmLink } from '../../common/auth/impersonation-link';
+import { brandedEmailHtml, escapeHtml } from '../../common/email/email-layout';
 import { EmailService } from '../../common/email/email.service';
 import { AppError, ConflictError, ForbiddenError, NotFoundError } from '../../common/errors/app-error';
 import { SupabaseService } from '../../common/supabase/supabase.service';
@@ -331,19 +332,14 @@ export class SalesService {
   }
 
   private welcomeHtml(businessName: string): string {
-    const app = this.env.APP_URL;
-    return (
-      `<div style="font-family:system-ui,sans-serif;max-width:520px;margin:0 auto">` +
-      `<h2 style="color:#1e40af">Welcome to KeeprSteady, ${escapeHtml(businessName)}! 🎉</h2>` +
-      `<p>Your account is set up and you're on a <strong>free ${this.env.TRIAL_DAYS}-day trial</strong> — no charge yet.</p>` +
-      `<p>KeeprSteady texts back the calls you miss, books the job, and drops it on your calendar. Let's finish setting you up:</p>` +
-      `<p><a href="${app}/login" style="display:inline-block;background:#1e40af;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none">Log in &amp; finish setup →</a></p>` +
-      `<p style="color:#555;font-size:14px">Your sales rep set an initial password for you — you can change it anytime in Settings. Questions? Just reply to this email.</p>` +
-      `</div>`
-    );
+    return brandedEmailHtml({
+      heading: `Welcome to KeeprSteady, ${escapeHtml(businessName)}! 🎉`,
+      bodyHtml:
+        `<p style="margin:0 0 12px;">Your account is set up and you're on a <strong>free ${this.env.TRIAL_DAYS}-day trial</strong> — no charge yet.</p>` +
+        `<p style="margin:0;">KeeprSteady texts back the calls you miss, books the job, and drops it on your calendar. Let's finish setting you up:</p>`,
+      cta: { label: 'Log in & finish setup →', href: `${this.env.APP_URL}/login` },
+      footnoteHtml:
+        'Your sales rep set an initial password for you — you can change it anytime in Settings. Questions? Just reply to this email.',
+    });
   }
-}
-
-function escapeHtml(s: string): string {
-  return s.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
 }

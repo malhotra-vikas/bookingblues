@@ -28,12 +28,9 @@ export default function CareersPage(): JSX.Element {
           <span className="font-semibold text-ink dark:text-slate-100">25% residuals</span> on every
           signed lead, for as long as they stay a customer.
         </p>
-        <div className="mt-6 flex justify-center gap-3">
+        <div className="mt-6 flex justify-center">
           <a href="#apply" className="inline-flex items-center justify-center rounded-xl bg-brand-sheen px-5 py-3 text-base font-semibold text-white no-underline shadow-glow transition-all duration-300 hover:-translate-y-0.5">
             Apply now →
-          </a>
-          <a href={BRAND.demoBookingUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center justify-center rounded-xl border border-slate-300 dark:border-slate-700 px-5 py-3 text-base font-semibold text-ink dark:text-slate-100 no-underline transition-all duration-300 hover:border-accent/40 hover:bg-accent-soft">
-            Book an interview slot
           </a>
         </div>
       </header>
@@ -119,7 +116,7 @@ export default function CareersPage(): JSX.Element {
         <p className="mt-1 text-sm text-muted">
           Grab 15 minutes on our calendar — no application needed to get your questions answered.
         </p>
-        <a href={BRAND.demoBookingUrl} target="_blank" rel="noopener noreferrer"
+        <a href={BRAND.careersBookingUrl} target="_blank" rel="noopener noreferrer"
           className="mt-4 inline-flex items-center justify-center rounded-xl border border-slate-300 dark:border-slate-700 px-5 py-3 text-sm font-semibold text-ink dark:text-slate-100 no-underline hover:border-accent/40 hover:bg-accent-soft">
           Book a 15-minute intro call
         </a>
