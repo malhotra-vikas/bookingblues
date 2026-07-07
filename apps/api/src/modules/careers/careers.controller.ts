@@ -1,4 +1,12 @@
-import { Body, Controller, HttpCode, Post } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  HttpCode,
+  Post,
+  UploadedFile,
+  UseInterceptors,
+} from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { Throttle } from '@nestjs/throttler';
 import { PinoLogger } from 'nestjs-pino';
 import { z } from 'zod';
@@ -8,9 +16,10 @@ import { ValidationError } from '../../common/errors/app-error';
 import { ZodBodyPipe } from '../../common/pipes/zod-body.pipe';
 
 /**
- * Public careers application (Direct Marketing Representative). Emails the
- * submission to the careers inbox via Resend, reply-to set to the applicant so
- * the team can respond directly. No auth; per-IP throttled to deter spam.
+ * Public careers application (Direct Marketing Representative). The applicant
+ * uploads a resume file directly (multipart/form-data) which we attach to the
+ * email — no base64-in-JSON juggling. Emails the submission to the careers inbox
+ * via Resend, reply-to set to the applicant. No auth; per-IP throttled.
  */
 const ApplySchema = z
   .object({
@@ -24,19 +33,20 @@ const ApplySchema = z
     availability: z.string().trim().max(60).optional(),
     resume_url: z.string().trim().url().max(500).optional().or(z.literal('')),
     cover_letter: z.string().trim().max(4000).optional(),
-    // Optional resume upload: filename + base64 content. Capped ~5MB decoded
-    // (base64 is ~4/3 larger) to stay within a sane request + Resend limit.
-    resume_filename: z.string().trim().max(200).optional(),
-    resume_base64: z
-      .string()
-      .max(7_000_000, 'Resume file is too large (max ~5MB)')
-      .regex(/^[A-Za-z0-9+/=\r\n]*$/, 'Resume must be base64-encoded')
-      .optional(),
   })
   .strict();
 type Apply = z.infer<typeof ApplySchema>;
 
+/** Minimal shape of a Multer file — avoids depending on @types/multer. */
+interface UploadedResume {
+  originalname: string;
+  buffer: Buffer;
+  size: number;
+  mimetype: string;
+}
+
 const CAREERS_INBOX = 'apply@keeprsteady.com';
+const MAX_RESUME_BYTES = 5 * 1024 * 1024;
 
 @Controller('careers')
 export class CareersController {
@@ -50,14 +60,21 @@ export class CareersController {
   @Post('apply')
   @HttpCode(202)
   @Throttle({ default: { limit: 5, ttl: 60_000 } })
-  async apply(@Body(new ZodBodyPipe(ApplySchema)) body: Apply): Promise<{ ok: true }> {
+  @UseInterceptors(FileInterceptor('resume', { limits: { fileSize: MAX_RESUME_BYTES } }))
+  async apply(
+    @Body(new ZodBodyPipe(ApplySchema)) body: Apply,
+    @UploadedFile() resume?: UploadedResume,
+  ): Promise<{ ok: true }> {
     if (!this.email.isConfigured()) {
-      // Fail loudly to the applicant rather than silently drop — they should
-      // fall back to emailing directly (the page shows the address too).
       throw new ValidationError(
         'Applications are temporarily unavailable — please email apply@keeprsteady.com directly.',
       );
     }
+
+    this.logger.info(
+      { hasResume: Boolean(resume), resumeBytes: resume?.size ?? 0, resumeName: resume?.originalname },
+      'careers application received',
+    );
 
     const rows: Array<[string, string | undefined]> = [
       ['Name', body.full_name],
@@ -67,6 +84,7 @@ export class CareersController {
       ['Sold on straight commission before?', body.sold_on_commission],
       ['State', body.state],
       ['Availability to start', body.availability],
+      ['Resume', resume ? `attached: ${resume.originalname}` : undefined],
       ['Resume link', body.resume_url || undefined],
       ['Relevant experience', body.relevant_experience],
       ['Cover letter / message', body.cover_letter],
@@ -86,10 +104,9 @@ export class CareersController {
       .map(([k, v]) => `${k}: ${v}`)
       .join('\n');
 
-    const attachments =
-      body.resume_base64 && body.resume_filename
-        ? [{ filename: body.resume_filename, content: body.resume_base64.replace(/\s/g, '') }]
-        : undefined;
+    const attachments = resume
+      ? [{ filename: resume.originalname || 'resume', content: resume.buffer.toString('base64') }]
+      : undefined;
 
     const res = await this.email.send({
       to: CAREERS_INBOX,

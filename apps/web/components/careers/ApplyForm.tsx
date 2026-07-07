@@ -29,35 +29,23 @@ export function ApplyForm(): JSX.Element {
     resume_url: '',
     cover_letter: '',
   });
-  const [resumeFile, setResumeFile] = useState<{ name: string; base64: string } | null>(null);
+  const [resumeFile, setResumeFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
 
   const set = (k: keyof typeof form) => (v: string) => setForm((f) => ({ ...f, [k]: v }));
 
-  async function onFile(e: React.ChangeEvent<HTMLInputElement>): Promise<void> {
+  function onFile(e: React.ChangeEvent<HTMLInputElement>): void {
     setError(null);
-    const file = e.target.files?.[0];
-    if (!file) {
-      setResumeFile(null);
-      return;
-    }
-    if (file.size > 5 * 1024 * 1024) {
-      setResumeFile(null);
+    const file = e.target.files?.[0] ?? null;
+    if (file && file.size > 5 * 1024 * 1024) {
       e.target.value = '';
+      setResumeFile(null);
       setError('Resume is too large (max 5MB).');
       return;
     }
-    const dataUrl = await new Promise<string>((resolve, reject) => {
-      const r = new FileReader();
-      r.onload = () => resolve(String(r.result));
-      r.onerror = () => reject(r.error);
-      r.readAsDataURL(file);
-    });
-    // Strip the "data:...;base64," prefix — the API wants raw base64.
-    const base64 = dataUrl.includes(',') ? dataUrl.slice(dataUrl.indexOf(',') + 1) : dataUrl;
-    setResumeFile({ name: file.name, base64 });
+    setResumeFile(file);
   }
 
   async function submit(e: React.FormEvent): Promise<void> {
@@ -68,22 +56,25 @@ export function ApplyForm(): JSX.Element {
     if (form.phone.trim().length < 7) return setError('Enter a valid phone number');
     setBusy(true);
     try {
+      // multipart/form-data — the resume rides along as a real file the API
+      // attaches to the email. Do NOT set content-type; the browser adds the
+      // multipart boundary automatically.
+      const fd = new FormData();
+      fd.append('full_name', form.full_name.trim());
+      fd.append('email', form.email.trim().toLowerCase());
+      fd.append('phone', form.phone.trim());
+      fd.append('experience_years', form.experience_years);
+      fd.append('sold_on_commission', form.sold_on_commission);
+      fd.append('relevant_experience', form.relevant_experience.trim());
+      fd.append('state', form.state);
+      fd.append('availability', form.availability);
+      if (form.resume_url.trim()) fd.append('resume_url', form.resume_url.trim());
+      fd.append('cover_letter', form.cover_letter.trim());
+      if (resumeFile) fd.append('resume', resumeFile, resumeFile.name);
+
       const res = await fetch(`${publicEnv.NEXT_PUBLIC_API_URL}/v1/careers/apply`, {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          full_name: form.full_name.trim(),
-          email: form.email.trim().toLowerCase(),
-          phone: form.phone.trim(),
-          experience_years: form.experience_years,
-          sold_on_commission: form.sold_on_commission,
-          relevant_experience: form.relevant_experience.trim(),
-          state: form.state,
-          availability: form.availability,
-          ...(form.resume_url.trim() ? { resume_url: form.resume_url.trim() } : {}),
-          ...(resumeFile ? { resume_filename: resumeFile.name, resume_base64: resumeFile.base64 } : {}),
-          cover_letter: form.cover_letter.trim(),
-        }),
+        body: fd,
       });
       if (!res.ok) {
         const detail = await res.json().catch(() => ({}));
