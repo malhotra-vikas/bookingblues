@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   HttpCode,
+  Inject,
   Post,
   UploadedFile,
   UseInterceptors,
@@ -14,6 +15,8 @@ import { z } from 'zod';
 import { EmailService } from '../../common/email/email.service';
 import { ValidationError } from '../../common/errors/app-error';
 import { ZodBodyPipe } from '../../common/pipes/zod-body.pipe';
+import { ENV_TOKEN } from '../../config/config.module';
+import type { Env } from '../../config/env';
 
 /**
  * Public careers application (Direct Marketing Representative). The applicant
@@ -45,7 +48,6 @@ interface UploadedResume {
   mimetype: string;
 }
 
-const CAREERS_INBOX = 'apply@keeprsteady.com';
 const MAX_RESUME_BYTES = 5 * 1024 * 1024;
 
 @Controller('careers')
@@ -53,6 +55,7 @@ export class CareersController {
   constructor(
     private readonly email: EmailService,
     private readonly logger: PinoLogger,
+    @Inject(ENV_TOKEN) private readonly env: Env,
   ) {
     this.logger.setContext(CareersController.name);
   }
@@ -65,9 +68,10 @@ export class CareersController {
     @Body(new ZodBodyPipe(ApplySchema)) body: Apply,
     @UploadedFile() resume?: UploadedResume,
   ): Promise<{ ok: true }> {
+    const inbox = this.env.CAREERS_INBOX_EMAIL;
     if (!this.email.isConfigured()) {
       throw new ValidationError(
-        'Applications are temporarily unavailable — please email apply@keeprsteady.com directly.',
+        `Applications are temporarily unavailable — please email ${inbox} directly.`,
       );
     }
 
@@ -109,7 +113,7 @@ export class CareersController {
       : undefined;
 
     const res = await this.email.send({
-      to: CAREERS_INBOX,
+      to: inbox,
       subject: `Careers application — ${body.full_name}`,
       html,
       text,
@@ -119,7 +123,7 @@ export class CareersController {
     if (!res.delivered) {
       this.logger.warn({ reason: res.reason }, 'careers application email failed');
       throw new ValidationError(
-        'We could not submit your application right now — please email apply@keeprsteady.com directly.',
+        `We could not submit your application right now — please email ${inbox} directly.`,
       );
     }
     return { ok: true };

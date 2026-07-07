@@ -85,6 +85,8 @@ const baseSchema = z.object({
   // Verified sender. Format: `Display Name <addr@domain>` (Resend requires
   // the domain to be verified in the Resend dashboard).
   EMAIL_FROM: z.string().optional(),
+  // Inbox that receives careers applications from /careers. Override per env.
+  CAREERS_INBOX_EMAIL: z.string().email().default('apply@keeprsteady.com'),
 
   // Shared secret guarding internal cron endpoints (daily summary etc.).
   // External cron (Railway, EasyCron, etc.) sends `X-Cron-Secret: <value>`.
