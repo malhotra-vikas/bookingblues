@@ -32,6 +32,11 @@ async function bootstrap(): Promise<void> {
   });
   app.useLogger(app.get(Logger));
 
+  // Raise the JSON body limit above the 100kb default so the careers page can
+  // POST a base64-encoded resume (capped ~5MB → ~6.7MB encoded + fields).
+  // Works alongside `rawBody: true` (Nest re-parses; rawBody buffer preserved).
+  app.useBodyParser('json', { limit: '8mb' });
+
   // Strip the `X-Powered-By: Express` header — small information-disclosure win.
   app.disable('x-powered-by');
 

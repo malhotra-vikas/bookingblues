@@ -41,12 +41,13 @@ export class SalesController {
     @Req() req: Request,
     @CurrentUser() user: AuthenticatedUser,
     @Body(new ZodBodyPipe(CreateSalesLeadSchema)) body: CreateSalesLead,
-  ): Promise<{ lead_user_id: string; email: string }> {
+  ): Promise<{ lead_user_id: string; operator_id: string; email: string }> {
     const ctx = this.audit.fromRequest(req);
     return this.sales.createLead({
       email: body.email,
       businessName: body.business_name,
       phoneE164: body.phone_e164,
+      password: body.password,
       actor: { salesUserId: user.userId, ...ctx },
     });
   }

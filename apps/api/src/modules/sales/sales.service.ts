@@ -2,10 +2,13 @@ import { Inject, Injectable } from '@nestjs/common';
 
 import { AuditLogService } from '../../common/audit/audit-log.service';
 import { impersonationConfirmLink } from '../../common/auth/impersonation-link';
+import { EmailService } from '../../common/email/email.service';
 import { AppError, ConflictError, ForbiddenError, NotFoundError } from '../../common/errors/app-error';
 import { SupabaseService } from '../../common/supabase/supabase.service';
 import { ENV_TOKEN } from '../../config/config.module';
 import type { Env } from '../../config/env';
+import { buildLeadBlocks } from '../leads/leads.controller';
+import { SlackApiClient } from '../slack/slack-api.client';
 
 export interface SalesActorContext {
   readonly salesUserId: string;
@@ -35,6 +38,8 @@ export class SalesService {
   constructor(
     private readonly supabase: SupabaseService,
     private readonly audit: AuditLogService,
+    private readonly email: EmailService,
+    private readonly slack: SlackApiClient,
     @Inject(ENV_TOKEN) private readonly env: Env,
   ) {}
 
@@ -176,18 +181,20 @@ export class SalesService {
   }
 
   /**
-   * A sales rep onboards a new client on their behalf. Creates the client's auth
-   * user (invite email → they set a password and land in onboarding, same as
-   * self-signup), stashing business name + mobile in user_metadata so the
-   * operator row bootstraps correctly on first login. The lead is auto-claimed
-   * for the rep so it's theirs from the start.
+   * A sales rep onboards a new client on their behalf. Creates a ready-to-use
+   * account: a confirmed auth user (with the rep-chosen password), a trialing
+   * operator row (business name + mobile pre-filled), and the lead auto-claimed
+   * for the rep — so it shows immediately with a business name, "Trial" status,
+   * and a working "Login as". A branded KeeprSteady welcome email is sent (not
+   * the raw Supabase invite).
    */
   async createLead(args: {
     email: string;
     businessName: string;
     phoneE164: string;
+    password: string;
     actor: SalesActorContext;
-  }): Promise<{ lead_user_id: string; email: string }> {
+  }): Promise<{ lead_user_id: string; operator_id: string; email: string }> {
     const link = await this.slackLinkFor(args.actor.salesUserId);
     if (!link) {
       throw new ForbiddenError(
@@ -195,17 +202,16 @@ export class SalesService {
       );
     }
 
-    // Invite the client. Supabase creates the user and emails an invite; the
-    // redirect lands them in onboarding after they set a password. business_name
-    // + personal_phone_e164 mirror the self-signup metadata the operator
-    // bootstrap reads (OperatorsService.tryBootstrapFromAuthMetadata).
-    const { data, error } = await this.supabase.db().auth.admin.inviteUserByEmail(args.email, {
-      data: { business_name: args.businessName, personal_phone_e164: args.phoneE164 },
-      redirectTo: `${this.env.APP_URL}/auth/callback?next=/onboarding`,
+    // Create a confirmed account so the client (and the rep via Login-as) can
+    // sign in immediately. email_confirm:true skips the verification round-trip.
+    const { data, error } = await this.supabase.db().auth.admin.createUser({
+      email: args.email,
+      password: args.password,
+      email_confirm: true,
+      user_metadata: { business_name: args.businessName, personal_phone_e164: args.phoneE164 },
     });
     if (error || !data?.user) {
-      // Most common: the email already has an account.
-      const already = /already|registered|exists/i.test(error?.message ?? '');
+      const already = /already|registered|exists|duplicate/i.test(error?.message ?? '');
       throw new AppError({
         code: already ? 'sales.lead_email_taken' : 'sales.lead_create_failed',
         status: already ? 409 : 502,
@@ -215,6 +221,29 @@ export class SalesService {
       });
     }
     const leadUserId = data.user.id;
+
+    // Create the operator row up front, on a free trial, so the lead is
+    // actionable right away (business name, Trial status, Login-as all work).
+    const trialEndsAt = new Date(Date.now() + this.env.TRIAL_DAYS * 86_400_000).toISOString();
+    const { data: op, error: opErr } = await this.supabase
+      .db()
+      .from('operators')
+      .insert({
+        user_id: leadUserId,
+        business_name: args.businessName,
+        personal_phone_e164: args.phoneE164,
+        subscription_status: 'trialing',
+        trial_ends_at: trialEndsAt,
+      })
+      .select('id')
+      .single();
+    if (opErr || !op) {
+      throw new AppError({
+        code: 'sales.lead_operator_failed',
+        status: 502,
+        detail: `Client account created but operator setup failed: ${opErr?.message ?? 'unknown'}`,
+      });
+    }
 
     const { error: claimErr } = await this.supabase
       .db()
@@ -229,8 +258,6 @@ export class SalesService {
         { onConflict: 'user_id' },
       );
     if (claimErr) {
-      // The account exists but the claim didn't stick — surface loudly rather
-      // than leaving an untagged lead. Admin can re-tag via /admin/sales.
       throw new AppError({
         code: 'sales.lead_claim_failed',
         status: 502,
@@ -238,17 +265,85 @@ export class SalesService {
       });
     }
 
+    // Branded welcome email (best-effort — never fail the creation over email).
+    await this.email
+      .send({
+        to: args.email,
+        subject: `Welcome to KeeprSteady, ${args.businessName}!`,
+        html: this.welcomeHtml(args.businessName),
+        text:
+          `Welcome to KeeprSteady, ${args.businessName}!\n\n` +
+          `Your account is ready and you're on a free ${this.env.TRIAL_DAYS}-day trial. ` +
+          `Log in at ${this.env.APP_URL}/login with ${args.email} and the password your rep set — ` +
+          `you can change it anytime in Settings.\n\nFinish setup: ${this.env.APP_URL}/onboarding`,
+        ...(this.env.EMAIL_FROM ? { replyTo: this.env.EMAIL_FROM } : {}),
+      })
+      .catch(() => undefined);
+
+    // Announce in #new-leads so the whole team sees it — pre-assigned to the
+    // creating rep (no Claim button; it's already theirs). Best-effort.
+    await this.postLeadToSlack({
+      leadUserId,
+      email: args.email,
+      businessName: args.businessName,
+      phoneE164: args.phoneE164,
+      preassignedSlackUserId: link.slackUserId,
+    }).catch(() => undefined);
+
     await this.audit.write({
       actorUserId: args.actor.salesUserId,
-      operatorId: null,
+      operatorId: op.id,
       action: 'sales.lead_create',
-      resourceType: 'auth.user',
-      resourceId: leadUserId,
+      resourceType: 'operator',
+      resourceId: op.id,
       metadata: { email: args.email, business_name: args.businessName, slack_user_id: link.slackUserId },
       ipAddress: args.actor.ipAddress,
       userAgent: args.actor.userAgent,
     });
 
-    return { lead_user_id: leadUserId, email: args.email };
+    return { lead_user_id: leadUserId, operator_id: op.id, email: args.email };
   }
+
+  /** Post a rep-created lead to #new-leads, pre-assigned to the creating rep. */
+  private async postLeadToSlack(args: {
+    leadUserId: string;
+    email: string;
+    businessName: string;
+    phoneE164: string;
+    preassignedSlackUserId: string;
+  }): Promise<void> {
+    const channel = this.slack.leadsChannelId();
+    if (!this.slack.isConfigured() || !channel) return;
+    const adminUrl = `${this.env.APP_URL.replace(/\/$/, '')}/admin/leads`;
+    await this.slack.postMessage({
+      channel,
+      text: `New lead: ${args.businessName} · added by <@${args.preassignedSlackUserId}>`,
+      blocks: buildLeadBlocks({
+        userId: args.leadUserId,
+        email: args.email,
+        businessName: args.businessName,
+        phoneE164: args.phoneE164,
+        adminUrl,
+        headline: `:tada: *New lead (added by a rep)* — *${args.businessName}*`,
+        preassignedSlackUserId: args.preassignedSlackUserId,
+      }),
+    });
+  }
+
+  private welcomeHtml(businessName: string): string {
+    const app = this.env.APP_URL;
+    return (
+      `<div style="font-family:system-ui,sans-serif;max-width:520px;margin:0 auto">` +
+      `<h2 style="color:#1e40af">Welcome to KeeprSteady, ${escapeHtml(businessName)}! 🎉</h2>` +
+      `<p>Your account is set up and you're on a <strong>free ${this.env.TRIAL_DAYS}-day trial</strong> — no charge yet.</p>` +
+      `<p>KeeprSteady texts back the calls you miss, books the job, and drops it on your calendar. Let's finish setting you up:</p>` +
+      `<p><a href="${app}/login" style="display:inline-block;background:#1e40af;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none">Log in &amp; finish setup →</a></p>` +
+      `<p style="color:#555;font-size:14px">Your sales rep set an initial password for you — you can change it anytime in Settings. Questions? Just reply to this email.</p>` +
+      `</div>`
+    );
+  }
+}
+
+function escapeHtml(s: string): string {
+  return s.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
 }

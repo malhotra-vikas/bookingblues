@@ -38,6 +38,7 @@ export function AddLeadForm(): JSX.Element {
   const [businessName, setBusinessName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
+  const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
@@ -52,21 +53,23 @@ export function AddLeadForm(): JSX.Element {
     if (!name) return setError('Business name is required');
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(mail)) return setError('Enter a valid email');
     if (!e164) return setError('Enter a valid US mobile number');
+    if (password.length < 8) return setError('Set a password of at least 8 characters');
 
     setBusy(true);
     try {
       const res = await authedFetch('/v1/sales/leads', {
         method: 'POST',
-        body: JSON.stringify({ email: mail, business_name: name, phone_e164: e164 }),
+        body: JSON.stringify({ email: mail, business_name: name, phone_e164: e164, password }),
       });
       if (!res.ok) {
         const detail = await res.json().catch(() => ({}));
         throw new Error(detail.detail ?? `Couldn't add client (${res.status})`);
       }
-      setInfo(`Invite sent to ${mail}. They'll set a password and finish onboarding — the lead is now yours.`);
+      setInfo(`${name} added on a free trial and assigned to you. A welcome email went to ${mail}. Use “Login as” to finish their setup.`);
       setBusinessName('');
       setEmail('');
       setPhone('');
+      setPassword('');
       setOpen(false);
       router.refresh();
     } catch (err) {
@@ -110,6 +113,10 @@ export function AddLeadForm(): JSX.Element {
           <Field label="Business name" value={businessName} onChange={setBusinessName} placeholder="Zeus Plumbing" autoFocus />
           <Field label="Client email" type="email" value={email} onChange={setEmail} placeholder="owner@example.com" />
           <Field label="Mobile phone (US)" type="tel" value={phone} onChange={setPhone} placeholder="(415) 555-1234" />
+          <Field label="Temporary password" type="password" value={password} onChange={setPassword} placeholder="At least 8 characters" />
+          <p className="text-xs text-muted">
+            Share this password with the client (or let them reset it) — they can change it in Settings after logging in.
+          </p>
           {error ? <p className="text-sm text-red-600">{error}</p> : null}
           <button
             type="submit"

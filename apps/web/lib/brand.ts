@@ -14,6 +14,7 @@ export const BRAND = {
   salesEmail: 'sales@keeprsteady.com',
   supportEmail: 'support@keeprsteady.com',
   careersEmail: 'careers@keeprsteady.com',
+  applyEmail: 'apply@keeprsteady.com',
   // Cal.com URL doubles as the prod onboarding "schedule a setup call" link
   // (NEXT_PUBLIC_SETUP_CALL_BOOKING_URL). Marketing pages link directly so the
   // /contact and demo CTAs work even on static-rendered marketing routes.

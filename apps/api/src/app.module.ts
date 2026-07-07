@@ -24,6 +24,7 @@ import { ConsentModule } from './modules/consent/consent.module';
 import { ConversationsModule } from './modules/conversations/conversations.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
 import { HealthController } from './modules/health/health.controller';
+import { CareersModule } from './modules/careers/careers.module';
 import { LeadsModule } from './modules/leads/leads.module';
 import { PlansModule } from './modules/plans/plans.module';
 import { MeModule } from './modules/me/me.module';
@@ -72,6 +73,7 @@ import { WebhooksModule } from './modules/webhooks/webhooks.module';
     SlackModule,
     LeadsModule,
     PlansModule,
+    CareersModule,
     ConsentModule,
     SalesModule,
     SummariesModule,

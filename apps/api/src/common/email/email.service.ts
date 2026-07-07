@@ -5,12 +5,19 @@ import { ExternalServiceError } from '../errors/app-error';
 import { ENV_TOKEN } from '../../config/config.module';
 import type { Env } from '../../config/env';
 
+interface EmailAttachment {
+  readonly filename: string;
+  /** Base64-encoded file content (Resend `attachments[].content`). */
+  readonly content: string;
+}
+
 interface SendArgs {
   readonly to: string;
   readonly subject: string;
   readonly html: string;
   readonly text?: string;
   readonly replyTo?: string;
+  readonly attachments?: ReadonlyArray<EmailAttachment>;
 }
 
 interface SendOk {
@@ -58,6 +65,7 @@ export class EmailService {
     };
     if (args.text) body.text = args.text;
     if (args.replyTo) body.reply_to = args.replyTo;
+    if (args.attachments?.length) body.attachments = args.attachments.map((a) => ({ filename: a.filename, content: a.content }));
 
     try {
       const res = await fetch('https://api.resend.com/emails', {

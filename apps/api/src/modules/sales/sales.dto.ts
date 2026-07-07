@@ -18,5 +18,8 @@ export const CreateSalesLeadSchema = z.object({
     .string()
     .trim()
     .regex(/^\+[1-9]\d{6,14}$/, 'phone must be E.164 (+15551234567)'),
+  // The rep sets an initial password so the client can log in right away; the
+  // welcome email tells them to change it. Min 8 mirrors the signup form.
+  password: z.string().min(8).max(72),
 });
 export type CreateSalesLead = z.infer<typeof CreateSalesLeadSchema>;
