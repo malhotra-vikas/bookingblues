@@ -40,6 +40,43 @@ export class CalendarController {
     return { url: this.google.authUrl(state) };
   }
 
+  /**
+   * One-click test booking — creates a real event on the connected calendar in
+   * the next open slot. Demonstrates the full booking (freebusy read + event
+   * write) without a long SMS conversation; also a handy "is my calendar
+   * working?" check. Does not create an `appointments` row.
+   */
+  @Post('operators/me/calendar/test-event')
+  @UseGuards(AuthGuard)
+  async testEvent(@CurrentUser() user: AuthenticatedUser): Promise<{
+    start: string;
+    end: string;
+    event_id: string;
+    html_link: string | null;
+  }> {
+    const { data: operator, error } = await this.supabase
+      .db()
+      .from('operators')
+      .select('id, timezone, business_hours, visit_duration_min')
+      .eq('user_id', user.userId)
+      .maybeSingle();
+    if (error) throw error;
+    if (!operator) throw new ValidationError('Operator not found');
+
+    const result = await this.calendar.createTestBooking({
+      operatorId: operator.id,
+      timeZone: operator.timezone,
+      businessHours: operator.business_hours,
+      durationMin: operator.visit_duration_min ?? 60,
+    });
+    return {
+      start: result.startIso,
+      end: result.endIso,
+      event_id: result.eventId,
+      html_link: result.htmlLink,
+    };
+  }
+
   @Post('operators/me/google/disconnect')
   @UseGuards(AuthGuard)
   async disconnect(@CurrentUser() user: AuthenticatedUser): Promise<{ ok: true }> {

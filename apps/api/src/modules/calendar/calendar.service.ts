@@ -3,8 +3,9 @@ import { PinoLogger } from 'nestjs-pino';
 import type { Tables } from '@bookingblues/db-types';
 
 import { EncryptionService } from '../../common/crypto/encryption.service';
-import { ExternalServiceError, NotFoundError } from '../../common/errors/app-error';
+import { ExternalServiceError, NotFoundError, ValidationError } from '../../common/errors/app-error';
 import { SupabaseService } from '../../common/supabase/supabase.service';
+import { asBusinessHours, slotWithinBusinessHours, type BusinessHours } from './business-hours';
 import { GoogleOAuthService } from './google-oauth.service';
 
 export type CalendarConnectionRow = Tables<'calendar_connections'>;
@@ -253,6 +254,63 @@ export class CalendarService {
       throw new ExternalServiceError('google', 'events.insert returned no id');
     }
     return { id: json.id, htmlLink: json.htmlLink ?? null };
+  }
+
+  /**
+   * One-click test booking (for demos + "is my calendar working?" checks).
+   * Exercises BOTH Google scopes end-to-end: reads free/busy (calendar.freebusy)
+   * to find a genuinely open slot within business hours, then creates the event
+   * (calendar.events). Does NOT touch the `appointments` table — it's a real
+   * calendar event only, clearly labeled and safe to delete.
+   */
+  async createTestBooking(args: {
+    operatorId: string;
+    timeZone: string;
+    businessHours: unknown;
+    durationMin: number;
+  }): Promise<{ startIso: string; endIso: string; eventId: string; htmlLink: string | null }> {
+    const bh: BusinessHours | null = asBusinessHours(args.businessHours);
+    const now = Date.now();
+    const windowStart = new Date(now).toISOString();
+    const windowEnd = new Date(now + 7 * 86_400_000).toISOString();
+
+    const busy = await this.freeBusy({
+      operatorId: args.operatorId,
+      windowStart,
+      windowEnd,
+      timeZone: args.timeZone,
+    });
+
+    // Scan forward in 30-min steps from ~2h out; pick the first slot that's both
+    // inside business hours and not overlapping a busy interval.
+    const durMs = args.durationMin * 60_000;
+    for (let offsetMin = 120; offsetMin <= 7 * 24 * 60; offsetMin += 30) {
+      const start = new Date(now + offsetMin * 60_000);
+      start.setUTCSeconds(0, 0);
+      start.setUTCMinutes(start.getUTCMinutes() < 30 ? 0 : 30); // align to :00/:30
+      const startIso = start.toISOString();
+      const endIso = new Date(start.getTime() + durMs).toISOString();
+      if (!slotWithinBusinessHours(startIso, endIso, bh, args.timeZone).ok) continue;
+      const overlaps = busy.some((b) => startIso < b.end && endIso > b.start);
+      if (overlaps) continue;
+
+      const event = await this.insertEvent({
+        operatorId: args.operatorId,
+        summary: '✅ KeeprSteady test appointment',
+        description:
+          'This is a test booking created by KeeprSteady to confirm your Google Calendar ' +
+          'connection is working. It behaves exactly like a real booking. Safe to delete.',
+        startIso,
+        endIso,
+        timeZone: args.timeZone,
+        attendeeEmails: [],
+      });
+      return { startIso, endIso, eventId: event.id, htmlLink: event.htmlLink };
+    }
+
+    throw new ValidationError(
+      'No open slot found in the next 7 days within your business hours — add some open hours in Settings and try again.',
+    );
   }
 
   /**

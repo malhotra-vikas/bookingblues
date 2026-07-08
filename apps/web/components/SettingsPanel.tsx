@@ -85,6 +85,7 @@ export function SettingsPanel({ operator }: { operator: Operator }): JSX.Element
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
+  const [testBooking, setTestBooking] = useState<{ when: string; link: string | null } | null>(null);
 
   const [businessName, setBusinessName] = useState(operator.business_name);
   const [timezone, setTimezone] = useState(operator.timezone);
@@ -291,6 +292,20 @@ export function SettingsPanel({ operator }: { operator: Operator }): JSX.Element
       if (!res.ok) throw new Error(`disconnect failed: ${res.status}`);
       setInfo("Calendar disconnected. Reconnect from Onboarding when you're ready.");
       router.refresh();
+    });
+  }
+
+  async function runTestBooking(): Promise<void> {
+    await run('test-booking', async () => {
+      const res = await authedFetch('/v1/operators/me/calendar/test-event', { method: 'POST' });
+      if (!res.ok) {
+        const detail = await res.json().catch(() => ({}));
+        throw new Error(detail.detail ?? `Test booking failed (${res.status})`);
+      }
+      const data = (await res.json()) as { start: string; html_link: string | null };
+      const when = new Date(data.start).toLocaleString();
+      setTestBooking({ when, link: data.html_link });
+      setInfo(`Test appointment created for ${when} on your Google Calendar.`);
     });
   }
 
@@ -628,17 +643,44 @@ export function SettingsPanel({ operator }: { operator: Operator }): JSX.Element
           detail={operator.google_calendar_id ?? 'Not connected'}
           action={
             operator.google_calendar_id ? (
-              <button
-                type="button"
-                onClick={disconnectGoogle}
-                disabled={busy === 'disconnect-google'}
-                className="rounded-md border border-slate-300 dark:border-slate-700 dark:text-slate-200 px-3 py-1.5 text-xs hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-50"
-              >
-                {busy === 'disconnect-google' ? 'Disconnecting…' : 'Disconnect'}
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={runTestBooking}
+                  disabled={busy === 'test-booking'}
+                  className="rounded-md border border-accent/40 bg-accent-soft text-accent px-3 py-1.5 text-xs hover:bg-accent/10 disabled:opacity-50"
+                >
+                  {busy === 'test-booking' ? 'Booking…' : 'Run test booking'}
+                </button>
+                <button
+                  type="button"
+                  onClick={disconnectGoogle}
+                  disabled={busy === 'disconnect-google'}
+                  className="rounded-md border border-slate-300 dark:border-slate-700 dark:text-slate-200 px-3 py-1.5 text-xs hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-50"
+                >
+                  {busy === 'disconnect-google' ? 'Disconnecting…' : 'Disconnect'}
+                </button>
+              </div>
             ) : null
           }
         />
+        {testBooking ? (
+          <p className="mt-2 rounded-md border border-emerald-200 bg-emerald-50 dark:border-emerald-900 dark:bg-emerald-950/30 px-3 py-2 text-xs text-emerald-800 dark:text-emerald-200">
+            ✅ Test appointment created for <strong>{testBooking.when}</strong>.{' '}
+            {testBooking.link ? (
+              <a href={testBooking.link} target="_blank" rel="noopener noreferrer" className="underline">
+                View on Google Calendar →
+              </a>
+            ) : null}{' '}
+            It&apos;s a real event labeled &quot;KeeprSteady test appointment&quot; — safe to delete.
+          </p>
+        ) : null}
+        {operator.google_calendar_id ? (
+          <p className="mt-1 text-xs text-muted dark:text-slate-400">
+            &quot;Run test booking&quot; checks your availability and creates a real appointment in
+            your next open slot — a quick way to confirm the calendar connection works.
+          </p>
+        ) : null}
         <IntegrationRow
           name="Twilio number"
           state={operator.twilio_number_e164 ? 'connected' : 'disconnected'}
