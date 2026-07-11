@@ -482,6 +482,7 @@ export type Database = {
           booking_fee_enabled: boolean;
           emergency_visit_fee_cents: number | null;
           visit_duration_min: number;
+          truck_count: number;
           business_hours: Json;
           business_name: string;
           category: string | null;
@@ -522,6 +523,7 @@ export type Database = {
           booking_fee_enabled?: boolean;
           emergency_visit_fee_cents?: number | null;
           visit_duration_min?: number;
+          truck_count?: number;
           business_hours?: Json;
           business_name: string;
           category?: string | null;
@@ -562,6 +564,7 @@ export type Database = {
           booking_fee_enabled?: boolean;
           emergency_visit_fee_cents?: number | null;
           visit_duration_min?: number;
+          truck_count?: number;
           business_hours?: Json;
           business_name?: string;
           category?: string | null;

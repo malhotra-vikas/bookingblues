@@ -25,6 +25,7 @@ interface Operator {
   booking_fee_cents: number | null;
   service_zip_codes: string[];
   service_radius_zones: Array<{ center_zip: string; radius_miles: number }>;
+  truck_count: number | null;
   subscription_status: string | null;
   plan: string | null;
   onboarding_completed_at: string | null;
@@ -162,6 +163,7 @@ export function Wizard({
   >(op?.service_radius_zones ?? []);
   const [zoneCenter, setZoneCenter] = useState('');
   const [zoneRadius, setZoneRadius] = useState('30');
+  const [pendingTrucks, setPendingTrucks] = useState(String(op?.truck_count ?? 1));
 
   const [releaseModalOpen, setReleaseModalOpen] = useState(false);
   const [disconnectGoogleOpen, setDisconnectGoogleOpen] = useState(false);
@@ -321,11 +323,13 @@ export function Wizard({
           }`,
         );
       }
+      const trucks = Math.min(50, Math.max(1, Math.round(Number(pendingTrucks || '1') || 1)));
       const res = await authedFetch('/v1/operators/me', {
         method: 'PATCH',
         body: JSON.stringify({
           service_zip_codes: zips,
           service_radius_zones: pendingZones,
+          truck_count: trucks,
         }),
       });
       if (!res.ok) {
@@ -681,6 +685,23 @@ export function Wizard({
             <p className="mt-1 text-xs text-muted dark:text-slate-400">
               Cities and towns by name will be supported once Google Maps geocoding is wired up
               (waiting on billing approval).
+            </p>
+          </div>
+
+          {/* Trucks / crews */}
+          <div>
+            <label className="block text-xs font-medium mb-1">How many trucks / crews?</label>
+            <input
+              type="number"
+              min={1}
+              max={50}
+              value={pendingTrucks}
+              onChange={(e) => setPendingTrucks(e.target.value.replace(/\D/g, '').slice(0, 2))}
+              className="rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 dark:text-slate-100 px-3 py-2 text-sm w-24"
+            />
+            <p className="mt-1 text-xs text-muted dark:text-slate-400">
+              How many jobs you can run at once. With more than one, the AI books multiple
+              appointments at the same time (30-minute travel buffer between jobs on the same truck).
             </p>
           </div>
 

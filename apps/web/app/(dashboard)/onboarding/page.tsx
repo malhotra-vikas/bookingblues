@@ -16,6 +16,7 @@ interface Operator {
   booking_fee_cents: number | null;
   service_zip_codes: string[];
   service_radius_zones: Array<{ center_zip: string; radius_miles: number }>;
+  truck_count: number | null;
   subscription_status: string | null;
   plan: string | null;
   onboarding_completed_at: string | null;

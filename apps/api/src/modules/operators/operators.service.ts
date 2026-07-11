@@ -165,6 +165,8 @@ export class OperatorsService {
     if (patch.service_radius_zones !== undefined) {
       update.service_radius_zones = patch.service_radius_zones;
     }
+    if (patch.visit_duration_min !== undefined) update.visit_duration_min = patch.visit_duration_min;
+    if (patch.truck_count !== undefined) update.truck_count = patch.truck_count;
 
     // Reject the case where the patch turns on the fee without supplying cents
     // (in addition to the DTO refine — defensive against partial patches across

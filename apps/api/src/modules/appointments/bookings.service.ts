@@ -12,6 +12,7 @@ import { ENV_TOKEN } from '../../config/config.module';
 import type { Env } from '../../config/env';
 import { CalendarService } from '../calendar/calendar.service';
 import { asBusinessHours, slotWithinBusinessHours } from '../calendar/business-hours';
+import { hasCapacity, TRAVEL_BUFFER_MIN } from './capacity';
 import { ConversationsService } from '../conversations/conversations.service';
 import {
   bookingConfirmationSms,
@@ -37,7 +38,7 @@ export interface BookResult {
  * Single booking pipeline used by the AI tool, the `/bb book` slash command,
  * and the "📅 Book a slot" button on the escalation alarm. All paths share:
  *
- *   - DB insert with the partial unique index race protection
+ *   - Capacity check (≤ truck_count concurrent, with travel buffer) before insert
  *   - Google Calendar event insert (rolls back the appointment if it fails)
  *   - Confirmation SMS to the caller with a public ICS deep-link
  *   - Audit log (only for non-AI paths; the AI tool already audits at the
@@ -86,11 +87,11 @@ export class BookingsService {
     /** Amount owed, recorded on the appointment (used with collectPaymentOnSite). */
     feeCents?: number;
   }): Promise<BookResult & { feeCheckoutUrl: string | null }> {
-    this.assertSlotBookable(args.operator, args.startIso, args.endIso);
+    await this.assertSlotBookable(args.operator, args.startIso, args.endIso);
 
-    // 1. Insert appointment row. Partial unique index on
-    //    (operator_id, scheduled_for_start) where status in ('proposed','confirmed')
-    //    prevents two callers winning the same slot (CLAUDE.md §17).
+    // 1. Insert appointment row. Capacity (≤ truck_count concurrent, with travel
+    //    buffer) is enforced in assertSlotBookable above; the old exact-start
+    //    unique index was dropped for multi-truck (migration 20260710000001).
     const { data: appt, error: insertErr } = await this.supabase
       .db()
       .from('appointments')
@@ -253,8 +254,14 @@ export class BookingsService {
    * closed-day/out-of-hours slot never reaches a real calendar event (the
    * model proposed weekend slots despite Mon–Fri hours, QA 2026-06-29).
    */
-  private assertSlotBookable(operator: OperatorRow, startIso: string, endIso: string): void {
-    if (new Date(endIso).getTime() <= new Date(startIso).getTime()) {
+  private async assertSlotBookable(
+    operator: OperatorRow,
+    startIso: string,
+    endIso: string,
+  ): Promise<void> {
+    const startMs = new Date(startIso).getTime();
+    const endMs = new Date(endIso).getTime();
+    if (endMs <= startMs) {
       throw new ValidationError('Appointment end must be after start');
     }
     const check = slotWithinBusinessHours(
@@ -265,6 +272,36 @@ export class BookingsService {
     );
     if (!check.ok) {
       throw new ValidationError(`That time isn't available: ${check.reason}`);
+    }
+
+    // Multi-truck capacity: allow up to `truck_count` concurrent appointments,
+    // with a travel buffer between same-truck jobs. Load the operator's active
+    // appointments that could overlap the candidate's padded window and check.
+    const truckCount = operator.truck_count ?? 1;
+    const bufferMs = TRAVEL_BUFFER_MIN * 60_000;
+    const overlapFrom = new Date(startMs - bufferMs - 12 * 3_600_000).toISOString();
+    const overlapTo = new Date(endMs + bufferMs).toISOString();
+    const { data: rows, error } = await this.supabase
+      .db()
+      .from('appointments')
+      .select('scheduled_for_start, scheduled_for_end')
+      .eq('operator_id', operator.id)
+      .in('status', ['proposed', 'confirmed'])
+      .lt('scheduled_for_start', overlapTo)
+      .gt('scheduled_for_end', overlapFrom);
+    if (error) throw error;
+    const existing = (rows ?? []).map((r) => ({
+      start: new Date(r.scheduled_for_start).getTime(),
+      end: new Date(r.scheduled_for_end).getTime(),
+    }));
+    const ok = hasCapacity({
+      candidate: { start: startMs, end: endMs },
+      existing,
+      truckCount,
+      bufferMin: TRAVEL_BUFFER_MIN,
+    });
+    if (!ok) {
+      throw new ConflictError('That slot was just taken — pick another time.');
     }
   }
 
@@ -287,7 +324,7 @@ export class BookingsService {
     startIso: string;
     endIso: string;
   }): Promise<{ appointmentId: string }> {
-    this.assertSlotBookable(args.operator, args.startIso, args.endIso);
+    await this.assertSlotBookable(args.operator, args.startIso, args.endIso);
 
     const { data: appt, error } = await this.supabase
       .db()

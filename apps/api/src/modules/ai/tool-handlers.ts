@@ -32,6 +32,7 @@ import type {
   RequestPaymentLinkArgs,
 } from './tool-definitions';
 import { describeServiceArea, isZipInServiceArea, parseRadiusZones } from './service-area';
+import { fullyBookedIntervals, TRAVEL_BUFFER_MIN } from '../appointments/capacity';
 
 type OperatorRow = Tables<'operators'>;
 type ConversationRow = Tables<'conversations'>;
@@ -92,19 +93,43 @@ export async function checkAvailability(
       },
     };
   }
-  const busy = await ctx.calendar.freeBusy({
-    operatorId: ctx.operator.id,
-    windowStart: args.window_start,
-    windowEnd: args.window_end,
-    timeZone: ctx.operator.timezone,
-  });
-  // Slice 7 returns busy intervals + the operator's business_hours so the
-  // model can compute candidate slots itself. Slice 9 (web) will likely
-  // surface a UI-friendly slot picker on top of this.
+
+  // Capacity-aware availability (multi-truck, 2026-07-10). "Busy" = times where
+  // ALL of the operator's trucks are already committed (each existing KeeprSteady
+  // appointment padded by the travel buffer). With N trucks, up to N jobs run at
+  // once, so a time is only unavailable when the Nth truck is taken. External
+  // Google events are intentionally not counted here (product decision).
+  const truckCount = ctx.operator.truck_count ?? 1;
+  const windowStartMs = new Date(args.window_start).getTime();
+  const windowEndMs = new Date(args.window_end).getTime();
+  const bufferMs = TRAVEL_BUFFER_MIN * 60_000;
+
+  const { data: rows, error } = await ctx.supabase
+    .db()
+    .from('appointments')
+    .select('scheduled_for_start, scheduled_for_end')
+    .eq('operator_id', ctx.operator.id)
+    .in('status', ['proposed', 'confirmed'])
+    .lt('scheduled_for_start', new Date(windowEndMs).toISOString())
+    .gt('scheduled_for_end', new Date(windowStartMs - bufferMs - 12 * 3_600_000).toISOString());
+  if (error) throw error;
+
+  const existing = (rows ?? []).map((r) => ({
+    start: new Date(r.scheduled_for_start).getTime(),
+    end: new Date(r.scheduled_for_end).getTime(),
+  }));
+  const busy = fullyBookedIntervals({
+    existing,
+    truckCount,
+    windowStart: windowStartMs,
+    windowEnd: windowEndMs,
+  }).map((iv) => ({ start: new Date(iv.start).toISOString(), end: new Date(iv.end).toISOString() }));
+
   return {
     content: {
       timezone: ctx.operator.timezone,
       business_hours: ctx.operator.business_hours,
+      truck_count: truckCount,
       busy,
       window: { start: args.window_start, end: args.window_end },
     },

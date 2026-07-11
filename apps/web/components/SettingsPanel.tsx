@@ -20,6 +20,7 @@ interface Operator {
   emergency_visit_fee_cents: number | null;
   allow_unpaid_emergency_booking: boolean;
   visit_duration_min: number;
+  truck_count: number;
   business_hours: Record<string, { start: string; end: string }[]> | null;
   service_zip_codes: string[] | null;
   service_radius_zones: Array<{ center_zip: string; radius_miles: number }> | null;
@@ -106,6 +107,7 @@ export function SettingsPanel({ operator }: { operator: Operator }): JSX.Element
     operator.allow_unpaid_emergency_booking,
   );
   const [visitDuration, setVisitDuration] = useState(String(operator.visit_duration_min ?? 60));
+  const [truckCount, setTruckCount] = useState(String(operator.truck_count ?? 1));
   const [hours, setHours] = useState<Record<string, DayHours>>(() =>
     initDayHours(operator.business_hours),
   );
@@ -138,6 +140,8 @@ export function SettingsPanel({ operator }: { operator: Operator }): JSX.Element
   };
   const durationMin = Math.min(480, Math.max(15, Math.round(Number(visitDuration || '60') || 60)));
   const durationInvalid = !/^\d+$/.test(visitDuration.trim()) || durationMin !== Number(visitDuration);
+  const trucks = Math.min(50, Math.max(1, Math.round(Number(truckCount || '1') || 1)));
+  const trucksInvalid = !/^\d+$/.test(truckCount.trim()) || trucks !== Number(truckCount);
   const feeCents = Math.max(0, Math.round(Number(feeDollars || '0') * 100));
   const emergencyCents = Math.max(0, Math.round(Number(emergencyFeeDollars || '0') * 100));
   const deposit = charge(feeCents);
@@ -190,6 +194,7 @@ export function SettingsPanel({ operator }: { operator: Operator }): JSX.Element
           emergency_visit_fee_cents: emergencyCents,
           allow_unpaid_emergency_booking: allowUnpaidEmergency,
           visit_duration_min: durationMin,
+          truck_count: trucks,
         }),
       });
       if (!res.ok) {
@@ -364,7 +369,23 @@ export function SettingsPanel({ operator }: { operator: Operator }): JSX.Element
             <span className="ml-2 text-xs text-red-600">must be a whole number 15–480</span>
           ) : null}
         </Field>
-        <SaveButton busy={busy === 'save'} onClick={saveProfile} disabled={durationInvalid} />
+        <Field
+          label="Trucks / crews"
+          hint="How many jobs you can run at once. With more than one, the AI books multiple appointments at the same time — keeping a 30-minute travel buffer between jobs on the same truck. 1–50."
+        >
+          <input
+            type="number"
+            min={1}
+            max={50}
+            value={truckCount}
+            onChange={(e) => setTruckCount(e.target.value.replace(/\D/g, '').slice(0, 2))}
+            className="rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 dark:text-slate-100 px-3 py-2 text-sm w-32"
+          />
+          {trucksInvalid ? (
+            <span className="ml-2 text-xs text-red-600">must be a whole number 1–50</span>
+          ) : null}
+        </Field>
+        <SaveButton busy={busy === 'save'} onClick={saveProfile} disabled={durationInvalid || trucksInvalid} />
       </Card>
 
       {/* ── Business hours ───────────────────────────────────────────── */}
