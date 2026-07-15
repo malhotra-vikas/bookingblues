@@ -18,6 +18,7 @@ import type {
   Plan,
   PortalSessionResponse,
 } from './billing.dto';
+import { foundingCouponForCheckout } from './founding-promo';
 
 type OperatorRow = Tables<'operators'>;
 
@@ -78,12 +79,18 @@ export class BillingService {
     // event.
     const metadata = { operator_id: operator.id, plan, cadence, stripe_price_id: priceId };
 
+    // Founding Member promo — $25 first month on monthly plans through the promo
+    // end date. Attaches a `duration: once` coupon so only the first post-trial
+    // invoice is discounted. No-op when the promo is off / not monthly.
+    const foundingCoupon = foundingCouponForCheckout(this.env, plan, cadence);
+
     const session = await this.stripe.client().checkout.sessions.create({
       mode: 'subscription',
       customer: customerId,
       client_reference_id: operator.id,
       payment_method_collection: 'always',
       line_items: [{ price: priceId, quantity: 1 }],
+      ...(foundingCoupon ? { discounts: [{ coupon: foundingCoupon }] } : {}),
       subscription_data: {
         trial_period_days: this.env.TRIAL_DAYS,
         trial_settings: {

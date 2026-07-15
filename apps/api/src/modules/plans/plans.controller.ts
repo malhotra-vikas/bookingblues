@@ -1,7 +1,7 @@
 import { Controller, Get } from '@nestjs/common';
 import { SkipThrottle } from '@nestjs/throttler';
 
-import { PlansService, type PlanPricing } from './plans.service';
+import { PlansService, type PlanPricing, type PromoInfo } from './plans.service';
 
 /**
  * Public plan pricing, sourced live from Stripe (cached). The marketing/pricing
@@ -15,7 +15,7 @@ export class PlansController {
   constructor(private readonly plans: PlansService) {}
 
   @Get()
-  async list(): Promise<{ plans: PlanPricing[] }> {
-    return { plans: await this.plans.getPlans() };
+  async list(): Promise<{ plans: PlanPricing[]; promo: PromoInfo }> {
+    return { plans: await this.plans.getPlans(), promo: this.plans.getPromo() };
   }
 }

@@ -4,6 +4,7 @@ import { PinoLogger } from 'nestjs-pino';
 import { StripeService } from '../../common/stripe/stripe.service';
 import { ENV_TOKEN } from '../../config/config.module';
 import type { Env } from '../../config/env';
+import { isFoundingPromoActive } from '../billing/founding-promo';
 
 export interface PlanCadencePrice {
   readonly price_id: string;
@@ -16,6 +17,13 @@ export interface PlanPricing {
   readonly slug: 'solo' | 'crew' | 'fleet';
   readonly monthly: PlanCadencePrice | null;
   readonly annual: PlanCadencePrice | null;
+}
+
+export interface PromoInfo {
+  /** Founding Member promo currently running (monthly plans, $25 first month). */
+  readonly founding_active: boolean;
+  readonly ends_at: string | null;
+  readonly first_month_usd: number;
 }
 
 /** Which env price IDs back each plan/cadence. Keys are `keyof Env`. */
@@ -48,6 +56,15 @@ export class PlansService {
     private readonly logger: PinoLogger,
   ) {
     this.logger.setContext(PlansService.name);
+  }
+
+  /** Founding Member promo state for the marketing UI (mirrors the checkout gate). */
+  getPromo(): PromoInfo {
+    return {
+      founding_active: isFoundingPromoActive(this.env),
+      ends_at: this.env.PROMO_FOUNDING_ENDS_AT ?? null,
+      first_month_usd: 25,
+    };
   }
 
   async getPlans(): Promise<PlanPricing[]> {

@@ -1,8 +1,9 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 
+import { FoundingPromoBanner } from '../../../components/FoundingPromoBanner';
 import { BRAND, TRIAL_COPY } from '../../../lib/brand';
-import { getPlanPrices } from '../../../lib/plans';
+import { getPlanPrices, getPromo } from '../../../lib/plans';
 import { PricingTiers } from './PricingTiers';
 
 export const metadata: Metadata = {
@@ -13,9 +14,10 @@ export const metadata: Metadata = {
 };
 
 export default async function PricingPage(): Promise<JSX.Element> {
-  const prices = await getPlanPrices();
+  const [prices, promo] = await Promise.all([getPlanPrices(), getPromo()]);
   return (
     <div className="px-6 py-12 max-w-5xl mx-auto">
+      <FoundingPromoBanner promo={promo} className="mb-8 max-w-2xl mx-auto" />
       <header className="text-center max-w-2xl mx-auto">
         <h1 className="text-3xl sm:text-4xl font-semibold tracking-tight text-ink">Pricing</h1>
         <p className="mt-3 text-muted">
@@ -26,7 +28,7 @@ export default async function PricingPage(): Promise<JSX.Element> {
         </p>
       </header>
 
-      <PricingTiers prices={prices} />
+      <PricingTiers prices={prices} promo={promo} />
 
       {/* ── HITL trust signal ───────────────────────────────────────────── */}
       <section className="mt-12 rounded-xl border border-slate-200 bg-slate-50 dark:bg-slate-900 dark:border-slate-800 p-6 max-w-3xl mx-auto">

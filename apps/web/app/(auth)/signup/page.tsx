@@ -3,7 +3,9 @@ import Link from 'next/link';
 import { Suspense } from 'react';
 
 import { AuthForm } from '../../../components/AuthForm';
+import { FoundingPromoBanner } from '../../../components/FoundingPromoBanner';
 import { TRIAL_COPY } from '../../../lib/brand';
+import { getPromo } from '../../../lib/plans';
 
 export const metadata: Metadata = {
   title: 'Start Free Trial — KeeprSteady',
@@ -12,9 +14,11 @@ export const metadata: Metadata = {
   alternates: { canonical: '/signup' },
 };
 
-export default function SignupPage(): JSX.Element {
+export default async function SignupPage(): Promise<JSX.Element> {
+  const promo = await getPromo();
   return (
     <div>
+      <FoundingPromoBanner promo={promo} className="mb-6" />
       <h1 className="text-2xl font-semibold tracking-tight text-ink dark:text-slate-100 mb-1">
         Start your {TRIAL_COPY.durationLabel}
       </h1>

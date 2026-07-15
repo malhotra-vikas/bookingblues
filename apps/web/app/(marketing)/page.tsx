@@ -2,9 +2,10 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 
+import { FoundingPromoBanner } from '../../components/FoundingPromoBanner';
 import { Reveal } from '../../components/Reveal';
 import { BRAND, TRIAL_COPY } from '../../lib/brand';
-import { getPlanPrices, usd } from '../../lib/plans';
+import { getPlanPrices, getPromo, usd } from '../../lib/plans';
 
 export const metadata: Metadata = {
   title: `${BRAND.name} — AI booking assistant for home-service businesses`,
@@ -14,9 +15,14 @@ export const metadata: Metadata = {
 };
 
 export default async function HomePage(): Promise<JSX.Element> {
-  const prices = await getPlanPrices();
+  const [prices, promo] = await Promise.all([getPlanPrices(), getPromo()]);
   return (
     <div>
+      {promo.foundingActive ? (
+        <div className="px-6 pt-6">
+          <FoundingPromoBanner promo={promo} className="max-w-3xl mx-auto" />
+        </div>
+      ) : null}
       {/* ── Hero ───────────────────────────────────────────────────────── */}
       <section className="relative overflow-hidden border-b border-slate-200/70 bg-gradient-to-b from-accent-soft via-white to-white">
         {/* Animated brand-purple blobs for ambient depth + motion. */}

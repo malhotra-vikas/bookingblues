@@ -69,6 +69,14 @@ const baseSchema = z.object({
   STRIPE_PRICE_FLEET_MONTHLY: z.string().optional(),
   STRIPE_PRICE_FLEET_ANNUAL: z.string().optional(),
 
+  // Founding Member promo — $25 first month on MONTHLY plans for signups through
+  // the end date. Per-plan Stripe `duration: once` coupons (amount_off =
+  // planPrice − $25) applied to the first post-trial invoice. Unset = promo off.
+  PROMO_FOUNDING_ENDS_AT: z.string().optional(), // ISO date, e.g. 2026-10-01T00:00:00-04:00
+  STRIPE_COUPON_FOUNDING_SOLO: z.string().optional(),
+  STRIPE_COUPON_FOUNDING_CREW: z.string().optional(),
+  STRIPE_COUPON_FOUNDING_FLEET: z.string().optional(),
+
   // Stripe (booking-fee economics)
   PLATFORM_TAKE_RATE_BPS: z.coerce.number().int().min(0).max(10_000).default(1000),
   MIN_PLATFORM_FEE_CENTS: z.coerce.number().int().min(0).default(100),

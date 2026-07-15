@@ -17,9 +17,36 @@ export interface PlanPrices {
   annualUsd: number;
 }
 
+export interface Promo {
+  foundingActive: boolean;
+  endsAt: string | null;
+  firstMonthUsd: number;
+}
+
+const PROMO_OFF: Promo = { foundingActive: false, endsAt: null, firstMonthUsd: 25 };
+
 /** Format a whole-dollar amount for prose, e.g. 1499 → "$1,499". */
 export function usd(amount: number): string {
   return `$${amount.toLocaleString()}`;
+}
+
+/** Founding Member promo state (server-side; from /v1/plans). Off on any error. */
+export async function getPromo(): Promise<Promo> {
+  try {
+    const res = await fetch(`${publicEnv.NEXT_PUBLIC_API_URL}/v1/plans`, { next: { revalidate: 900 } });
+    if (!res.ok) return PROMO_OFF;
+    const { promo } = (await res.json()) as {
+      promo?: { founding_active?: boolean; ends_at?: string | null; first_month_usd?: number };
+    };
+    if (!promo) return PROMO_OFF;
+    return {
+      foundingActive: Boolean(promo.founding_active),
+      endsAt: promo.ends_at ?? null,
+      firstMonthUsd: promo.first_month_usd ?? 25,
+    };
+  } catch {
+    return PROMO_OFF;
+  }
 }
 
 /** brand.ts constants as the fallback price map (used if the API/Stripe is down). */

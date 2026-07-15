@@ -5,14 +5,16 @@ import { useState, type ReactNode } from 'react';
 
 import { Reveal } from '../../../components/Reveal';
 import { PLANS, depositLabel, type Plan, type PlanSlug } from '../../../lib/brand';
-import { type PlanPrices } from '../../../lib/plans';
+import { type PlanPrices, type Promo } from '../../../lib/plans';
 
 type Cadence = 'monthly' | 'annual';
 
 export function PricingTiers({
   prices,
+  promo,
 }: {
   prices: Record<PlanSlug, PlanPrices>;
+  promo: Promo;
 }): JSX.Element {
   const [cadence, setCadence] = useState<Cadence>('monthly');
 
@@ -36,7 +38,7 @@ export function PricingTiers({
       <div className="mt-8 grid gap-5 lg:grid-cols-3 items-stretch">
         {PLANS.map((plan, i) => (
           <Reveal key={plan.slug} delay={i * 110} className="h-full">
-            <TierCard plan={plan} cadence={cadence} price={prices[plan.slug]} />
+            <TierCard plan={plan} cadence={cadence} price={prices[plan.slug]} promo={promo} />
           </Reveal>
         ))}
       </div>
@@ -74,10 +76,12 @@ function TierCard({
   plan,
   cadence,
   price,
+  promo,
 }: {
   plan: Plan;
   cadence: Cadence;
   price?: PlanPrices;
+  promo: Promo;
 }): JSX.Element {
   // Live Stripe prices (via /v1/plans); fall back to the brand.ts constants.
   const monthlyUsd = price?.monthlyUsd ?? plan.monthlyPriceUsd;
@@ -86,6 +90,8 @@ function TierCard({
     cadence === 'annual' ? Math.round((annualUsd / 12) * 100) / 100 : monthlyUsd;
   const annualSavings = monthlyUsd * 12 - annualUsd;
   const recommended = plan.recommended;
+  // Founding Member: $25 first month, monthly only.
+  const showFounding = promo.foundingActive && cadence === 'monthly';
 
   return (
     <div
@@ -113,6 +119,11 @@ function TierCard({
         </span>
         <span className="text-base text-muted">/mo</span>
       </div>
+      {showFounding ? (
+        <p className="mt-1 inline-flex w-fit items-center rounded-full bg-emerald-100 dark:bg-emerald-900 px-2 py-0.5 text-xs font-semibold text-emerald-700 dark:text-emerald-300">
+          🚀 ${promo.firstMonthUsd} your first month
+        </p>
+      ) : null}
       {cadence === 'annual' ? (
         <p className="mt-1 text-xs text-emerald-700 dark:text-emerald-300">
           ${annualUsd.toLocaleString()}/yr — save ${annualSavings.toLocaleString()}
