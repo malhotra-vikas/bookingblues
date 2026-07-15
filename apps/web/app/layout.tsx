@@ -2,8 +2,29 @@ import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
 import { Inter, Space_Grotesk } from 'next/font/google';
 
+import { JsonLd } from '../components/JsonLd';
 import { BRAND } from '../lib/brand';
 import './globals.css';
+
+const SITE = `https://${BRAND.domain}`;
+
+/** Site-wide Organization structured data (schema.org) for rich results. */
+const ORG_JSONLD = {
+  '@context': 'https://schema.org',
+  '@type': 'Organization',
+  name: BRAND.name,
+  legalName: BRAND.legalEntity,
+  url: SITE,
+  logo: `${SITE}/icon-512.png`,
+  description:
+    'AI dispatcher for home-service businesses — texts back missed calls, books the job, and adds it to Google Calendar.',
+  sameAs: [BRAND.linkedinUrl, BRAND.instagramUrl, BRAND.xUrl],
+  contactPoint: {
+    '@type': 'ContactPoint',
+    email: BRAND.supportEmail,
+    contactType: 'customer support',
+  },
+};
 
 // Body: Inter (clean, highly legible). Headings: Space Grotesk (geometric,
 // characterful — gives the brand a human, designed feel vs. the system default).
@@ -68,6 +89,7 @@ export default function RootLayout({ children }: { children: ReactNode }): JSX.E
           <div className="blob h-[26rem] w-[26rem] bg-accent/10 bottom-0 left-1/3 animate-blob [animation-delay:11s]" />
         </div>
         {children}
+        <JsonLd data={ORG_JSONLD} />
       </body>
     </html>
   );

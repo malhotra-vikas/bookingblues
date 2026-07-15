@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 
+import { JsonLd } from '../../../components/JsonLd';
 import { BRAND } from '../../../lib/brand';
 import { getPlanPrices, usd } from '../../../lib/plans';
 
@@ -74,8 +75,18 @@ export default async function FaqPage(): Promise<JSX.Element> {
       a: 'Yes — in 2 clicks from Settings → Billing. No email, no phone call, no minimum term. Your number is released after a 7-day grace period in case you change your mind.',
     },
   ];
+  const faqJsonLd = {
+    '@context': 'https://schema.org',
+    '@type': 'FAQPage',
+    mainEntity: items.map((item) => ({
+      '@type': 'Question',
+      name: item.q,
+      acceptedAnswer: { '@type': 'Answer', text: item.a },
+    })),
+  };
   return (
     <div className="px-6 py-12 max-w-2xl mx-auto">
+      <JsonLd data={faqJsonLd} />
       <h1 className="text-3xl font-semibold">FAQ</h1>
       <p className="mt-2 text-muted text-sm">
         Still have questions? <a href={`mailto:${BRAND.salesEmail}`} className="underline">{BRAND.salesEmail}</a> or{' '}

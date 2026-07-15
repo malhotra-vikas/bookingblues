@@ -3,8 +3,9 @@ import Link from 'next/link';
 import type { ReactNode } from 'react';
 
 import { FoundingPromoBanner } from '../../components/FoundingPromoBanner';
+import { JsonLd } from '../../components/JsonLd';
 import { Reveal } from '../../components/Reveal';
-import { BRAND, TRIAL_COPY } from '../../lib/brand';
+import { BRAND, PLANS, TRIAL_COPY } from '../../lib/brand';
 import { getPlanPrices, getPromo, usd } from '../../lib/plans';
 
 export const metadata: Metadata = {
@@ -16,8 +17,27 @@ export const metadata: Metadata = {
 
 export default async function HomePage(): Promise<JSX.Element> {
   const [prices, promo] = await Promise.all([getPlanPrices(), getPromo()]);
+  const site = `https://${BRAND.domain}`;
+  const softwareJsonLd = {
+    '@context': 'https://schema.org',
+    '@type': 'SoftwareApplication',
+    name: BRAND.name,
+    applicationCategory: 'BusinessApplication',
+    operatingSystem: 'Web',
+    url: site,
+    description:
+      'AI dispatcher for home-service pros. When you miss a call, it texts the caller back in seconds, books the appointment, and adds it to your Google Calendar.',
+    offers: PLANS.map((p) => ({
+      '@type': 'Offer',
+      name: `${p.name} plan`,
+      price: (prices[p.slug]?.monthlyUsd ?? p.monthlyPriceUsd).toString(),
+      priceCurrency: 'USD',
+      url: `${site}/pricing`,
+    })),
+  };
   return (
     <div>
+      <JsonLd data={softwareJsonLd} />
       {promo.foundingActive ? (
         <div className="px-6 pt-6">
           <FoundingPromoBanner promo={promo} className="max-w-3xl mx-auto" />
