@@ -30,10 +30,15 @@ export function usd(amount: number): string {
   return `$${amount.toLocaleString()}`;
 }
 
-/** Founding Member promo state (server-side; from /v1/plans). Off on any error. */
+/**
+ * Founding Member promo state (server-side; from /v1/plans). Off on any error.
+ * Fetched fresh per request (`no-store`) — NOT cached at build time — so toggling
+ * the promo env on the API takes effect without a web rebuild, and the promo
+ * turns off exactly at its end date. (Prices stay cached via getPlanPrices.)
+ */
 export async function getPromo(): Promise<Promo> {
   try {
-    const res = await fetch(`${publicEnv.NEXT_PUBLIC_API_URL}/v1/plans`, { next: { revalidate: 900 } });
+    const res = await fetch(`${publicEnv.NEXT_PUBLIC_API_URL}/v1/plans`, { cache: 'no-store' });
     if (!res.ok) return PROMO_OFF;
     const { promo } = (await res.json()) as {
       promo?: { founding_active?: boolean; ends_at?: string | null; first_month_usd?: number };
