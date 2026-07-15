@@ -1,6 +1,7 @@
 import Link from 'next/link';
 
 import { BRAND } from '../lib/brand';
+import { TRADES } from '../lib/trades';
 
 /**
  * Site-wide legal footer (ED-13, ED-15, ED-19). Renders on every public route
@@ -75,6 +76,20 @@ export function LegalFooter({ variant }: { variant: 'marketing' | 'auth' }): JSX
             </SocialLink>
           </span>
         </nav>
+      </div>
+
+      {/* Per-trade pages — internal links for SEO + discovery. */}
+      <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted dark:text-slate-500">
+        <span className="font-medium">For your trade:</span>
+        {TRADES.map((t) => (
+          <Link
+            key={t.slug}
+            href={`/for/${t.slug}`}
+            className="no-underline hover:text-ink dark:hover:text-slate-300"
+          >
+            {t.plural}
+          </Link>
+        ))}
       </div>
     </div>
   );
