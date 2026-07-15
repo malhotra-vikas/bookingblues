@@ -110,9 +110,10 @@ export default function PrivacyPage(): JSX.Element {
       <Section title="4a. Google User Data — Limited Use">
         <p>
           When a Subscriber connects their Google Calendar, {BRAND.name} requests the
-          <code> calendar.readonly</code> scope (to read free/busy availability so the assistant can
-          propose open appointment times) and the <code>calendar.events</code> scope (to create the
-          confirmed appointment as a calendar event). We request no other Google scopes.
+          <code> calendar.freebusy</code> scope (to read only free/busy availability — never event
+          details — so the assistant can propose open appointment times) and the{' '}
+          <code>calendar.events</code> scope (to create the confirmed appointment as a calendar
+          event). We request no other Google scopes.
         </p>
         <p>
           {BRAND.name}&apos;s use and transfer of information received from Google APIs to any other
@@ -137,6 +138,14 @@ export default function PrivacyPage(): JSX.Element {
             acquisition.
           </li>
           <li>We do not use Google user data for advertising, and we do not sell it.</li>
+          <li>
+            <strong>AI/ML:</strong> We do not use Google Workspace API data (including Google
+            Calendar data) to develop, improve, or train generalized AI or machine-learning models,
+            and we do not transfer such data to any third-party service that uses it to train its
+            AI/ML models. Our AI assistant proposes appointment times from the Subscriber&apos;s own
+            configured business hours and existing {BRAND.name} bookings — it is not given the
+            contents of the Subscriber&apos;s Google Calendar.
+          </li>
           <li>
             We do not allow humans to read Google user data unless we first obtain the Subscriber&apos;s
             consent for specific data, it is necessary for security purposes (such as investigating
