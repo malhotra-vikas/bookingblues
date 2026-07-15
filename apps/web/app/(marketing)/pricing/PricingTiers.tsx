@@ -109,29 +109,46 @@ function TierCard({
       ) : null}
 
       <div className="font-display text-sm uppercase tracking-wide text-accent">{plan.name}</div>
-      <div className="mt-2 flex items-baseline gap-1">
-        <span
-          className={`font-display text-4xl font-bold tracking-tight ${
-            recommended ? 'text-gradient' : 'text-ink dark:text-slate-100'
-          }`}
-        >
-          ${cadence === 'annual' ? monthlyEquivalent.toLocaleString() : monthlyUsd.toLocaleString()}
-        </span>
-        <span className="text-base text-muted">/mo</span>
-      </div>
       {showFounding ? (
-        <p className="mt-1 inline-flex w-fit items-center rounded-full bg-emerald-100 dark:bg-emerald-900 px-2 py-0.5 text-xs font-semibold text-emerald-700 dark:text-emerald-300">
-          🚀 ${promo.firstMonthUsd} your first month
-        </p>
-      ) : null}
-      {cadence === 'annual' ? (
-        <p className="mt-1 text-xs text-emerald-700 dark:text-emerald-300">
-          ${annualUsd.toLocaleString()}/yr — save ${annualSavings.toLocaleString()}
-        </p>
+        // Founding Member: lead with the $25 first-month price, regular struck through.
+        <>
+          <div className="mt-2 flex items-baseline gap-2">
+            <span
+              className={`font-display text-4xl font-bold tracking-tight ${
+                recommended ? 'text-gradient' : 'text-ink dark:text-slate-100'
+              }`}
+            >
+              ${promo.firstMonthUsd}
+            </span>
+            <span className="text-base text-muted line-through">${monthlyUsd.toLocaleString()}</span>
+            <span className="text-base text-muted">first mo</span>
+          </div>
+          <p className="mt-1 inline-flex w-fit items-center rounded-full bg-emerald-100 dark:bg-emerald-900 px-2 py-0.5 text-xs font-semibold text-emerald-700 dark:text-emerald-300">
+            🚀 Founding Member — then ${monthlyUsd.toLocaleString()}/mo
+          </p>
+        </>
       ) : (
-        <p className="mt-1 text-xs text-muted">
-          Prefer annual? ${annualUsd.toLocaleString()}/yr — 2 months free vs. monthly
-        </p>
+        <>
+          <div className="mt-2 flex items-baseline gap-1">
+            <span
+              className={`font-display text-4xl font-bold tracking-tight ${
+                recommended ? 'text-gradient' : 'text-ink dark:text-slate-100'
+              }`}
+            >
+              ${cadence === 'annual' ? monthlyEquivalent.toLocaleString() : monthlyUsd.toLocaleString()}
+            </span>
+            <span className="text-base text-muted">/mo</span>
+          </div>
+          {cadence === 'annual' ? (
+            <p className="mt-1 text-xs text-emerald-700 dark:text-emerald-300">
+              ${annualUsd.toLocaleString()}/yr — save ${annualSavings.toLocaleString()}
+            </p>
+          ) : (
+            <p className="mt-1 text-xs text-muted">
+              Prefer annual? ${annualUsd.toLocaleString()}/yr — 2 months free vs. monthly
+            </p>
+          )}
+        </>
       )}
 
       <ul className="mt-5 space-y-2 text-sm text-ink dark:text-slate-100">

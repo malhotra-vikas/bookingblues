@@ -249,75 +249,124 @@ export default async function DashboardPage({
         )}
       </section>
 
-      <section>
-        <h2 className="text-lg font-semibold dark:text-slate-100 mb-3">Upcoming appointments</h2>
-        {'error' in appointmentsR ? (
+      {'error' in appointmentsR ? (
+        <section>
+          <h2 className="text-lg font-semibold dark:text-slate-100 mb-3">Appointments</h2>
           <p className="text-sm text-red-600">Couldn&apos;t load: {appointmentsR.error}</p>
-        ) : appointmentsR.data.length === 0 ? (
+        </section>
+      ) : appointmentsR.data.length === 0 ? (
+        <section>
+          <h2 className="text-lg font-semibold dark:text-slate-100 mb-3">Upcoming appointments</h2>
           <EmptyState
             title="No appointments yet"
             body="Once the AI books a job for you, it will show up here with caller details and a one-tap call link."
           />
-        ) : (
-          <div className="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-700">
-            <table className="min-w-full text-sm">
-              <thead className="bg-slate-50 dark:bg-slate-800 text-xs uppercase tracking-wide text-muted dark:text-slate-400">
-                <tr>
-                  <th className="px-3 py-2 text-left">When</th>
-                  <th className="px-3 py-2 text-left">Caller</th>
-                  <th className="px-3 py-2 text-left">Job</th>
-                  <th className="px-3 py-2 text-left">Status</th>
-                  <th className="px-3 py-2 text-left">Fee</th>
-                </tr>
-              </thead>
-              <tbody className="dark:text-slate-200">
-                {appointmentsR.data.map((a) => (
-                  <tr key={a.id} className="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/50">
-                    <td className="px-3 py-2 whitespace-nowrap">{formatAppointmentTime(a.scheduled_for_start)}</td>
-                    <td className="px-3 py-2">
-                      <div className="font-medium">{a.caller_name}</div>
-                      <div className="flex items-center gap-2 text-xs text-muted dark:text-slate-400">
-                        <a href={`tel:${a.caller_phone_e164}`} className="text-accent dark:text-accent-light font-mono no-underline hover:underline">
-                          {formatE164(a.caller_phone_e164)}
-                        </a>
-                        {a.caller_email && (
-                          <a href={`mailto:${a.caller_email}`} className="text-accent dark:text-accent-light no-underline hover:underline">
-                            email
-                          </a>
-                        )}
-                      </div>
-                    </td>
-                    <td className="px-3 py-2 max-w-md">
-                      <div className="truncate">{a.job_summary}</div>
-                    </td>
-                    <td className="px-3 py-2"><StatusBadge status={a.status} /></td>
-                    <td className="px-3 py-2 whitespace-nowrap">
-                      {a.collect_payment_on_site ? (
-                        <span className="flex items-center gap-1.5">
-                          {a.fee_cents != null ? (
-                            <span className="font-medium">{formatDollars(a.fee_cents)}</span>
-                          ) : null}
-                          <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
-                            collect on site
-                          </span>
-                        </span>
-                      ) : a.fee_cents != null && a.fee_status !== 'none' ? (
-                        <span className="flex items-center gap-1.5">
-                          <span className="font-medium">{formatDollars(a.fee_cents)}</span>
-                          <FeeBadge status={a.fee_status} />
-                        </span>
-                      ) : (
-                        <FeeBadge status={a.fee_status} />
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
+        </section>
+      ) : (
+        (() => {
+          // Split by whether the visit is still ahead of now. Upcoming: soonest
+          // first. Past: most recent first.
+          const now = Date.now();
+          const upcoming = appointmentsR.data
+            .filter((a) => new Date(a.scheduled_for_start).getTime() >= now)
+            .sort((x, y) => +new Date(x.scheduled_for_start) - +new Date(y.scheduled_for_start));
+          const past = appointmentsR.data
+            .filter((a) => new Date(a.scheduled_for_start).getTime() < now)
+            .sort((x, y) => +new Date(y.scheduled_for_start) - +new Date(x.scheduled_for_start));
+          return (
+            <>
+              <AppointmentsTable
+                title="Upcoming appointments"
+                rows={upcoming}
+                emptyBody="No upcoming appointments. New bookings the AI makes will appear here."
+              />
+              {past.length > 0 ? <AppointmentsTable title="Past appointments" rows={past} muted /> : null}
+            </>
+          );
+        })()
+      )}
     </div>
+  );
+}
+
+function AppointmentsTable({
+  title,
+  rows,
+  emptyBody,
+  muted,
+}: {
+  title: string;
+  rows: Appointment[];
+  emptyBody?: string;
+  muted?: boolean;
+}): JSX.Element {
+  return (
+    <section className={muted ? 'opacity-90' : undefined}>
+      <h2 className="text-lg font-semibold dark:text-slate-100 mb-3">
+        {title}
+        {rows.length > 0 ? <span className="ml-2 text-sm font-normal text-muted">({rows.length})</span> : null}
+      </h2>
+      {rows.length === 0 ? (
+        emptyBody ? <EmptyState title="Nothing here yet" body={emptyBody} /> : null
+      ) : (
+        <div className="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-700">
+          <table className="min-w-full text-sm">
+            <thead className="bg-slate-50 dark:bg-slate-800 text-xs uppercase tracking-wide text-muted dark:text-slate-400">
+              <tr>
+                <th className="px-3 py-2 text-left">When</th>
+                <th className="px-3 py-2 text-left">Caller</th>
+                <th className="px-3 py-2 text-left">Job</th>
+                <th className="px-3 py-2 text-left">Status</th>
+                <th className="px-3 py-2 text-left">Fee</th>
+              </tr>
+            </thead>
+            <tbody className="dark:text-slate-200">
+              {rows.map((a) => (
+                <tr key={a.id} className="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/50">
+                  <td className="px-3 py-2 whitespace-nowrap">{formatAppointmentTime(a.scheduled_for_start)}</td>
+                  <td className="px-3 py-2">
+                    <div className="font-medium">{a.caller_name}</div>
+                    <div className="flex items-center gap-2 text-xs text-muted dark:text-slate-400">
+                      <a href={`tel:${a.caller_phone_e164}`} className="text-accent dark:text-accent-light font-mono no-underline hover:underline">
+                        {formatE164(a.caller_phone_e164)}
+                      </a>
+                      {a.caller_email && (
+                        <a href={`mailto:${a.caller_email}`} className="text-accent dark:text-accent-light no-underline hover:underline">
+                          email
+                        </a>
+                      )}
+                    </div>
+                  </td>
+                  <td className="px-3 py-2 max-w-md">
+                    <div className="truncate">{a.job_summary}</div>
+                  </td>
+                  <td className="px-3 py-2"><StatusBadge status={a.status} /></td>
+                  <td className="px-3 py-2 whitespace-nowrap">
+                    {a.collect_payment_on_site ? (
+                      <span className="flex items-center gap-1.5">
+                        {a.fee_cents != null ? (
+                          <span className="font-medium">{formatDollars(a.fee_cents)}</span>
+                        ) : null}
+                        <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
+                          collect on site
+                        </span>
+                      </span>
+                    ) : a.fee_cents != null && a.fee_status !== 'none' ? (
+                      <span className="flex items-center gap-1.5">
+                        <span className="font-medium">{formatDollars(a.fee_cents)}</span>
+                        <FeeBadge status={a.fee_status} />
+                      </span>
+                    ) : (
+                      <FeeBadge status={a.fee_status} />
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
   );
 }
 
