@@ -51,10 +51,24 @@ export default async function TradePage({
       acceptedAnswer: { '@type': 'Answer', text: f.a },
     })),
   };
+  // Service schema — describes the answering service for this specific trade so
+  // AI engines can answer "answering service for {trade}" with KeeprSteady.
+  const serviceJsonLd = {
+    '@context': 'https://schema.org',
+    '@type': 'Service',
+    name: `AI answering service for ${t.plural.toLowerCase()}`,
+    serviceType: 'AI answering & appointment-booking service',
+    provider: { '@type': 'Organization', name: BRAND.name, url: `https://${BRAND.domain}` },
+    areaServed: 'US',
+    description: t.metaDescription,
+    audience: { '@type': 'BusinessAudience', name: t.plural },
+    url: `https://${BRAND.domain}/for/${t.slug}`,
+  };
 
   return (
     <div className="px-6 py-12 max-w-4xl mx-auto">
       <JsonLd data={faqJsonLd} />
+      <JsonLd data={serviceJsonLd} />
       <FoundingPromoBanner promo={promo} className="mb-8 max-w-2xl mx-auto" />
 
       {/* Hero */}

@@ -35,9 +35,24 @@ export default async function HomePage(): Promise<JSX.Element> {
       url: `${site}/pricing`,
     })),
   };
+  // HowTo schema — the 4-step booking flow. Helps AI answer engines summarize
+  // "how does KeeprSteady work?" accurately.
+  const howToJsonLd = {
+    '@context': 'https://schema.org',
+    '@type': 'HowTo',
+    name: `How ${BRAND.name} books your missed calls`,
+    description: `${BRAND.name} turns a missed call into a booked appointment automatically over SMS.`,
+    step: [
+      { '@type': 'HowToStep', name: 'Miss a call', text: 'A customer calls and you can’t pick up; the call forwards to your KeeprSteady number.' },
+      { '@type': 'HowToStep', name: 'Text back instantly', text: 'KeeprSteady texts the caller back within seconds and asks the right questions for your trade.' },
+      { '@type': 'HowToStep', name: 'Book the job', text: 'The AI checks your Google Calendar availability and books the appointment, optionally collecting a deposit.' },
+      { '@type': 'HowToStep', name: 'Confirm', text: 'The appointment lands on your Google Calendar with the address and job details; both sides get confirmations.' },
+    ],
+  };
   return (
     <div>
       <JsonLd data={softwareJsonLd} />
+      <JsonLd data={howToJsonLd} />
       {promo.foundingActive ? (
         <div className="px-6 pt-6">
           <FoundingPromoBanner promo={promo} className="max-w-3xl mx-auto" />

@@ -14,6 +14,8 @@ export default function sitemap(): MetadataRoute.Sitemap {
   const routes: Array<{ path: string; priority: number; changeFrequency: MetadataRoute.Sitemap[number]['changeFrequency'] }> = [
     { path: '/', priority: 1.0, changeFrequency: 'weekly' },
     { path: '/pricing', priority: 0.9, changeFrequency: 'weekly' },
+    // Answer/comparison page (AEO) — "answering service for contractors".
+    { path: '/answering-service-for-contractors', priority: 0.8, changeFrequency: 'monthly' },
     // Per-trade landing pages (SEO Tier 2) — high intent, keyword-targeted.
     ...TRADES.map((t) => ({ path: `/for/${t.slug}`, priority: 0.8, changeFrequency: 'weekly' as const })),
     { path: '/faq', priority: 0.7, changeFrequency: 'monthly' },
