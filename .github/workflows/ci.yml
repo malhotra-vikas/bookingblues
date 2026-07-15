@@ -15,7 +15,7 @@ jobs:
     name: Typecheck · Build · Lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # corepack provisions pnpm from the root `packageManager` field. We do NOT
       # use pnpm/action-setup with a pinned version — that collides with
@@ -61,7 +61,7 @@ jobs:
     name: Dependency audit
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Enable corepack
         run: corepack enable
       - uses: actions/setup-node@v4
@@ -86,7 +86,7 @@ jobs:
     name: Secret scan (gitleaks)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0 # full history so gitleaks scans all commits
 
