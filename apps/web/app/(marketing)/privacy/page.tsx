@@ -111,9 +111,10 @@ export default function PrivacyPage(): JSX.Element {
         <p>
           When a Subscriber connects their Google Calendar, {BRAND.name} requests the
           <code> calendar.freebusy</code> scope (to read only free/busy availability — never event
-          details — so the assistant can propose open appointment times) and the{' '}
+          details — so the assistant can propose open appointment times), the{' '}
           <code>calendar.events</code> scope (to create the confirmed appointment as a calendar
-          event). We request no other Google scopes.
+          event), and the <code>userinfo.email</code> scope (to identify and display which Google
+          account is connected). We request no other Google scopes.
         </p>
         <p>
           {BRAND.name}&apos;s use and transfer of information received from Google APIs to any other
@@ -144,7 +145,11 @@ export default function PrivacyPage(): JSX.Element {
             and we do not transfer such data to any third-party service that uses it to train its
             AI/ML models. Our AI assistant proposes appointment times from the Subscriber&apos;s own
             configured business hours and existing {BRAND.name} bookings — it is not given the
-            contents of the Subscriber&apos;s Google Calendar.
+            contents of the Subscriber&apos;s Google Calendar. In particular, no Google Calendar
+            data of any kind (neither event details nor free/busy times) is ever sent to our
+            third-party AI provider (OpenAI); the availability our assistant works with is computed
+            solely from {BRAND.name}&apos;s own appointment records and the Subscriber&apos;s
+            configured business hours.
           </li>
           <li>
             We do not allow humans to read Google user data unless we first obtain the Subscriber&apos;s
@@ -183,6 +188,15 @@ export default function PrivacyPage(): JSX.Element {
           <li>
             <strong>Google</strong> (google.com) — Calendar integration via OAuth. Holds calendar
             access tokens.
+          </li>
+          <li>
+            <strong>OpenAI</strong> (openai.com) — Powers the AI assistant that conducts the SMS
+            scheduling conversation, via the OpenAI API. Receives the End User&apos;s SMS message
+            content and the Subscriber&apos;s business configuration (business name, trade,
+            timezone, business hours) in order to generate replies and propose appointment times.
+            {' '}<strong>OpenAI never receives any Google Calendar or other Google user data.</strong>
+            {' '}Under OpenAI&apos;s API data usage policies, data submitted through the API is not
+            used to train or improve OpenAI&apos;s models.
           </li>
         </ul>
         <p>We do not share your data with any other third parties except as required by law.</p>
