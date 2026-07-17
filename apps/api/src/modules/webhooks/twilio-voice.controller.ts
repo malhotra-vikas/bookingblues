@@ -6,6 +6,7 @@ import {
   Inject,
   Param,
   Post,
+  Query,
   Req,
 } from '@nestjs/common';
 import { SkipThrottle } from '@nestjs/throttler';
@@ -15,7 +16,11 @@ import { PinoLogger } from 'nestjs-pino';
 
 import { SupabaseService } from '../../common/supabase/supabase.service';
 import { TwilioService } from '../../common/twilio/twilio.service';
-import { VOICE_CONSENT_TEXT, VOICE_CONSENT_VERSION } from '../consent/sms-consent.dto';
+import {
+  VOICE_CONSENT_REPROMPT_TEXT,
+  VOICE_CONSENT_TEXT,
+  VOICE_CONSENT_VERSION,
+} from '../consent/sms-consent.dto';
 import { openingSms } from '../conversations/templates/sms-templates';
 import { WebhookIdempotencyService } from '../../common/webhooks/webhook-idempotency.service';
 import { ENV_TOKEN } from '../../config/config.module';
@@ -85,8 +90,9 @@ export class TwilioVoiceController {
 
   /**
    * <Gather> action target. Twilio POSTs the caller's DTMF/speech here. We text
-   * only on an affirmative ("1" or "yes"); otherwise we end the call politely
-   * and send nothing.
+   * only on an affirmative ("1" or "yes"). Anything else re-asks once
+   * (`?attempt=2`) and only then ends the call politely, sending nothing —
+   * default-deny survives the retry.
    */
   @Post(':operatorId/consent')
   @HttpCode(200)
@@ -94,6 +100,7 @@ export class TwilioVoiceController {
   async consent(
     @Req() req: Request,
     @Param('operatorId') operatorId: string,
+    @Query('attempt') attempt: string | undefined,
     @Body() form: TwilioVoiceConsentForm,
   ): Promise<string> {
     verifyTwilioSignature({
@@ -110,6 +117,15 @@ export class TwilioVoiceController {
     });
 
     if (!callerConsentedFromGather(form.Digits, form.SpeechResult)) {
+      // One retry before giving up: a single silent beat used to end the call.
+      // Still default-deny — a caller who ignores both prompts is never texted.
+      if (attempt !== '2') {
+        this.logger.info(
+          { operatorId: operator.id },
+          'voice: no affirmative on first gather, re-prompting',
+        );
+        return this.repromptTwiml(operator.id);
+      }
       this.logger.info({ operatorId: operator.id }, 'voice: caller declined SMS opt-in');
       return this.declineTwiml();
     }
@@ -142,14 +158,32 @@ export class TwilioVoiceController {
   /** Spoken disclosure + affirmative prompt; <Gather> posts to the /consent callback. */
   private consentGatherTwiml(operatorId: string, businessName: string): string {
     const disclosure = VOICE_CONSENT_TEXT.replace('[business name]', businessName);
-    const action = `${this.env.API_URL}/webhooks/twilio/voice/${operatorId}/consent`;
+    return this.gatherTwiml(operatorId, disclosure, 1);
+  }
+
+  /** Second and final ask when the first <Gather> came back empty. */
+  private repromptTwiml(operatorId: string): string {
+    return this.gatherTwiml(operatorId, VOICE_CONSENT_REPROMPT_TEXT, 2);
+  }
+
+  /**
+   * `timeout` is the silence window AFTER the prompt finishes. It was 6s, which
+   * gave a caller who had just sat through a robot barely a beat to react; 10s
+   * costs nothing (barge-in ends it the moment they press) and catches the
+   * hesitant caller. `attempt` is echoed back on the action URL so /consent
+   * knows whether it has already retried.
+   */
+  private gatherTwiml(operatorId: string, prompt: string, attempt: 1 | 2): string {
+    const action =
+      `${this.env.API_URL}/webhooks/twilio/voice/${operatorId}/consent` +
+      `?attempt=${attempt === 1 ? '1' : '2'}`;
     return (
       `<?xml version="1.0" encoding="UTF-8"?>` +
       `<Response>` +
-      `<Gather input="dtmf speech" numDigits="1" timeout="6" speechTimeout="auto" ` +
+      `<Gather input="dtmf speech" numDigits="1" timeout="10" speechTimeout="auto" ` +
       `language="en-US" hints="yes, yeah, yep, sure, okay, correct" ` +
       `actionOnEmptyResult="true" method="POST" action="${escapeXml(action)}">` +
-      `<Say voice="Polly.Joanna">${escapeXml(disclosure)}</Say>` +
+      `<Say voice="Polly.Joanna">${escapeXml(prompt)}</Say>` +
       `</Gather>` +
       `</Response>`
     );

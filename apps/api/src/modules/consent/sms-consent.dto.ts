@@ -22,12 +22,31 @@ export const CONSENT_TEXT =
  * so what we say, what we store, and what we submit to the carrier are one
  * source of truth. `[business name]` is substituted at call time.
  */
-export const VOICE_CONSENT_VERSION = 'voice-ivr-2026-06-23';
+/**
+ * Ordering note (2026-07-16): the ask leads, the disclosure follows. The prior
+ * wording buried "press 1" ~18 seconds in, behind the rates/STOP/HELP block —
+ * Twilio call logs showed real callers hanging up mid-disclosure, and even the
+ * ones who sat through it pressed nothing, so every real missed call was
+ * declined. Every required element is still spoken before we text; only the
+ * order changed. `<Gather>` barge-in means a caller can press 1 as soon as they
+ * hear the ask, so the disclosure may be cut short on the call — the opening
+ * SMS itself repeats it (`STOP_DISCLOSURE` in openingSms), which is the
+ * CTIA-required placement.
+ */
+export const VOICE_CONSENT_VERSION = 'voice-ivr-2026-07-16';
 export const VOICE_CONSENT_TEXT =
-  'Thanks for calling [business name]. They are with another customer right now. ' +
-  'We can send you a text message to help get you scheduled. Message and data rates ' +
+  'Thanks for calling [business name]. Sorry we missed you! To get a text right ' +
+  'now so we can get you scheduled, press 1, or say yes. Message and data rates ' +
   'may apply. Reply STOP to opt out, or HELP for help, at any time. ' +
-  'To get that text now, press 1, or say yes.';
+  'Press 1, or say yes, to get your text now.';
+
+/**
+ * Spoken once when the first <Gather> comes back empty. A single retry converts
+ * the caller who was still deciding; without it one silent beat ended the call
+ * with "we will not text you".
+ */
+export const VOICE_CONSENT_REPROMPT_TEXT =
+  'Still there? Press 1, or say yes, and we will text you right now to get you scheduled.';
 
 export const SmsOptInSchema = z.object({
   name: z.string().trim().min(1).max(120),

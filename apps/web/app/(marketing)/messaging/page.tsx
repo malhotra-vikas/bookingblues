@@ -81,10 +81,10 @@ export default function MessagingProgramPage(): JSX.Element {
             Before any text is sent, the caller hears this <strong>exact</strong> spoken disclosure
             and is asked to opt in (the business name is the contractor&apos;s own):
             <span className="mt-1.5 block rounded bg-slate-100 dark:bg-slate-800 px-3 py-2 font-mono text-[13px]">
-              &ldquo;Thanks for calling [business name]. They are with another customer right now. We
-              can send you a text message to help get you scheduled. Message and data rates may apply.
-              Reply STOP to opt out, or HELP for help, at any time. To get that text now, press 1, or
-              say yes.&rdquo;
+              &ldquo;Thanks for calling [business name]. Sorry we missed you! To get a text right now
+              so we can get you scheduled, press 1, or say yes. Message and data rates may apply.
+              Reply STOP to opt out, or HELP for help, at any time. Press 1, or say yes, to get your
+              text now.&rdquo;
             </span>
           </li>
           <li>
