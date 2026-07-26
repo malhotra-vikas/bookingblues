@@ -24,6 +24,9 @@ export default function MarketingLayout({ children }: { children: ReactNode }): 
           <Link href="/pricing" className="no-underline hover:text-accent">
             Pricing
           </Link>
+          <Link href="/comparison" className="no-underline hover:text-accent">
+            Compare
+          </Link>
           <Link href="/faq" className="no-underline hover:text-accent">
             FAQ
           </Link>

@@ -45,6 +45,8 @@ export type PlanSlug = 'solo' | 'crew' | 'fleet';
 export interface Plan {
   slug: PlanSlug;
   name: string;
+  /** One-line "who this is for" shown under the plan name on the pricing card. */
+  tagline: string;
   monthlyPriceUsd: number;
   annualPriceUsd: number;
   conversationsPerMonth: number;
@@ -59,17 +61,22 @@ export const PLANS: readonly Plan[] = [
   {
     slug: 'solo',
     name: 'Solo',
-    monthlyPriceUsd: 325,
-    annualPriceUsd: 3_250,
+    tagline: "For the solo operator who can't answer under a sink.",
+    // NOTE: this is the fallback price only. The live price a visitor sees and
+    // is charged comes from the Stripe Price behind STRIPE_PRICE_SOLO_MONTHLY /
+    // _ANNUAL (read via /v1/plans). Updating the number here does NOT change
+    // billing until the Stripe Price is updated too. Keep the two in sync.
+    monthlyPriceUsd: 199,
+    annualPriceUsd: 1_990,
     conversationsPerMonth: 80,
     approxMessagesPerMonth: 960,
     platformFeePct: 10,
     depositMode: 'off-by-default',
     features: [
-      'One KeeprSteady number',
-      'AI booking assistant',
-      'Google Calendar integration',
-      'Optional booking deposit via Stripe',
+      'Your own dedicated business text line',
+      'AI qualifies, books & confirms every missed-call lead',
+      'Google Calendar booking — no double-bookings',
+      'Confirmation texts + email to you and the customer',
       'Overages: not available — upgrade to Crew',
     ],
     recommended: false,
@@ -77,6 +84,7 @@ export const PLANS: readonly Plan[] = [
   {
     slug: 'crew',
     name: 'Crew',
+    tagline: "For a growing team where the owner isn't the one answering.",
     monthlyPriceUsd: 650,
     annualPriceUsd: 6_500,
     conversationsPerMonth: 500,
@@ -85,8 +93,8 @@ export const PLANS: readonly Plan[] = [
     depositMode: 'on-by-default',
     features: [
       'Everything in Solo',
+      'Deposit collection on by default — lock in every booking',
       'Priority support',
-      'Deposit collection on by default (toggle off in onboarding)',
       'Overages: $15 per batch of 50 conversations',
     ],
     recommended: true,
@@ -94,6 +102,7 @@ export const PLANS: readonly Plan[] = [
   {
     slug: 'fleet',
     name: 'Fleet',
+    tagline: 'For multi-crew and multi-location operations.',
     monthlyPriceUsd: 1_499,
     annualPriceUsd: 14_990,
     conversationsPerMonth: 1_500,
@@ -102,9 +111,8 @@ export const PLANS: readonly Plan[] = [
     depositMode: 'mandatory',
     features: [
       'Everything in Crew',
-      'Dedicated account manager',
       'Multi-location / multi-number support',
-      'Deposit collection mandatory at this tier',
+      'Dedicated account manager',
       'Overages: $15 per batch of 50 conversations',
     ],
     recommended: false,

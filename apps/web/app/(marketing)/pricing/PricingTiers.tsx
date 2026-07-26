@@ -109,6 +109,7 @@ function TierCard({
       ) : null}
 
       <div className="font-display text-sm uppercase tracking-wide text-accent">{plan.name}</div>
+      <p className="mt-1 text-sm text-muted">{plan.tagline}</p>
       {showFounding ? (
         // Founding Member: lead with the $25 first-month price, regular struck through.
         <>

@@ -19,14 +19,58 @@ export default async function PricingPage(): Promise<JSX.Element> {
     <div className="px-6 py-12 max-w-5xl mx-auto">
       <FoundingPromoBanner promo={promo} className="mb-8 max-w-2xl mx-auto" />
       <header className="text-center max-w-2xl mx-auto">
-        <h1 className="text-3xl sm:text-4xl font-semibold tracking-tight text-ink">Pricing</h1>
+        <h1 className="text-3xl sm:text-4xl font-semibold tracking-tight text-ink dark:text-slate-100">
+          Never lose another job to a missed call.
+        </h1>
         <p className="mt-3 text-muted">
-          One subscription. Three sizes. {TRIAL_COPY.durationLabel}, no charge until day 8.
+          Not an answering service. When you can&rsquo;t pick up, KeeprSteady texts the caller back
+          in seconds, qualifies the job, books it on your calendar, and collects the deposit —
+          before they call the next guy.
         </p>
         <p className="mt-2 text-sm text-muted">
-          Have questions? <a href={BRAND.demoBookingUrl} target="_blank" rel="noopener noreferrer" className="underline">Book a 15-min demo →</a>
+          {TRIAL_COPY.durationLabel}, no charge until day 8.{' '}
+          <a href={BRAND.demoBookingUrl} target="_blank" rel="noopener noreferrer" className="underline">
+            Book a 15-min demo →
+          </a>
         </p>
       </header>
+
+      {/* ── ROI framing: one job pays for the month ─────────────────────── */}
+      <section className="mt-10 rounded-2xl border border-accent/20 bg-accent-soft/60 dark:bg-slate-900 dark:border-slate-800 p-6 max-w-3xl mx-auto">
+        <p className="text-xs font-semibold tracking-[0.16em] uppercase text-accent mb-2">
+          One recovered job pays for the month
+        </p>
+        <p className="text-[15px] text-ink dark:text-slate-100 leading-relaxed">
+          The average missed call in the trades is a <strong>$300–$1,500 job</strong>. Miss three a
+          week and you&rsquo;re handing competitors five figures a year. KeeprSteady turns those
+          missed calls into booked appointments with a deposit already down — so the job actually
+          shows up.
+        </p>
+        <div className="mt-5 grid gap-3 sm:grid-cols-2">
+          <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white/70 dark:bg-slate-950/40 p-4">
+            <p className="text-xs font-semibold uppercase tracking-wide text-muted">
+              Without KeeprSteady
+            </p>
+            <ul className="mt-2 space-y-1.5 text-sm text-muted">
+              <li>Call goes to voicemail</li>
+              <li>Homeowner calls the next contractor</li>
+              <li>No-show risk on every booking</li>
+              <li>You never find out you lost the job</li>
+            </ul>
+          </div>
+          <div className="rounded-xl border border-emerald-200 dark:border-emerald-900 bg-emerald-50 dark:bg-emerald-950/30 p-4">
+            <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700 dark:text-emerald-300">
+              With KeeprSteady
+            </p>
+            <ul className="mt-2 space-y-1.5 text-sm text-ink dark:text-slate-100">
+              <li>Caller gets a text back in seconds</li>
+              <li>Job qualified &amp; booked on your calendar</li>
+              <li>Deposit collected up front</li>
+              <li>You wake up to a confirmed appointment</li>
+            </ul>
+          </div>
+        </div>
+      </section>
 
       <PricingTiers prices={prices} promo={promo} />
 
@@ -52,6 +96,17 @@ export default async function PricingPage(): Promise<JSX.Element> {
           taken from you.</strong>{' '}
           Solo: +10%. Crew: +15%. Fleet: +20%. Our incentive is exactly the same as yours: book
           more jobs.
+        </p>
+      </section>
+
+      {/* ── Trial guarantee ─────────────────────────────────────────────── */}
+      <section className="mt-6 rounded-xl border border-slate-200 bg-slate-50 dark:bg-slate-900 dark:border-slate-800 p-6 max-w-3xl mx-auto text-center">
+        <p className="text-lg font-semibold text-ink dark:text-slate-100">
+          Try it free for 7 days — no card charged until day 8.
+        </p>
+        <p className="mt-2 text-[15px] text-muted leading-relaxed">
+          See real missed calls turn into booked jobs before you pay a cent. If it&rsquo;s not
+          recovering work for you, cancel in 2 clicks from Settings — no email, no phone call.
         </p>
       </section>
 
@@ -98,6 +153,14 @@ export default async function PricingPage(): Promise<JSX.Element> {
 }
 
 const INLINE_FAQ: ReadonlyArray<{ q: string; a: string }> = [
+  {
+    q: 'How is this different from an answering service?',
+    a: 'An answering service takes a message and hands you a callback list. KeeprSteady books the job and collects the deposit for you — you wake up to confirmed appointments on your calendar, not a stack of people to chase. It qualifies the lead first, so out-of-scope and tire-kicker calls never make it onto your schedule.',
+  },
+  {
+    q: 'I already call people back — why do I need this?',
+    a: 'By the time you are out from under the sink, the homeowner has already called the next contractor. Speed wins the job. KeeprSteady replies within seconds, 24/7, while you keep working — and it does not just answer, it books the appointment and takes the deposit.',
+  },
   {
     q: 'Can I cancel anytime?',
     a: 'Yes — in 2 clicks from Settings → Billing. No email, no phone call, no minimum term. Your dedicated number is released after a 7-day grace period in case you change your mind.',
