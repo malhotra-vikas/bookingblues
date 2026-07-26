@@ -56,7 +56,7 @@ export default async function FaqPage(): Promise<JSX.Element> {
     },
     {
       q: 'Is the booking deposit required?',
-      a: 'On Solo, deposit is off by default — enable it anytime in settings. On Crew, deposit is on by default but can be disabled in onboarding with one toggle (your dashboard will show estimated revenue forfeited if you turn it off). On Fleet, deposit is mandatory and cannot be disabled. You always set your own deposit amount and receive 100% of it. KeeprSteady adds a platform fee on top (10% Solo, 15% Crew, 20% Fleet) charged to the customer via a single Stripe transaction — we never touch your funds.',
+      a: 'On Solo, deposit is off by default — enable it anytime in settings. On Crew, deposit is on by default but can be disabled in onboarding with one toggle (your dashboard will show estimated revenue forfeited if you turn it off). On Fleet, deposit is mandatory and cannot be disabled. You always set your own deposit amount and receive 100% of it. KeeprSteady adds a platform fee on top (15% Solo, 12% Crew, 10% Fleet — the fee drops as you scale) charged to the customer via a single Stripe transaction — we never touch your funds.',
     },
     {
       q: 'What does the AI do if it cannot book?',

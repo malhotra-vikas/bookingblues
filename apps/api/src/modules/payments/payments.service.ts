@@ -82,11 +82,16 @@ export class PaymentsService {
     emergency?: boolean;
   }): Promise<{ url: string; paymentId: string }> {
     const eligibility = await this.ensureFeeEligible(args.operatorId);
-    // Take rate is per-plan (Solo 10% / Crew 15% / Fleet 20%), charged on top of
-    // the deposit and paid by the caller. Legacy/null plans fall back to the env
-    // default so a missing plan never blocks fee collection.
+    // Take rate is per-plan (Solo 15% / Crew 12% / Fleet 10% by default), charged on
+    // top of the deposit and paid by the caller. Rates are env-configurable via
+    // PLATFORM_TAKE_RATE_BPS_{SOLO,CREW,FLEET}. Legacy/null plans fall back to the
+    // global env default so a missing plan never blocks fee collection.
     const takeRateBps =
-      platformTakeRateBpsForPlan(eligibility.plan) ?? this.env.PLATFORM_TAKE_RATE_BPS;
+      platformTakeRateBpsForPlan(eligibility.plan, {
+        solo: this.env.PLATFORM_TAKE_RATE_BPS_SOLO,
+        crew: this.env.PLATFORM_TAKE_RATE_BPS_CREW,
+        fleet: this.env.PLATFORM_TAKE_RATE_BPS_FLEET,
+      }) ?? this.env.PLATFORM_TAKE_RATE_BPS;
     const pricing = computeBookingFeeCharge({
       depositCents: eligibility.feeCents,
       ...(args.emergency ? { emergencyFeeCents: eligibility.emergencyFeeCents } : {}),

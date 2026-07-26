@@ -94,8 +94,8 @@ export default async function PricingPage(): Promise<JSX.Element> {
         <p className="text-[15px] text-ink dark:text-slate-100 leading-relaxed">
           <strong>You set the deposit. We add our fee on top — charged to the customer, not
           taken from you.</strong>{' '}
-          Solo: +10%. Crew: +15%. Fleet: +20%. Our incentive is exactly the same as yours: book
-          more jobs.
+          Solo: +15%. Crew: +12%. Fleet: +10% — the bigger you grow, the smaller our cut. Our
+          incentive is exactly the same as yours: book more jobs.
         </p>
       </section>
 
@@ -175,6 +175,6 @@ const INLINE_FAQ: ReadonlyArray<{ q: string; a: string }> = [
   },
   {
     q: 'Is deposit collection required?',
-    a: 'On Solo, deposit is off by default — enable it anytime in settings. On Crew, deposit is on by default but can be disabled in onboarding with one toggle (your dashboard will show estimated revenue forfeited if you turn it off). On Fleet, deposit is mandatory and cannot be disabled. You always set your own deposit amount and receive 100% of it. KeeprSteady adds a platform fee on top (10% Solo, 15% Crew, 20% Fleet) charged to the customer via a single Stripe transaction — we never touch your funds.',
+    a: 'On Solo, deposit is off by default — enable it anytime in settings. On Crew, deposit is on by default but can be disabled in onboarding with one toggle (your dashboard will show estimated revenue forfeited if you turn it off). On Fleet, deposit is mandatory and cannot be disabled. You always set your own deposit amount and receive 100% of it. KeeprSteady adds a platform fee on top (15% Solo, 12% Crew, 10% Fleet — the fee drops as you scale) charged to the customer via a single Stripe transaction — we never touch your funds.',
   },
 ];

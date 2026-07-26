@@ -78,7 +78,15 @@ const baseSchema = z.object({
   STRIPE_COUPON_FOUNDING_FLEET: z.string().optional(),
 
   // Stripe (booking-fee economics)
+  // Global fallback take rate (bps) for legacy/unknown plans with no per-plan value.
   PLATFORM_TAKE_RATE_BPS: z.coerce.number().int().min(0).max(10_000).default(1000),
+  // Per-plan booking-fee take rate (bps), charged on top of the deposit. Env-configurable
+  // so rates can be changed without a code deploy. Defaults reward scale — the bigger the
+  // plan, the smaller our cut: Solo 15% > Crew 12% > Fleet 10%. Keep in sync with the display
+  // copy in apps/web/lib/brand.ts (PLANS[].platformFeePct).
+  PLATFORM_TAKE_RATE_BPS_SOLO: z.coerce.number().int().min(0).max(10_000).default(1500),
+  PLATFORM_TAKE_RATE_BPS_CREW: z.coerce.number().int().min(0).max(10_000).default(1200),
+  PLATFORM_TAKE_RATE_BPS_FLEET: z.coerce.number().int().min(0).max(10_000).default(1000),
   MIN_PLATFORM_FEE_CENTS: z.coerce.number().int().min(0).default(100),
   DEFAULT_BOOKING_FEE_CENTS: z.coerce.number().int().min(0).default(2500),
   TRIAL_DAYS: z.coerce.number().int().min(0).default(7),

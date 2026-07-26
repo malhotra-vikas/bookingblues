@@ -51,7 +51,10 @@ export interface Plan {
   annualPriceUsd: number;
   conversationsPerMonth: number;
   approxMessagesPerMonth: number;
-  platformFeePct: 10 | 15 | 20;
+  // Take rate charged on top of the deposit (paid by the caller). Rewards scale —
+  // bigger plan, smaller cut. Mirrors the API defaults in
+  // apps/api/src/modules/billing/plan-policy.ts + env PLATFORM_TAKE_RATE_BPS_*.
+  platformFeePct: 10 | 12 | 15;
   depositMode: 'off-by-default' | 'on-by-default' | 'mandatory';
   features: string[];
   recommended: boolean;
@@ -70,7 +73,7 @@ export const PLANS: readonly Plan[] = [
     annualPriceUsd: 1_990,
     conversationsPerMonth: 80,
     approxMessagesPerMonth: 960,
-    platformFeePct: 10,
+    platformFeePct: 15,
     depositMode: 'off-by-default',
     features: [
       'Your own dedicated business text line',
@@ -89,7 +92,7 @@ export const PLANS: readonly Plan[] = [
     annualPriceUsd: 6_500,
     conversationsPerMonth: 500,
     approxMessagesPerMonth: 6_000,
-    platformFeePct: 15,
+    platformFeePct: 12,
     depositMode: 'on-by-default',
     features: [
       'Everything in Solo',
@@ -107,7 +110,7 @@ export const PLANS: readonly Plan[] = [
     annualPriceUsd: 14_990,
     conversationsPerMonth: 1_500,
     approxMessagesPerMonth: 18_000,
-    platformFeePct: 20,
+    platformFeePct: 10,
     depositMode: 'mandatory',
     features: [
       'Everything in Crew',

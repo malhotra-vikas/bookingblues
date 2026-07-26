@@ -1,10 +1,18 @@
 import { depositModeForPlan, platformTakeRateBpsForPlan } from './plan-policy';
 
 describe('plan-policy', () => {
-  it('maps each plan to its take rate (Solo 10% / Crew 15% / Fleet 20%)', () => {
-    expect(platformTakeRateBpsForPlan('solo')).toBe(1000);
-    expect(platformTakeRateBpsForPlan('crew')).toBe(1500);
-    expect(platformTakeRateBpsForPlan('fleet')).toBe(2000);
+  it('maps each plan to its default take rate (Solo 15% / Crew 12% / Fleet 10%)', () => {
+    expect(platformTakeRateBpsForPlan('solo')).toBe(1500);
+    expect(platformTakeRateBpsForPlan('crew')).toBe(1200);
+    expect(platformTakeRateBpsForPlan('fleet')).toBe(1000);
+  });
+
+  it('prefers an env override when provided (including 0)', () => {
+    const overrides = { solo: 900, crew: 0 };
+    expect(platformTakeRateBpsForPlan('solo', overrides)).toBe(900);
+    expect(platformTakeRateBpsForPlan('crew', overrides)).toBe(0);
+    // No override for fleet → falls back to the compiled default.
+    expect(platformTakeRateBpsForPlan('fleet', overrides)).toBe(1000);
   });
 
   it('maps each plan to its deposit mode', () => {
