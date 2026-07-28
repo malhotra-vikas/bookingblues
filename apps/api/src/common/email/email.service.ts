@@ -12,7 +12,8 @@ interface EmailAttachment {
 }
 
 interface SendArgs {
-  readonly to: string;
+  /** One address, or several to put on the same To: line (e.g. a shared inbox list). */
+  readonly to: string | ReadonlyArray<string>;
   readonly subject: string;
   readonly html: string;
   readonly text?: string;
@@ -59,7 +60,7 @@ export class EmailService {
 
     const body: Record<string, unknown> = {
       from: this.env.EMAIL_FROM,
-      to: [args.to],
+      to: Array.isArray(args.to) ? [...args.to] : [args.to as string],
       subject: args.subject,
       html: args.html,
     };
@@ -106,8 +107,10 @@ export class EmailService {
   }
 }
 
-function maskEmail(email: string): string {
-  const [local, domain] = email.split('@');
-  if (!local || !domain) return email;
+/** CLAUDE.md §2/§11.5: emails are logged as first-char + domain only, never in full. */
+function maskEmail(email: string | ReadonlyArray<string>): string {
+  if (Array.isArray(email)) return email.map((e) => maskEmail(e as string)).join(', ');
+  const [local, domain] = (email as string).split('@');
+  if (!local || !domain) return email as string;
   return `${local[0] ?? '•'}•••@${domain}`;
 }

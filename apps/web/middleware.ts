@@ -2,7 +2,7 @@ import { createServerClient } from '@supabase/ssr';
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
-import { TERMS } from './lib/brand';
+import { BRAND, TERMS } from './lib/brand';
 
 const PROTECTED_PREFIXES = ['/dashboard', '/onboarding', '/settings', '/admin', '/sales'];
 const ADMIN_PREFIXES = ['/admin'];
@@ -18,7 +18,51 @@ const AUTH_PAGES = ['/login', '/signup'];
 // itself (no loop).
 const TERMS_GATE_PREFIXES = ['/dashboard', '/onboarding', '/settings'];
 
+/**
+ * The survey subdomain (missedcalls.keeprsteady.com) is served by this same
+ * Next app. It has exactly one page: the root serves /survey, and every other
+ * path bounces to the apex domain so the subdomain can never shadow the
+ * marketing site or split its SEO. Matched by leading label so Railway preview
+ * hosts and a local `missedcalls.localhost:3000` work too.
+ */
+const SURVEY_HOST_LABEL = BRAND.surveyHost.split('.')[0]!;
+
+function isSurveyHost(req: NextRequest): boolean {
+  const host = (req.headers.get('host') ?? '').toLowerCase().split(':')[0] ?? '';
+  return host === BRAND.surveyHost || host.startsWith(`${SURVEY_HOST_LABEL}.`);
+}
+
 export async function middleware(req: NextRequest) {
+  // Handle the survey host first and return early: the questionnaire is public,
+  // so there's no reason to pay for a Supabase token refresh on every hit.
+  if (isSurveyHost(req)) {
+    const path = req.nextUrl.pathname;
+    if (path === '/' || path === '/survey') {
+      const url = req.nextUrl.clone();
+      url.pathname = '/survey';
+      return NextResponse.rewrite(url);
+    }
+    // Anything else on this host belongs to the main site (the footer's
+    // /terms and /privacy links land here). Send it to the apex, preserving
+    // path + query.
+    const away = new URL(`https://${BRAND.domain}${path}${req.nextUrl.search}`);
+    return NextResponse.redirect(away, 308);
+  }
+
+  // Keep one canonical home for the survey. On the apex domain /survey would be
+  // a second copy of the same page on a second hostname, so send it to the
+  // subdomain (308 consolidates any link equity onto the canonical URL).
+  // Skipped outside production so `localhost:3000/survey` stays testable.
+  if (
+    process.env.NODE_ENV === 'production' &&
+    (req.nextUrl.pathname === '/survey' || req.nextUrl.pathname.startsWith('/survey/'))
+  ) {
+    return NextResponse.redirect(
+      new URL(`https://${BRAND.surveyHost}/${req.nextUrl.search}`),
+      308,
+    );
+  }
+
   let response = NextResponse.next({ request: req });
 
   const supabase = createServerClient(

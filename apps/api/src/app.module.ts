@@ -33,6 +33,7 @@ import { PaymentsModule } from './modules/payments/payments.module';
 import { RemindersModule } from './modules/reminders/reminders.module';
 import { SalesModule } from './modules/sales/sales.module';
 import { SlackModule } from './modules/slack/slack.module';
+import { SurveysModule } from './modules/surveys/surveys.module';
 import { SummariesModule } from './modules/summaries/summaries.module';
 import { TelephonyModule } from './modules/telephony/telephony.module';
 import { WebhooksModule } from './modules/webhooks/webhooks.module';
@@ -74,6 +75,7 @@ import { WebhooksModule } from './modules/webhooks/webhooks.module';
     LeadsModule,
     PlansModule,
     CareersModule,
+    SurveysModule,
     ConsentModule,
     SalesModule,
     SummariesModule,

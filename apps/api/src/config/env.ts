@@ -103,6 +103,19 @@ const baseSchema = z.object({
   EMAIL_FROM: z.string().optional(),
   // Inbox that receives careers applications from /careers. Override per env.
   CAREERS_INBOX_EMAIL: z.string().email().default('apply@keeprsteady.com'),
+  // Inbox(es) that receive missed-calls questionnaire responses submitted at
+  // missedcalls.keeprsteady.com. Comma-separated for multiple recipients — they
+  // all go on one To: line, so replies thread to everyone. Parsed to a string[].
+  SURVEY_INBOX_EMAIL: z
+    .string()
+    .default('sales@keeprsteady.com')
+    .transform((s) =>
+      s
+        .split(',')
+        .map((e) => e.trim())
+        .filter(Boolean),
+    )
+    .pipe(z.array(z.string().email()).min(1, 'SURVEY_INBOX_EMAIL needs at least one address')),
 
   // Shared secret guarding internal cron endpoints (daily summary etc.).
   // External cron (Railway, EasyCron, etc.) sends `X-Cron-Secret: <value>`.

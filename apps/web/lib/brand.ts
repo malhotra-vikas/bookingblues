@@ -11,6 +11,11 @@ export const BRAND = {
   // for carrier/TCR vetting.
   legalEntity: 'Malhotra Consultants LLC',
   domain: 'keeprsteady.com',
+  // Single-purpose subdomain hosting the missed-calls questionnaire linked from
+  // the outbound lead email. Served by this same Next app: middleware rewrites
+  // this host's root to /survey and bounces every other path to the apex domain
+  // (so the subdomain can't shadow the marketing site or split its SEO).
+  surveyHost: 'missedcalls.keeprsteady.com',
   salesEmail: 'sales@keeprsteady.com',
   supportEmail: 'support@keeprsteady.com',
   applyEmail: 'apply@keeprsteady.com',
