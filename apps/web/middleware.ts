@@ -49,19 +49,17 @@ export async function middleware(req: NextRequest) {
     return NextResponse.redirect(away, 308);
   }
 
-  // Keep one canonical home for the survey. On the apex domain /survey would be
-  // a second copy of the same page on a second hostname, so send it to the
-  // subdomain (308 consolidates any link equity onto the canonical URL).
-  // Skipped outside production so `localhost:3000/survey` stays testable.
-  if (
-    process.env.NODE_ENV === 'production' &&
-    (req.nextUrl.pathname === '/survey' || req.nextUrl.pathname.startsWith('/survey/'))
-  ) {
-    return NextResponse.redirect(
-      new URL(`https://${BRAND.surveyHost}/${req.nextUrl.search}`),
-      308,
-    );
-  }
+  // NOTE: keeprsteady.com/survey deliberately serves the questionnaire directly
+  // rather than redirecting to the subdomain.
+  //
+  // Railway must register a custom domain before it can terminate TLS for it, so
+  // missedcalls.keeprsteady.com cannot be made to work from Cloudflare alone.
+  // The apex is therefore the questionnaire's real home, and the subdomain is an
+  // optional vanity alias that 301s here via a Cloudflare Redirect Rule.
+  //
+  // Do NOT reintroduce an apex → subdomain redirect while that rule exists: the
+  // two would bounce off each other in an infinite loop. `alternates.canonical`
+  // in app/survey/page.tsx points at the apex for the same reason.
 
   let response = NextResponse.next({ request: req });
 

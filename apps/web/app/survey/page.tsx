@@ -18,11 +18,14 @@ export const metadata: Metadata = {
   description:
     'Six quick questions about the calls your business misses. Takes about a minute — no signup, answer anonymously if you like.',
   robots: { index: false, follow: false },
-  alternates: { canonical: `https://${BRAND.surveyHost}/` },
+  // Canonical is the APEX, not the subdomain: Railway has to register a custom
+  // domain to serve it, so the apex is where the page actually lives. The
+  // subdomain is an optional Cloudflare-level redirect that lands here.
+  alternates: { canonical: `https://${BRAND.domain}/survey` },
   openGraph: {
     title: `Quick questions on missed calls — ${BRAND.name}`,
     description: 'Six questions, about a minute. Helps us build the right thing for your trade.',
-    url: `https://${BRAND.surveyHost}/`,
+    url: `https://${BRAND.domain}/survey`,
   },
 };
 

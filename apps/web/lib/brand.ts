@@ -11,10 +11,11 @@ export const BRAND = {
   // for carrier/TCR vetting.
   legalEntity: 'Malhotra Consultants LLC',
   domain: 'keeprsteady.com',
-  // Single-purpose subdomain hosting the missed-calls questionnaire linked from
-  // the outbound lead email. Served by this same Next app: middleware rewrites
-  // this host's root to /survey and bounces every other path to the apex domain
-  // (so the subdomain can't shadow the marketing site or split its SEO).
+  // Optional vanity alias for the missed-calls questionnaire. The page's real
+  // home is keeprsteady.com/survey — Railway must register a custom domain
+  // before it can terminate TLS for a hostname, so this subdomain only works if
+  // it's either added in Railway (then middleware rewrites its root to /survey)
+  // or redirected to the apex at the Cloudflare edge. See docs/SURVEY_SUBDOMAIN.md.
   surveyHost: 'missedcalls.keeprsteady.com',
   salesEmail: 'sales@keeprsteady.com',
   supportEmail: 'support@keeprsteady.com',
