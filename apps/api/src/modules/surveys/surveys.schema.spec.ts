@@ -6,7 +6,7 @@ const ans = (code: string, label = 'Some option') => ({ code, label });
 const valid = {
   q1: ans('B', '4–7'),
   q2: ans('A', 'They call a competitor'),
-  q3: [ans('A', 'Instant text reply'), ans('D', 'Automatic calendar booking')],
+  q3: [ans('A', 'Lead qualifying questions'), ans('C', 'Automatic calendar booking')],
   q4: ans('B', 'Jobber'),
   q5: ans('A', 'Has to integrate'),
   q6: ans('C', '$200–$349'),
@@ -77,8 +77,8 @@ describe('renderSubmission', () => {
     const body = SubmitSurveySchema.parse(valid);
     const { text } = renderSubmission(body, 'Reyes Plumbing');
     expect(text).toContain('B) 4–7');
-    expect(text).toContain('A) Instant text reply');
-    expect(text).toContain('D) Automatic calendar booking');
+    expect(text).toContain('A) Lead qualifying questions');
+    expect(text).toContain('C) Automatic calendar booking');
     expect(text).toContain('C) $200–$349');
   });
 

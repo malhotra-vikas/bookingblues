@@ -56,13 +56,17 @@ const QUESTIONS: ReadonlyArray<Question> = [
     hint: 'Pick your top 3.',
     multi: { max: 3 },
     options: [
-      { code: 'A', label: 'Instant text reply to every missed call' },
-      { code: 'B', label: 'Lead qualifying questions (budget, job type, timeline)' },
-      { code: 'C', label: 'Emergency keyword alerts sent directly to you' },
-      { code: 'D', label: 'Automatic calendar booking' },
-      { code: 'E', label: 'Non-refundable deposit collection upfront' },
-      { code: 'F', label: 'Job summary email after each booked call' },
-      { code: 'G', label: 'After-hours handling only (nights/weekends)' },
+      { code: 'A', label: 'Lead qualifying questions (budget, job type, timeline)' },
+      { code: 'B', label: 'Human-in-the-loop emergency escalation' },
+      { code: 'C', label: 'Automatic calendar booking' },
+      { code: 'D', label: 'Deposit collection upfront' },
+      { code: 'E', label: 'Job summary email after each booked call' },
+      { code: 'F', label: 'After-hours handling only (nights/weekends)' },
+      {
+        code: 'G',
+        label:
+          'Predictive diagnostics from past jobs and other data (likely problem and parts needed)',
+      },
     ],
   },
   {

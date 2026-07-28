@@ -61,7 +61,7 @@ console.log('\n=== 2. Schema rejects bad input ===');
   const base = {
     q1: { code: 'A', label: '1–3' },
     q2: { code: 'A', label: 'They call a competitor' },
-    q3: [{ code: 'A', label: 'Instant text reply' }],
+    q3: [{ code: 'A', label: 'Lead qualifying questions' }],
     q4: { code: 'A', label: 'Housecall Pro' },
     q5: { code: 'A', label: 'Has to integrate' },
     q6: { code: 'A', label: '$0–$99' },
@@ -149,9 +149,9 @@ if (!doSubmit) {
     q1: { code: 'C', label: '8–15' },
     q2: { code: 'A', label: 'They call a competitor' },
     q3: [
-      { code: 'A', label: 'Instant text reply to every missed call' },
-      { code: 'D', label: 'Automatic calendar booking' },
-      { code: 'E', label: 'Non-refundable deposit collection upfront' },
+      { code: 'A', label: 'Lead qualifying questions (budget, job type, timeline)' },
+      { code: 'C', label: 'Automatic calendar booking' },
+      { code: 'D', label: 'Deposit collection upfront' },
     ],
     q4: { code: 'B', label: 'Jobber' },
     q5: { code: 'B', label: "I'd switch calendars if the tool solved my problem" },
