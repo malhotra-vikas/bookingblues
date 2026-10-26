@@ -11,7 +11,7 @@ import Stripe from 'stripe';
  *
  * Then set in the API env (same mode as the key):
  *   STRIPE_COUPON_FOUNDING_SOLO / _CREW / _FLEET  = printed ids
- *   PROMO_FOUNDING_ENDS_AT = 2026-10-01T00:00:00-04:00
+ *   PROMO_FOUNDING_ENDS_AT = the printed end date
  */
 const key = process.env.STRIPE_SECRET_KEY;
 if (!key) {
@@ -23,12 +23,15 @@ const live = key.startsWith('sk_live');
 
 // Regular MONTHLY prices in cents. Keep in sync with the live Stripe prices.
 const PLANS = [
-  { slug: 'SOLO', name: 'Solo', priceCents: 32500 },
+  { slug: 'SOLO', name: 'Solo', priceCents: 19900 },
   { slug: 'CREW', name: 'Crew', priceCents: 65000 },
   { slug: 'FLEET', name: 'Fleet', priceCents: 149900 },
 ];
 const FIRST_MONTH_CENTS = 2500; // $25
-const REDEEM_BY = Math.floor(new Date('2026-10-01T00:00:00-04:00').getTime() / 1000);
+// End of 2027, US Eastern. Stripe can't extend redeem_by on an existing coupon,
+// so moving the end date means creating new coupons and repointing env.
+const ENDS_AT = '2028-01-01T00:00:00-05:00';
+const REDEEM_BY = Math.floor(new Date(ENDS_AT).getTime() / 1000);
 
 console.log(`Stripe mode: ${live ? 'LIVE' : 'TEST'}\n`);
 
@@ -47,4 +50,4 @@ for (const p of PLANS) {
   );
   console.log(`  STRIPE_COUPON_FOUNDING_${p.slug}=${coupon.id}\n`);
 }
-console.log('PROMO_FOUNDING_ENDS_AT=2026-10-01T00:00:00-04:00');
+console.log(`PROMO_FOUNDING_ENDS_AT=${ENDS_AT}`);
