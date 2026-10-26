@@ -6,6 +6,56 @@ Quick-start brief for the next session. Read this first, then `docs/PROGRESS.md`
 
 ---
 
+## Resume brief — 2026-07-16 (after the 2026-07-15 session, Mac restarted)
+
+**Where we are:** shipping growth + monetization features. **All CODE is committed +
+deployed to Railway** (latest `f3ba94b "AEO Deploy"`, prod verified live). Working tree
+has **only DOCS uncommitted** (safe across restart): `CLAUDE.md`, `docs/PROGRESS.md`,
+`docs/SEO_AEO.md` (new), `docs/manual-test-2026-06-30.md` (old untracked). → **First thing:
+`git add` + commit those docs** (user reviews/commits themselves per usual).
+
+### What shipped & deployed this session (all live on prod)
+- **Founding Member promo** — $25 first month on monthly plans, 7-day trial then regular
+  price. Per-plan Stripe `duration:once` coupons (TEST mode: Solo `Wv2sUiy2`, Crew
+  `iphMZCBZ`, Fleet `lkxAlQsp`; created via `apps/api/scripts/create-founding-coupons.mjs`).
+  Env-gated (`PROMO_FOUNDING_ENDS_AT` + `STRIPE_COUPON_FOUNDING_*`). Banners on home/pricing/
+  signup + strikethrough price on pricing cards (live per-request via `getPromo()` no-store).
+  **⚠️ Real discounts need LIVE Stripe** (still TEST mode — see Stripe cutover blocker).
+- **Multi-truck capacity** — `operators.truck_count` (migration `20260710000001`), 30-min
+  travel buffer, capacity from our appointments DB (`modules/appointments/capacity.ts`);
+  onboarding + settings fields. External Google events ignored for multi-truck (per decision).
+- **SEO Tier 1 + 2** — sitemap.ts, robots.ts, JSON-LD (Org/Software/FAQ), 5 per-trade pages
+  `/for/{trade}` (`lib/trades.ts`).
+- **AEO** — AI-crawler allow rules in robots.ts, `/llms.txt`, HowTo/Service schema,
+  `/answering-service-for-contractors` answer page. **Cloudflare verified allowing AI bots.**
+- **Dashboard** — Upcoming vs Past appointments split. **CI fix** — `pnpm audit` endpoint was
+  410-failing every deploy; made report-only in `.github/workflows/ci.yml`.
+- **Google OAuth verification SUBMITTED** (2026-07-10) — awaiting Google (days–weeks; watch
+  `malhotra.vikas@gmail.com`). Scope narrowed to `calendar.freebusy`. "Run test booking"
+  button in Settings→Integrations exercises both scopes.
+
+### Tomorrow — pick up here (in priority order)
+1. **Commit the uncommitted docs** (CLAUDE.md, PROGRESS.md, SEO_AEO.md).
+2. **Set promo env on Railway API** if you want the banners live on prod (currently only in
+   local `.env.local`): `PROMO_FOUNDING_ENDS_AT` + the 3 `STRIPE_COUPON_FOUNDING_*`. Use TEST
+   coupon ids to preview; LIVE ids at Stripe cutover for real discounts.
+3. **SEO/AEO off-site work** (👤, highest ROI — see `docs/SEO_AEO.md` checklist): Google Search
+   Console + Bing submit sitemap; **G2 + Capterra listings + real reviews**; Google Business
+   Profile. Also glance Cloudflare **AI Crawl Control** + **Security→Bots** (Bot Fight off).
+4. **⚠️ Pre-existing prod bug:** `STRIPE_PRICE_SOLO_MONTHLY` on prod still points at the OLD
+   $49 (now inactive) price → real Solo checkouts fail. Repoint to `price_1Tot57BrlSqhHprpsC58Fldf`
+   ($325) — part of the Stripe live cutover.
+5. Optional code follow-ups: AggregateRating/Review schema hook (for when reviews arrive),
+   trade links in top nav, per-page OG images. And **SEO_AEO.md** is the living tracker.
+
+### Launch blockers (from PROGRESS.md Status)
+- 🟠 **Google OAuth** — submitted, awaiting review.
+- 🔴 **Stripe test→live cutover** — the remaining hard blocker for real money (live keys,
+  live prices/coupons, both webhooks, operator Connect re-onboarding, existing test-mode
+  Stripe IDs on operator rows). Needs the go-live checklist doc written.
+
+---
+
 ## Resume brief — Monday 2026-06-29 (after 2026-06-26 session, Mac restarted)
 
 **Where we are:** mid manual-test **§11** (the full booking/fee value loop). §1–§10 all

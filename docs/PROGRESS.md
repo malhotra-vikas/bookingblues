@@ -12,12 +12,90 @@ When a section is wrong or stale, fix it in the same commit as the change.
 - **Phase**: Pre-launch (KeeprSteady rebrand + Solo/Crew/Fleet billing landed; infra verified live, functional E2E still pending)
 - **Last updated**: 2026-06-25 (Twilio A2P 10DLC campaign **APPROVED** — SMS delivery now live; TERMS.version bumped to 2026-06-25 for §5 re-accept test)
 - **🟢 A2P 10DLC APPROVED (2026-06-25)** — the campaign cleared. **US SMS now delivers** for real. This was the launch gate. Implications: manual-test §9 can be judged by actually receiving texts (not just Twilio/DB attempt logs); the full missed-call → SMS → booking loop is live-testable E2E for the first time; the Toll-Free track is no longer needed as the unblock (keep only if a redundant sender is wanted).
-- **🔴 LAUNCH BLOCKER — Google OAuth sensitive-scope verification (in progress, see `docs/google-oauth-verification.md`).** Real operators can't connect Google Calendar (onboarding step 4 / §9.4) until the consent screen is verified for the sensitive `calendar.events` + `calendar.readonly` scopes; non-test-users see "Google hasn't verified this app." Progress as of 2026-06-26: ✅ **branding verified**; ✅ homepage reachable (root cause of 3 rejections was a **Cloudflare blanket challenge on `keeprsteady.com`** blocking Google's crawler — web root must stay un-challenged, `curl -sI` → 200 no `cf-mitigated`); ✅ scopes declared in Data Access; ⬜ **demo video** + ⬜ **submit for verification** (justifications + script all in the doc — user recording the video after finishing manual tests). Project `bookingblues-staging` / client `670004772057`, redirect `api.keeprsteady.com`. Interim: keep the test Google account in Test users (≤100). Review ≈ days–weeks once submitted.
+- **🟠 LAUNCH BLOCKER (SUBMITTED — awaiting Google) — OAuth sensitive-scope verification (see `docs/google-oauth-verification.md`).** Real operators can't connect Google Calendar (onboarding step 4 / §9.4) until the consent screen is verified for the sensitive `calendar.events` scope; non-test-users see "Google hasn't verified this app." **✅ SUBMITTED 2026-07-10** — all prep done: branding verified, homepage crawler-reachable, scope **narrowed `calendar.readonly` → `calendar.freebusy`** (now non-sensitive; only `calendar.events` needs review), demo video recorded (uses the new one-click "Run test booking" in Settings → Integrations) + submitted. ⏳ **Now waiting on Google review** (days to ~2 weeks; replies to `malhotra.vikas@gmail.com` — watch that inbox). Project `bookingblues-staging` / client `670004772057`, redirect `api.keeprsteady.com`. Interim: keep the test Google account in Test users (≤100). Approval → warning gone for all users → blocker clears.
+  - **📩 Google responded 2026-07-17 — AI/ML Limited Use questionnaire (NOT a rejection).** Their Third-Party Data Safety Team asked us to (1) confirm Google user data isn't transferred to a third-party AI that trains on it, (2) list our AI providers + tiers, (3) disclose any self-hosted models. **Our position is strong: NO Google user data of any kind reaches our AI provider at all.** Verified in code — `check_availability` (`apps/api/src/modules/ai/tool-handlers.ts`) computes availability from our own `appointments` table + operator business hours; it never calls Google freeBusy and the model never sees calendar event content. Only OpenAI is used (Chat Completions API, `gpt-4.1`/`gpt-4.1-mini`, standard usage-based tier; OpenAI API doesn't train on API data). **Done this session:** drafted the email reply (`docs/google-ai-ml-compliance-reply.md`) + updated `apps/web/.../privacy/page.tsx` — added OpenAI to §5 sub-processors, named OpenAI as the AI boundary in §4a ("no Google Calendar data … ever sent to … OpenAI"), and added the `userinfo.email` scope to §4a (was requested in code, missing from policy). **NEXT: deploy web (so the updated privacy policy is live), then reply to the email** (`malhotra.vikas@gmail.com` thread). ⚠️ Note for review: privacy §4 line ~101 + §9 still say we may "train our AI models on anonymized, aggregated conversation patterns" (that's SMS data, NOT Google data — internally consistent with §4a, left as-is; revisit whether that claim is even true for the business).
 - **🔴 LAUNCH BLOCKER — Stripe test→live cutover (soft launch).** Prod currently runs **Stripe test mode** (keys, prices, Connect, webhooks all test). Real money requires flipping production to live. Test and live are isolated parallels on the same account — nothing carries over — so at cutover we must, in the **production** env: (1) create the **live** Solo/Crew/Fleet prices and repoint `STRIPE_PRICE_*`; (2) swap `STRIPE_SECRET_KEY`/`STRIPE_PUBLISHABLE_KEY` to `sk_live_…`/`pk_live_…`; (3) create **live** platform + Connect webhook endpoints and set `STRIPE_WEBHOOK_SECRET` / `STRIPE_CONNECT_WEBHOOK_SECRET` to the live signing secrets (booking-fee `payment_intent.succeeded` lands on the **Connect** endpoint); (4) operators must **re-onboard Connect in live** — a test `acct_…` does not exist in live (real KYC, not the `000-00-0000` test SSN). ⚠️ **DB caveat:** existing `operators` rows hold **test-mode** `stripe_customer_id` / `stripe_connect_account_id` / `stripe_subscription_id`; against live keys those calls fail ("no such account"). Before flip, decide: fresh live operators, or null-out + re-onboard the Stripe linkage on existing rows. No live card-testing is possible inside live mode — QA continues via the staging env below. **Action: write an env-var-by-env-var go-live checklist into `docs/` (Stripe keys, live prices, both webhook endpoints, operator Connect re-onboarding, DB Stripe-ID handling).**
 - **🟡 POST-LAUNCH — Staging environment (so we can keep testing after going live).** Duplicate the Railway setup as a **staging** environment wired to **Stripe TEST keys** (the current test-mode setup moves here), while production uses live. Decision (user, 2026-06-30): **share the same Supabase DB** across prod + staging rather than a separate Supabase project. ⚠️ Risks to mitigate given a shared DB: (a) test webhooks/conversations/payments land in the **same tables** as live → test data pollutes admin metrics/dashboards (consider a `test`/`livemode` flag or filter); (b) **both** environments' workers/crons (booking-hold sweeper, reminders, stale-close) hit the **same rows** → double-processing / duplicate SMS — only ONE environment should run the cron/worker against shared data, or the workers must be env-scoped; (c) staging must keep the non-prod **SMS allowlist** on so test runs never text real callers. (Note: CLAUDE.md §14 currently specifies a *separate* Supabase project for staging — this decision intentionally overrides that; reconcile the doc.)
 - **Active slice**: none — launch-prep infra now verified against prod; remaining work is functional E2E testing + finishing the domain cutover.
 - **Production target**: EC2 (Slice 14). Railway is staging only (Slice 13).
 - **HITL**: Slack-based (Slice 7.5) — **shipped** (code, manifest, docs; needs the Slack app created in api.slack.com to function end-to-end).
+
+### 🔴 IVR consent gate was declining ~every real caller — found + fixed 2026-07-16
+
+**Symptom as reported:** "calling the Twilio number directly starts the SMS thread, but a
+call forwarded from the operator's business number doesn't."
+
+**Actual root cause — forwarding was never broken.** Twilio call logs (account
+*Malhotra Consultants* `AC268659…`) show forwarded calls arriving perfectly:
+`from` = real caller, `to` = Twilio number, `forwarded_from`/`called_via` = business
+number, webhook → **HTTP 200** with the Gather TwiML, and **zero** entries in Twilio's
+alert log. `resolveOperatorForWebhook`'s `To`-match guard passes fine.
+
+What actually happened, on **both** forwarded *and* direct calls:
+```
+POST /webhooks/twilio/voice/{id}/consent
+  msg: "Gather End"   digits: ""   SpeechResult: (absent)
+→ callerConsentedFromGather("", undefined) === false
+→ "No problem, we will not text you. Goodbye."   → no SMS, no conversation row
+```
+Every real caller in the last 12 calls was declined — Jackson NJ, Freehold NJ, Lenox MA.
+The only calls that ever produced SMS were ones where *we* pressed 1. **The variable was
+never forwarding — it was who was calling.** Vikas knew to press 1; homeowners didn't.
+Forwarding merely made it visible, because forwarded calls are strangers.
+
+**Why they didn't press 1:** the old `VOICE_CONSENT_TEXT` was ~50 words with "press 1"
+**last** — ~18s of Polly legalese before the ask, `timeout="6"`, and one strike (no
+re-prompt). Durations prove it: 14s/20s callers hung up *mid-disclosure*; the 28s caller
+sat through the whole prompt **and** the timeout and still pressed nothing. On a forwarded
+call that's ~18s of robot stacked on ~25s of ringing ≈ 45s before being told what to do.
+
+**Fix (delivery restructured, disclosure kept intact — A2P basis preserved):**
+- `VOICE_CONSENT_TEXT` reordered so the **ask leads** and the disclosure follows. Every
+  required element (identity, rates, STOP, HELP) is still spoken. Version bumped
+  `voice-ivr-2026-06-23` → **`voice-ivr-2026-07-16`** (old consent rows keep their version).
+- `<Gather>` `timeout` **6s → 10s**; barge-in already lets a caller press during the prompt.
+- **One re-prompt** (`VOICE_CONSENT_REPROMPT_TEXT`) before declining, via `?attempt=` on the
+  action URL. Still default-deny: ignore both prompts → never texted.
+- `/messaging` page updated — it quotes the disclosure **verbatim** as carrier-inspectable
+  evidence, so it must match what we say.
+- Tests: `modules/consent/voice-consent-text.spec.ts` pins **ask-before-disclosure** ordering,
+  time-to-ask < 10s, and that all A2P elements survive. 181 API tests green, typecheck clean.
+
+**Barge-in tradeoff (accepted):** a caller can now press 1 before hearing rates/STOP. The
+opening SMS repeats the disclosure (`STOP_DISCLOSURE` in `openingSms`), which is the
+CTIA-required placement.
+
+**Signature note:** the `?attempt=` query param is **part of the signed URL**. Verified with
+Twilio's own signing math — validates with the query string, **fails** without it.
+`verifyTwilioSignature` uses `API_URL + req.originalUrl`, which preserves it. Do not strip it.
+
+**Automated cover (new):** `apps/api/test/twilio-voice-ivr.spec.ts` drives the real HTTP
+surface with Twilio's actual signature math and asserts the exact caller behaviours that were
+failing in prod — silent once → **re-asked**; silent twice → declined + no consent row;
+presses 1 late → texted + `sms_consents` row (`voice_ivr`, `voice-ivr-2026-07-16`) +
+conversation created; unsigned → 400; **signature computed without `?attempt` → 400**.
+Outbound SMS is blocked by the non-prod allowlist (test caller `+15555550400` is deliberately
+outside `OUTBOUND_SMS_ALLOWLIST`), so no real texts are sent. **188 API tests green** (30
+suites), typecheck clean, repeatable across runs.
+
+⚠️ **Test-suite hazard found while writing it (pre-existing, applies to every integration
+spec).** `test/setup-env.ts` loads `.env.local`, which points at **PROD Supabase** — so the
+`describeIfSupabase` suites (`cross-tenant`, `rls`, `stripe-webhook`, `twilio-webhook`, and
+now `twilio-voice-ivr`) create and tear down **real tenants in prod**. Two consequences:
+1. **`webhook_events` and `sms_consents` carry no `operator_id`**, so `teardownTenants` does
+   NOT cascade them. A spec with a **hardcoded CallSid/MessageSid leaves a row that makes the
+   next run look like a duplicate replay** — the handler then (correctly) skips side effects
+   and the test fails for the wrong reason. This bit the new spec immediately; fixed with a
+   per-run `runId` suffix on every CallSid plus explicit cleanup in `afterAll`.
+2. It is the most likely explanation for the **intermittent multi-test failures** seen this
+   session (one run showed 5 failures in a suite that then passed 4× in a row) — leftover
+   rows + prod-network latency, not product code. Worth a proper fix: point the integration
+   specs at an ephemeral Supabase project (already a tracked CI task) rather than prod.
+
+- [ ] **⏳ NOT YET VERIFIED ON A REAL CALL** — the automated spec covers the HTTP/DB contract,
+  but not what a human hears. Needs deploy + a real call from a phone that does *not* press 1
+  immediately: confirm the re-prompt actually plays, a late press-1 still texts, and double
+  silence declines. Verifier: `apps/api/scripts/verify-consent-flow.mjs <caller#>`.
 
 ### ⏳ Pending prod test — pushed 2026-06-30, not yet verified
 
@@ -35,10 +113,52 @@ All shipped + pushed this session; **run against prod, then check off**. Migrati
 - [ ] **Address-note append** — post-address access notes ("leave the keys") append to the appointment instead of repeating "got your address".
 - [ ] **Dashboard auto-refresh** — dashboard re-fetches every ~30s (pauses when tab hidden, refreshes on focus).
 
+### ⏳ Missed-calls questionnaire subdomain — built 2026-07-27, needs DNS + prod verify
+
+Six-question research survey for the outbound **lead email**, at
+`missedcalls.keeprsteady.com`. Setup + link format + editing rules:
+**`docs/SURVEY_SUBDOMAIN.md`**.
+
+Built as a page in the existing `web` app (no new Railway service) — middleware
+rewrites the subdomain root to `/survey` and 308s every other path to the apex.
+Responses are **emailed** to `SURVEY_INBOX_EMAIL` (default `sales@keeprsteady.com`)
+via Resend — no DB table, no Slack post (deliberate; see the doc's non-goals).
+
+Verified locally: host rewrite + apex redirect, all 6 questions render, the "top 3"
+cap drops the oldest pick at 4, query-param prefill (`?email=&name=&business=&src=`)
+lands in the form, and the exact captured browser payload validates against the API
+schema and renders a readable email. 15 new API tests (204/204 pass).
+
+- [ ] **Railway** — add custom domain `missedcalls.keeprsteady.com` to the `web` service.
+- [ ] **Cloudflare** — `CNAME missedcalls` → Railway target, **DNS-only / grey cloud**
+      (proxied + challenge = 403 for everyone; same trap that bit `api` and the web root).
+- [ ] **Prod smoke** — root 200, `/pricing` 308s to apex, submit once and confirm the
+      email lands in the survey inbox.
+- [ ] **Lead email** — paste the prefilled link with a `?src=` campaign tag.
+
+### SEO & AEO — tracked separately in `docs/SEO_AEO.md`
+
+Growth/discoverability work lives in its own living tracker (`docs/SEO_AEO.md`),
+split into **SEO** (rank in Google/Bing) and **AEO** (be recommended by ChatGPT/
+Claude/Gemini/Perplexity). As of **2026-07-15**, deployed to prod: SEO Tier 1
+(sitemap, robots, JSON-LD) + Tier 2 (5 per-trade `/for/{trade}` pages), and AEO
+technicals (AI-crawler robots rules, `/llms.txt`, HowTo/Service schema,
+`/answering-service-for-contractors`). Remaining work is mostly **off-site**
+(Search Console/Bing submit, Google Business Profile, G2/Capterra + reviews,
+directories) — see the doc's checklists.
+
 ### Tracked backlog — features/gaps (running, added 2026-06-30)
 
 Not launch-blocking unless noted. Newest first.
 
+- [ ] **Pricing model change: commission-only (drop the monthly subscription).** 📝 **captured 2026-07-30 — not started, design later.** Idea: operators pay **nothing monthly** and are billed only when KeeprSteady produces a booked job — "you only pay when you succeed." Replaces today's Solo/Crew/Fleet monthly-or-annual subscription (+ the existing per-booking deposit/platform cut) with a single success-based take. Open questions to work through when we pick this up:
+  - **What's the billable event?** Booked appointment vs. completed/attended job vs. collected deposit. Booked-only is easy to measure but pays us for no-shows; completed needs operator confirmation (a "job done?" SMS/dashboard prompt) and adds a dispute surface.
+  - **How do we collect?** Today's booking-fee path uses Stripe Connect **Direct Charges** where the *caller* pays the *operator* and we take `application_fee_amount` — that only works when the operator has booking fees enabled and Connect payouts live. Commission-only means charging the **operator** for jobs where no caller money moved. Likely needs a card on file on the platform account (metered/usage-based Stripe subscription billed monthly in arrears, or off-session `PaymentIntent` per job), which is a different billing flow from §9.5 Flow A/B. Card-at-signup stays mandatory (trial-abuse defense + we need something to charge).
+  - **Rate + floor.** Flat $/booking, % of job value (we don't know job value today — would need the operator to report it), or tiered by volume. `PLATFORM_TAKE_RATE_BPS`/`MIN_PLATFORM_FEE_CENTS` already exist but are scoped to the caller-paid deposit, not to this.
+  - **Blast radius.** `operators.plan` / `plan_cadence` / `stripe_price_id` / `subscription_status` / `trial_ends_at` and every gate that reads `subscription_status IN ('trialing','active')` (AI advance loop, fee eligibility, onboarding wizard, admin dossier), the `/pricing` + comparison pages, `brand.ts` plan copy, API `plan-policy.ts`, SalesCalculator commission tiers (separate concept — see memory), and the trial/past-due degraded modes in §9.1/§9.5. Also changes the ARR/MRR story in the dashboard + admin metrics.
+  - **Migration for existing subscribers** (if any are live by then): grandfather, or credit remaining subscription term.
+  - Needs an **ADR** when we commit (next free number), plus a CLAUDE.md §4/§9.5 rewrite.
+- [ ] **Per-truck Google Calendars (multi-truck enhancement, future).** Today all appointments — including concurrent multi-truck bookings — land on the operator's single **primary** Google Calendar, each tracked by its own `appointments.google_event_id`. Because Google `freeBusy` MERGES overlapping events on one calendar, per-truck availability can't be derived from Google (we compute capacity from our own `appointments` table instead — `modules/appointments/capacity.ts`). **Enhancement:** create/маintain one Google **sub-calendar per truck** (e.g. "Truck 1", "Truck 2") under the operator's account, assign each booking to a specific truck's calendar, and store a `truck_index`/`calendar_id` on the appointment. Benefits: free/busy becomes countable per truck again; the operator sees a clean per-truck schedule; dispatchers know which truck. Requires: truck→calendar provisioning, a truck-assignment strategy (first-free), calendar_id on appointments, and event create/patch/delete targeting the right sub-calendar. Deferred (2026-07-14) — capacity model works without it.
 - [x] **Emergency "Send payment request" button in Slack (design item 17d).** ✅ built + pushed 2026-06-30 · ⏳ **PENDING PROD TEST**. Added `💳 Send payment request` to the escalation alarm action row (`escalations.service.alarmBlocks`). Handler `EscalationsService.sendPaymentRequest` (wired in `slack-webhooks.controller` action switch, *before* the open-escalation gate so it still works after a manual book resolves the escalation): resolves conversation → latest proposed/confirmed appointment → `PaymentsService.createBookingFeeCheckout({emergency:true})` → SMS `paymentLinkSms` to the caller → in-thread confirmation. Guards: no appointment ("book first"), already-paid, fee/Connect not eligible (catches `AppError`). `PaymentsModule` now imported into `SlackModule`. (Button lives on the escalation alarm, not the non-blocking emergency alert — the alarm is the actionable HITL surface.)
 - [x] **Per-operator configurable visit duration (default 60 min).** ✅ built + pushed 2026-06-30 · ⏳ **PENDING PROD TEST** (⚠️ apply migration first). Migration `20260630000001_operator_visit_duration.sql` adds `operators.visit_duration_min int not null default 60` (check 15–480). Wired: prompt (`operatorBlock` "Visit length" line + generic STATIC_FRAME), `check_availability` tool description (generic), Slack manual-book `endIso = start + visit_duration_min` + modal copy, `UpdateOperatorSchema`, db-types, Settings field. `?? 60` fallbacks in API paths guard the deploy-before-migrate window. **Needs the migration applied to prod.**
 - [x] **Service-area editor in Settings.** ✅ built + pushed 2026-06-30 · ⏳ **PENDING PROD TEST**. Lifted the Wizard's ZIP-list + radius-zone editor into `SettingsPanel.tsx` (new "Service area" card, `saveServiceArea`/`addZone`/`removeZone` → PATCH `/operators/me`); settings page + panel interfaces now load `service_zip_codes` / `service_radius_zones`. API already supported it — UI-only change.

@@ -246,6 +246,7 @@ All variables loaded via `apps/api/src/config/env.ts` using `zod` validation. Th
 | `GOOGLE_OAUTH_CLIENT_SECRET` | api | |
 | `GOOGLE_OAUTH_REDIRECT_URI` | api | |
 | `RESEND_API_KEY` | api | |
+| `SURVEY_INBOX_EMAIL` | api | Recipient(s) for missed-calls questionnaire responses (`missedcalls.keeprsteady.com`). Comma-separated for several; every address validated at boot. Default `sales@keeprsteady.com`. See `docs/SURVEY_SUBDOMAIN.md`. |
 | `ENCRYPTION_KEY` | api | 32-byte hex, AES-256-GCM key for at-rest encryption of Google refresh tokens |
 | `SENTRY_DSN_API` | api | Sentry DSN for the API (server). No-op when unset. |
 | `SENTRY_DSN_WEB` | web | Sentry DSN for the Web server/edge runtime. No-op when unset. |
@@ -286,7 +287,10 @@ operators
   stripe_connect_payouts_enabled bool default false,
   onboarding_completed_at,
   timezone (IANA, e.g. America/New_York),
-  business_hours jsonb              -- { mon: [{start, end}], ... }
+  business_hours jsonb,             -- { mon: [{start, end}], ... }
+  visit_duration_min int default 60,-- appointment length; AI proposes/books this
+  truck_count int default 1         -- concurrent-capacity: up to N jobs at once,
+                                    -- 30-min travel buffer between same-truck jobs
 
 categories  (lookup table, seeded)
   slug (pk: 'plumbing','roofing','hvac','electrical', ...),
@@ -386,7 +390,7 @@ The Web app uses the anon key and reads via RLS. The API uses the service role a
    - Step 1: Pick category (plumbing, roofing, etc.). Stored on `operators.category`.
    - Step 2: Enter personal phone (E.164 normalized via `libphonenumber-js`). We send a verification SMS via Twilio Verify.
    - Step 3: Provision Twilio number. API picks a local number in the Operator's area code (best effort), purchases it, attaches it to `twilio_numbers`, links it to `operators.twilio_number_sid`. Configure SMS and Voice webhook URLs.
-   - Step 4: Connect Google Calendar (OAuth, scopes `calendar.events` and `calendar.readonly` for free/busy). Refresh token encrypted at rest.
+   - Step 4: Connect Google Calendar (OAuth, scopes `calendar.events` for booking + `calendar.freebusy` for availability). Refresh token encrypted at rest.
    - Step 5: Booking fee config (optional, off by default). If Operator opts in, set `booking_fee_enabled=true`, set `booking_fee_cents`, and kick off Stripe Connect Express onboarding to collect the Operator's payout details. Cannot collect or transfer fees until both `charges_enabled=true` (on platform side, automatic) and `payouts_enabled=true` (on connected account).
    - Step 6: Show carrier-specific conditional forwarding instructions for the Operator's mobile carrier.
 5. Set `onboarding_completed_at`. Dashboard becomes accessible.
@@ -767,7 +771,7 @@ Roadmap order after MVP: dashboard analytics → Operator-editable bot persona �
 - **Google Calendar timezone bugs**: always pass `timeZone` on event insert. Free/busy queries return UTC. Convert via Operator's timezone in all bot-facing displays.
 - **Stripe Connect onboarding is asynchronous.** `charges_enabled` may be false for hours after Operator finishes. Gate fee-collection on the actual flag, not on Operator clicking "I finished".
 - **OpenAI tool call hallucinated arguments**: always zod-validate. Reject and re-prompt on failure rather than executing.
-- **Race conditions on slot booking**: two simultaneous callers racing for the same 9am Tuesday slot. Postgres advisory lock keyed on `(operator_id, slot_start_iso)` around the `book_appointment` execution.
+- **Race conditions on slot booking**: two simultaneous callers racing for the last open truck. Capacity is enforced in `BookingsService.assertSlotBookable` (≤ `truck_count` concurrent, each appointment padded by a 30-min travel buffer — see `modules/appointments/capacity.ts`). Multi-truck means the old exact-start unique index was dropped (migration `20260710000001`); capacity is checked at the app layer. Known v1 limitation: the read-check-insert isn't fully serialized, so a sub-second race could momentarily exceed capacity by one — acceptable at current volume; add a per-operator advisory lock if it becomes an issue.
 - **24-hour SMS engagement window**: standard SMS works fine for our use case (always Caller-initiated), but we should still track inbound timestamp and stop sending automated messages 24h after last Caller reply.
 - **Phone number normalization**: always store E.164. Use `libphonenumber-js`. Never store user-entered formats.
 - **Webhook retries**: Twilio retries on 5xx. Stripe retries on 5xx and on missing 2xx. Make every handler idempotent through `webhook_events`.
