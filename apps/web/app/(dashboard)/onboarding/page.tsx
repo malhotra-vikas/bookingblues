@@ -2,6 +2,7 @@ import Link from 'next/link';
 
 import { Wizard } from '../../../components/onboarding/Wizard';
 import { ApiError, apiAsUser } from '../../../lib/api';
+import { getPromo } from '../../../lib/plans';
 
 interface Operator {
   id: string;
@@ -30,6 +31,7 @@ export const dynamic = 'force-dynamic';
 export default async function OnboardingPage(): Promise<JSX.Element> {
   let operator: Operator | null = null;
   let notFound = false;
+  const promo = await getPromo();
   try {
     operator = await apiAsUser<Operator>('/v1/operators/me');
   } catch (err) {
@@ -74,6 +76,7 @@ export default async function OnboardingPage(): Promise<JSX.Element> {
         initial={operator}
         enabledCategorySlugs={enabledCategorySlugs}
         setupCallUrl={setupCallUrl}
+        promo={promo}
       />
 
       <p className="text-sm text-muted dark:text-slate-400">

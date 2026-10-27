@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 
@@ -30,8 +31,16 @@ export function TrialBanner({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // No status until Stripe Checkout completes — the trial starts there, card required.
   if (!status) {
-    return <span className="text-sm text-muted">Plan status: <span className="font-medium text-ink">none</span></span>;
+    return (
+      <span className="text-sm text-muted">
+        Plan status: <span className="font-medium text-ink">trial not started</span>{' '}
+        <Link href="/onboarding" className="text-xs text-accent hover:underline">
+          Start free trial
+        </Link>
+      </span>
+    );
   }
 
   if (status !== 'trialing' || !trialEndsAt) {

@@ -7,6 +7,7 @@ import { ConfirmModal } from '../ConfirmModal';
 import { getSupabaseBrowserClient } from '../../lib/supabase/browser';
 import { PLANS, depositLabel, type PlanSlug } from '../../lib/brand';
 import { publicEnv } from '../../lib/env';
+import type { Promo } from '../../lib/plans';
 import { CarrierForwarding } from './CarrierForwarding';
 import { StepCard } from './StepCard';
 
@@ -119,10 +120,12 @@ export function Wizard({
   initial,
   enabledCategorySlugs,
   setupCallUrl,
+  promo,
 }: {
   initial: Operator | null;
   enabledCategorySlugs: ReadonlyArray<string>;
   setupCallUrl: string;
+  promo: Promo;
 }): JSX.Element {
   const router = useRouter();
   const op = initial;
@@ -390,7 +393,9 @@ export function Wizard({
     ? currentPlan
       ? `You're on the ${currentPlan.name} plan — ${currentPlan.conversationsPerMonth.toLocaleString()} conversations/mo included. Change or cancel anytime in Settings.`
       : "You're subscribed. Change or cancel your plan anytime in Settings."
-    : "7-day free trial. We need a card up front, but you won't be charged until day 8.";
+    : promo.foundingActive
+      ? `7-day free trial. We need a card up front, but you won't be charged until day 8 — and Founding Members pay just $${promo.firstMonthUsd} for the first month on monthly plans.`
+      : "7-day free trial. We need a card up front, but you won't be charged until day 8.";
   const categoryDone = !!op?.category;
   const twilioDone = !!op?.twilio_number_e164;
   const googleDone = !!op?.google_calendar_id;
@@ -527,6 +532,9 @@ export function Wizard({
                   pendingCadence === 'annual'
                     ? Math.round((plan.annualPriceUsd / 12) * 100) / 100
                     : plan.monthlyPriceUsd;
+                // Same as /pricing: the checkout attaches the Founding coupon on
+                // monthly plans, so lead with the price they'll actually pay first.
+                const showFounding = promo.foundingActive && pendingCadence === 'monthly';
                 return (
                   <div
                     key={plan.slug}
@@ -542,15 +550,32 @@ export function Wizard({
                       </span>
                     ) : null}
                     <p className="text-xs uppercase tracking-wide text-muted">{plan.name}</p>
-                    <p className="mt-1 text-2xl font-semibold text-ink dark:text-slate-100">
-                      ${monthlyEquivalent.toLocaleString()}
-                      <span className="text-sm text-muted font-normal">/mo</span>
-                    </p>
-                    <p className="text-[11px] text-muted">
-                      {pendingCadence === 'annual'
-                        ? `$${plan.annualPriceUsd.toLocaleString()}/yr billed`
-                        : 'Billed monthly'}
-                    </p>
+                    {showFounding ? (
+                      <>
+                        <p className="mt-1 text-2xl font-semibold text-ink dark:text-slate-100">
+                          ${promo.firstMonthUsd}{' '}
+                          <span className="text-sm text-muted font-normal line-through">
+                            ${plan.monthlyPriceUsd.toLocaleString()}
+                          </span>
+                          <span className="text-sm text-muted font-normal"> first mo</span>
+                        </p>
+                        <p className="text-[11px] font-medium text-emerald-700 dark:text-emerald-300">
+                          🚀 Founding Member — then ${plan.monthlyPriceUsd.toLocaleString()}/mo
+                        </p>
+                      </>
+                    ) : (
+                      <>
+                        <p className="mt-1 text-2xl font-semibold text-ink dark:text-slate-100">
+                          ${monthlyEquivalent.toLocaleString()}
+                          <span className="text-sm text-muted font-normal">/mo</span>
+                        </p>
+                        <p className="text-[11px] text-muted">
+                          {pendingCadence === 'annual'
+                            ? `$${plan.annualPriceUsd.toLocaleString()}/yr billed`
+                            : 'Billed monthly'}
+                        </p>
+                      </>
+                    )}
                     <p className="mt-3 text-xs text-ink dark:text-slate-200">
                       {plan.conversationsPerMonth.toLocaleString()} convos/mo · +{plan.platformFeePct}% deposit fee
                     </p>
