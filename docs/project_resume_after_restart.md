@@ -6,6 +6,53 @@ Quick-start brief for the next session. Read this first, then `docs/PROGRESS.md`
 
 ---
 
+## Resume brief — 2026-10-27 (after the 2026-10-26 session)
+
+**Where we are:** **Production is on LIVE Stripe** (cut over 2026-10-26). All code is committed,
+pushed and deployed (latest: special pricing `d062d74` + docs). Migration history repaired (32/32).
+An overnight **audit report** is in `docs/AUDIT-2026-10-27.md`; read it with Vikas and pick what to fix.
+
+### Done 2026-10-26
+- **Stripe live cutover.** Live prices, the 3 live Founding coupons (`hUqyBXRv`/`d7wuxF7i`/`ucyHXvie`),
+  webhook endpoints (recreated, secrets in gitignored `.env.golive.local`) and the live Customer
+  Portal are all set. Railway `api` env flipped to live. Verified: `/v1/plans` serves live price IDs,
+  and a `+livetest` signup created a **live** customer + checkout with the Founding coupon.
+  Statement descriptor `KEEPRSTEADY`. Rollback = put test values back on Railway (see `docs/STRIPE_GO_LIVE.md`).
+- **33 existing operators comped**: 365-day trial to **2027-10-26**, test-mode Stripe IDs cleared
+  (backup of the old values: `~/bookingblues-backups/operators-stripe-backup-2026-10-26.json`, not in repo). Plan: delete the test ones later.
+  ⚠️ Check each one first — some (e.g. Nick Thielen) may be real leads.
+- **Founding promo extended to end of 2027** (`PROMO_FOUNDING_ENDS_AT=2028-01-01T00:00:00-05:00`);
+  banner shows "Ends Dec 31, 2027"; onboarding plan cards now show $25 first month.
+- Dashboard "Plan status: none" → "trial not started · Start free trial".
+- **NEW: Admin special pricing per operator** (`/admin/operators/:id` → Special pricing card). See PROGRESS.
+- **Migrations are NOT auto-applied on deploy** (the `pnpm db:migrate` pre-deploy never existed).
+  `truck_count` had been missing on prod since July — applied now. Always `supabase db push` before
+  pushing code that needs a migration (CLAUDE.md §14).
+- The **dialer** is a separate project (`/Volumes/SSD/builderspace/dialer`), worked on in its own window.
+
+### Tomorrow — pick up here
+1. **Vikas's manual tests:**
+   a. Finish the `+livetest` live checkout (Solo monthly, real card, $0 today) → I verify the live
+      sub is `trialing` with the coupon, the `operators` row has live `cus_`/`sub_`, the platform
+      webhook got 2xx → then cancel via the billing portal (tests the portal + cancel webhook).
+   b. Special pricing: as admin set Solo · Monthly · $50 · 6 months on operator
+      `17877299-9d0d-4c57-a6c3-0b259637e453` → `+livetest` onboarding card shows $50/mo → checkout
+      shows $50 after trial. Then Remove.
+2. **Stripe dashboard leftovers (live):** shortened descriptor prefix still `BOOKINGBLU` → change to
+   KEEPRSTEADY; add a support email; Connect loss-liability confirmation.
+3. **Review `docs/AUDIT-2026-10-27.md`** and choose fixes.
+4. Still open from before: Google OAuth verification status (reply to Google's 07-17 AI/ML
+   questionnaire sent?), IVR consent real-call test, the 2026-06-30 pending prod tests.
+
+### Gotchas
+- `.env.local` → **PROD** Supabase + **TEST** Stripe key (stale test price IDs — Solo points at an
+  inactive $49 price). `.env.golive.local` holds the LIVE key + live webhook secrets.
+- Use Node 22 for scripts: `export PATH="$HOME/.nvm/versions/node/v22.22.2/bin:$PATH"`.
+- Integration specs in `apps/api/test/` run against **prod** Supabase — don't run them casually.
+- Local `next build` needs `NODE_ENV=production` (`.env.local` sets development).
+
+---
+
 ## Resume brief — 2026-07-16 (after the 2026-07-15 session, Mac restarted)
 
 **Where we are:** shipping growth + monetization features. **All CODE is committed +
