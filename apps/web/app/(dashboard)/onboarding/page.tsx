@@ -20,6 +20,10 @@ interface Operator {
   truck_count: number | null;
   subscription_status: string | null;
   plan: string | null;
+  special_price_plan: string | null;
+  special_price_cadence: string | null;
+  special_price_cents: number | null;
+  special_price_periods: number | null;
   onboarding_completed_at: string | null;
 }
 

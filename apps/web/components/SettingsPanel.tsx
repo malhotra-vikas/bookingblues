@@ -6,8 +6,14 @@ import { useState } from 'react';
 import { getSupabaseBrowserClient } from '../lib/supabase/browser';
 import { publicEnv } from '../lib/env';
 import { PLANS, depositLabel } from '../lib/brand';
+import {
+  regularPriceLabel,
+  specialPriceLabel,
+  specialPricingOf,
+  type SpecialPricingFields,
+} from '../lib/special-pricing';
 
-interface Operator {
+interface Operator extends SpecialPricingFields {
   id: string;
   business_name: string;
   category: string | null;
@@ -738,6 +744,7 @@ export function SettingsPanel({ operator }: { operator: Operator }): JSX.Element
               )}
             </div>
             <PlanLine plan={operator.plan} cadence={operator.plan_cadence} />
+            <SpecialPriceLine operator={operator} />
           </div>
           <button
             type="button"
@@ -935,6 +942,16 @@ function IntegrationRow({
         </div>
       </div>
       {action}
+    </div>
+  );
+}
+
+function SpecialPriceLine({ operator }: { operator: SpecialPricingFields }): JSX.Element | null {
+  const special = specialPricingOf(operator);
+  if (!special) return null;
+  return (
+    <div className="mt-1 text-sm text-emerald-700 dark:text-emerald-400">
+      ⭐ Special price: {special.planName} at {specialPriceLabel(special)}, then {regularPriceLabel(special)}.
     </div>
   );
 }

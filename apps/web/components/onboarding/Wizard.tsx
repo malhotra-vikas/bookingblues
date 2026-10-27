@@ -8,12 +8,18 @@ import { getSupabaseBrowserClient } from '../../lib/supabase/browser';
 import { PLANS, depositLabel, type PlanSlug } from '../../lib/brand';
 import { publicEnv } from '../../lib/env';
 import type { Promo } from '../../lib/plans';
+import {
+  regularPriceLabel,
+  specialPriceLabel,
+  specialPricingOf,
+  type SpecialPricingFields,
+} from '../../lib/special-pricing';
 import { CarrierForwarding } from './CarrierForwarding';
 import { StepCard } from './StepCard';
 
 type Cadence = 'monthly' | 'annual';
 
-interface Operator {
+interface Operator extends SpecialPricingFields {
   id: string;
   business_name: string;
   category: string | null;
@@ -170,7 +176,9 @@ export function Wizard({
 
   const [releaseModalOpen, setReleaseModalOpen] = useState(false);
   const [disconnectGoogleOpen, setDisconnectGoogleOpen] = useState(false);
-  const [pendingCadence, setPendingCadence] = useState<Cadence>('monthly');
+  const special = specialPricingOf(op);
+  // Open on the tab that holds their special price, so it's the first thing they see.
+  const [pendingCadence, setPendingCadence] = useState<Cadence>(special?.cadence ?? 'monthly');
 
   // Per-action busy tracker. Keeps individual buttons disabled while their
   // request is in flight, so a fast double-click can't fire two checkouts /
@@ -393,7 +401,9 @@ export function Wizard({
     ? currentPlan
       ? `You're on the ${currentPlan.name} plan — ${currentPlan.conversationsPerMonth.toLocaleString()} conversations/mo included. Change or cancel anytime in Settings.`
       : "You're subscribed. Change or cancel your plan anytime in Settings."
-    : promo.foundingActive
+    : special
+      ? `7-day free trial. We need a card up front, but you won't be charged until day 8. Your special price: ${special.planName} at ${specialPriceLabel(special)}, then ${regularPriceLabel(special)}.`
+      : promo.foundingActive
       ? `7-day free trial. We need a card up front, but you won't be charged until day 8 — and Founding Members pay just $${promo.firstMonthUsd} for the first month on monthly plans.`
       : "7-day free trial. We need a card up front, but you won't be charged until day 8.";
   const categoryDone = !!op?.category;
@@ -534,7 +544,10 @@ export function Wizard({
                     : plan.monthlyPriceUsd;
                 // Same as /pricing: the checkout attaches the Founding coupon on
                 // monthly plans, so lead with the price they'll actually pay first.
-                const showFounding = promo.foundingActive && pendingCadence === 'monthly';
+                const showSpecial =
+                  special != null && special.plan === plan.slug && special.cadence === pendingCadence;
+                const showFounding =
+                  !showSpecial && promo.foundingActive && pendingCadence === 'monthly';
                 return (
                   <div
                     key={plan.slug}
@@ -550,7 +563,24 @@ export function Wizard({
                       </span>
                     ) : null}
                     <p className="text-xs uppercase tracking-wide text-muted">{plan.name}</p>
-                    {showFounding ? (
+                    {showSpecial && special ? (
+                      <>
+                        <p className="mt-1 text-2xl font-semibold text-ink dark:text-slate-100">
+                          ${special.priceUsd.toLocaleString()}
+                          <span className="text-sm text-muted font-normal">
+                            /{special.cadence === 'annual' ? 'yr' : 'mo'}
+                          </span>{' '}
+                          <span className="text-sm text-muted font-normal line-through">
+                            {regularPriceLabel(special)}
+                          </span>
+                        </p>
+                        <p className="text-[11px] font-medium text-emerald-700 dark:text-emerald-300">
+                          ⭐ Your special price for {special.periods}{' '}
+                          {special.cadence === 'annual' ? 'year' : 'month'}
+                          {special.periods === 1 ? '' : 's'} — then {regularPriceLabel(special)}
+                        </p>
+                      </>
+                    ) : showFounding ? (
                       <>
                         <p className="mt-1 text-2xl font-semibold text-ink dark:text-slate-100">
                           ${promo.firstMonthUsd}{' '}

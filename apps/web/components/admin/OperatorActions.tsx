@@ -37,7 +37,7 @@ async function authedFetch(path: string, init?: RequestInit): Promise<Response> 
   });
 }
 
-async function postJson(path: string, body: unknown): Promise<unknown> {
+export async function postJson(path: string, body: unknown): Promise<unknown> {
   const res = await authedFetch(path, { method: 'POST', body: JSON.stringify(body) });
   if (!res.ok) {
     let detail = `${res.status} ${res.statusText}`;

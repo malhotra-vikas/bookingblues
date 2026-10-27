@@ -54,3 +54,9 @@ export function planCadenceForPrice(
   if (!priceId) return null;
   return priceMap.get(priceId) ?? null;
 }
+
+/** The configured Stripe price ID for a plan + cadence, or null when unset. */
+export function priceIdForPlan(env: Env, plan: PlanSlug, cadence: PlanCadence): string | null {
+  const entry = PRICE_ENV_KEYS.find(([, p, c]) => p === plan && c === cadence);
+  return (entry && env[entry[0]]) || null;
+}

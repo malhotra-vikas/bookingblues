@@ -18,6 +18,7 @@ import type { AuthenticatedUser } from '../../common/auth/jwt-verifier.service';
 import { ZodBodyPipe } from '../../common/pipes/zod-body.pipe';
 import {
   CancelSubscriptionSchema,
+  ClearSpecialPricingSchema,
   DeactivateOperatorSchema,
   ForceEndConversationSchema,
   ImpersonateSchema,
@@ -26,7 +27,9 @@ import {
   PromoteSalesSchema,
   RefundPaymentSchema,
   ReleaseSalesLeadsSchema,
+  SetSpecialPricingSchema,
   type CancelSubscription,
+  type ClearSpecialPricing,
   type DeactivateOperator,
   type ForceEndConversation,
   type Impersonate,
@@ -35,6 +38,7 @@ import {
   type PromoteSales,
   type RefundPayment,
   type ReleaseSalesLeads,
+  type SetSpecialPricing,
 } from './admin.dto';
 import { AdminWriteService } from './admin-write.service';
 
@@ -177,6 +181,42 @@ export class AdminWriteController {
       operatorId,
       reason: body.reason,
       immediate: body.immediate,
+      actor: { actorUserId: actor.userId, ...ctx },
+    });
+    return { ok: true };
+  }
+
+  @Post('operators/:id/special-pricing')
+  async setSpecialPricing(
+    @Req() req: Request,
+    @CurrentUser() actor: AuthenticatedUser,
+    @Param('id', new ParseUUIDPipe()) operatorId: string,
+    @Body(new ZodBodyPipe(SetSpecialPricingSchema)) body: SetSpecialPricing,
+  ): Promise<{ ok: true; coupon_id: string; applied_to_subscription: boolean }> {
+    const ctx = this.audit.fromRequest(req);
+    const result = await this.write.setSpecialPricing({
+      operatorId,
+      plan: body.plan,
+      cadence: body.cadence,
+      priceCents: body.price_cents,
+      periods: body.periods,
+      reason: body.reason,
+      actor: { actorUserId: actor.userId, ...ctx },
+    });
+    return { ok: true, ...result };
+  }
+
+  @Post('operators/:id/special-pricing/clear')
+  async clearSpecialPricing(
+    @Req() req: Request,
+    @CurrentUser() actor: AuthenticatedUser,
+    @Param('id', new ParseUUIDPipe()) operatorId: string,
+    @Body(new ZodBodyPipe(ClearSpecialPricingSchema)) body: ClearSpecialPricing,
+  ): Promise<{ ok: true }> {
+    const ctx = this.audit.fromRequest(req);
+    await this.write.clearSpecialPricing({
+      operatorId,
+      reason: body.reason,
       actor: { actorUserId: actor.userId, ...ctx },
     });
     return { ok: true };

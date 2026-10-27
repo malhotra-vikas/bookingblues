@@ -1,6 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { PinoLogger } from 'nestjs-pino';
 import type { Database } from '@bookingblues/db-types';
+import type Stripe from 'stripe';
 
 import { AuditLogService } from '../../common/audit/audit-log.service';
 import { impersonationConfirmLink } from '../../common/auth/impersonation-link';
@@ -18,8 +19,18 @@ import { SlackApiClient } from '../slack/slack-api.client';
 import { ENV_TOKEN } from '../../config/config.module';
 import type { Env } from '../../config/env';
 import { PaymentsService } from '../payments/payments.service';
+import { priceIdForPlan, type PlanCadence, type PlanSlug } from '../billing/plan-pricing';
+import { specialCouponTerms, specialPricingOf } from '../billing/special-pricing';
 
 type ConversationOutcome = Database['public']['Enums']['conversation_outcome'];
+
+/** Subscription states with a Stripe subscription still billing (or about to). */
+const LIVE_SUBSCRIPTION_STATUSES: ReadonlySet<string> = new Set([
+  'trialing',
+  'active',
+  'past_due',
+  'incomplete',
+]);
 
 export interface AdminActorContext {
   readonly actorUserId: string;
@@ -510,6 +521,197 @@ export class AdminWriteService {
     });
   }
 
+  /**
+   * Give one operator a special price: `priceCents` per month/year for
+   * `periods` months/years on `plan`, then the regular price. Backed by a
+   * per-operator Stripe coupon that checkout uses instead of the Founding
+   * promo. If the operator already has a live subscription on that same plan +
+   * cadence, the coupon goes onto it immediately; a different plan is refused,
+   * because the coupon is restricted to the plan's product and would never apply.
+   */
+  async setSpecialPricing(args: {
+    operatorId: string;
+    plan: PlanSlug;
+    cadence: PlanCadence;
+    priceCents: number;
+    periods: number;
+    reason: string;
+    actor: AdminActorContext;
+  }): Promise<{ coupon_id: string; applied_to_subscription: boolean }> {
+    const operator = await this.requireOperator(args.operatorId);
+
+    const subscriptionId =
+      operator.stripe_subscription_id &&
+      operator.subscription_status &&
+      LIVE_SUBSCRIPTION_STATUSES.has(operator.subscription_status)
+        ? operator.stripe_subscription_id
+        : null;
+    if (subscriptionId && (operator.plan !== args.plan || operator.plan_cadence !== args.cadence)) {
+      throw new ValidationError(
+        `Operator is subscribed to ${operator.plan ?? 'an unknown plan'} ` +
+          `(${operator.plan_cadence ?? 'unknown cadence'}). Special pricing must match ` +
+          'their current plan and cadence — have them switch plans first.',
+      );
+    }
+
+    const priceId = priceIdForPlan(this.env, args.plan, args.cadence);
+    if (!priceId) throw new ValidationError(`No Stripe price configured for ${args.plan} ${args.cadence}`);
+    const price = await this.stripe.client().prices.retrieve(priceId);
+    if (price.unit_amount == null) {
+      throw new AppError({
+        code: 'stripe.price_without_amount',
+        status: 502,
+        detail: `Stripe price ${priceId} has no fixed amount`,
+      });
+    }
+    const terms = specialCouponTerms({
+      regularCents: price.unit_amount,
+      priceCents: args.priceCents,
+      cadence: args.cadence,
+      periods: args.periods,
+    });
+
+    const unit = args.cadence === 'annual' ? 'yr' : 'mo';
+    const span = args.cadence === 'annual' ? 'year' : 'month';
+    const coupon = await this.stripe.client().coupons.create({
+      name: `Special: $${(args.priceCents / 100).toFixed(2)}/${unit} × ${args.periods} ${span}${args.periods === 1 ? '' : 's'}`.slice(0, 40),
+      amount_off: terms.amountOffCents,
+      currency: price.currency,
+      duration: 'repeating',
+      duration_in_months: terms.durationInMonths,
+      max_redemptions: 1,
+      applies_to: { products: [typeof price.product === 'string' ? price.product : price.product.id] },
+      metadata: {
+        kind: 'special_pricing',
+        operator_id: operator.id,
+        plan: args.plan,
+        cadence: args.cadence,
+        price_cents: String(args.priceCents),
+        periods: String(args.periods),
+      },
+    });
+
+    if (subscriptionId) {
+      try {
+        // Replaces any discount already on it (e.g. a pending Founding coupon).
+        await this.stripe.client().subscriptions.update(subscriptionId, {
+          discounts: [{ coupon: coupon.id }],
+        });
+      } catch (err) {
+        await this.deleteCouponQuietly(coupon.id);
+        throw err;
+      }
+    }
+
+    const { error } = await this.supabase
+      .db()
+      .from('operators')
+      .update({
+        special_price_plan: args.plan,
+        special_price_cadence: args.cadence,
+        special_price_cents: args.priceCents,
+        special_price_periods: args.periods,
+        special_price_coupon_id: coupon.id,
+        special_price_set_at: new Date().toISOString(),
+      })
+      .eq('id', operator.id);
+    if (error) throw error;
+
+    // Discounts already granted keep working after their coupon is deleted, so
+    // retiring the replaced coupon only stops it being redeemed again.
+    const previous = specialPricingOf(operator);
+    if (previous && previous.couponId !== coupon.id) await this.deleteCouponQuietly(previous.couponId);
+
+    await this.audit.write({
+      actorUserId: args.actor.actorUserId,
+      operatorId: operator.id,
+      action: 'billing.special_pricing.set',
+      resourceType: 'stripe.coupon',
+      resourceId: coupon.id,
+      metadata: {
+        reason: args.reason,
+        plan: args.plan,
+        cadence: args.cadence,
+        price_cents: args.priceCents,
+        periods: args.periods,
+        regular_cents: price.unit_amount,
+        applied_to_subscription: subscriptionId,
+        replaced_coupon_id: previous?.couponId ?? null,
+      },
+      ipAddress: args.actor.ipAddress,
+      userAgent: args.actor.userAgent,
+    });
+
+    return { coupon_id: coupon.id, applied_to_subscription: subscriptionId != null };
+  }
+
+  /** Remove an operator's special pricing, including from a live subscription. */
+  async clearSpecialPricing(args: {
+    operatorId: string;
+    reason: string;
+    actor: AdminActorContext;
+  }): Promise<void> {
+    const operator = await this.requireOperator(args.operatorId);
+    const special = specialPricingOf(operator);
+    if (!special) throw new ConflictError('Operator has no special pricing');
+
+    let removedFromSubscription = false;
+    if (operator.stripe_subscription_id) {
+      try {
+        const sub = await this.stripe
+          .client()
+          .subscriptions.retrieve(operator.stripe_subscription_id, { expand: ['discounts'] });
+        const discounts = sub.discounts.filter(
+          (d): d is Stripe.Discount => typeof d !== 'string',
+        );
+        const kept = discounts.filter((d) => d.coupon.id !== special.couponId);
+        if (kept.length !== discounts.length) {
+          await this.stripe.client().subscriptions.update(operator.stripe_subscription_id, {
+            discounts: kept.length ? kept.map((d) => ({ discount: d.id })) : '',
+          });
+          removedFromSubscription = true;
+        }
+      } catch (err) {
+        // A subscription that no longer exists has no discount left to remove.
+        if ((err as { code?: string }).code !== 'resource_missing') throw err;
+      }
+    }
+
+    const { error } = await this.supabase
+      .db()
+      .from('operators')
+      .update({
+        special_price_plan: null,
+        special_price_cadence: null,
+        special_price_cents: null,
+        special_price_periods: null,
+        special_price_coupon_id: null,
+        special_price_set_at: null,
+      })
+      .eq('id', operator.id);
+    if (error) throw error;
+
+    await this.deleteCouponQuietly(special.couponId);
+
+    await this.audit.write({
+      actorUserId: args.actor.actorUserId,
+      operatorId: operator.id,
+      action: 'billing.special_pricing.clear',
+      resourceType: 'stripe.coupon',
+      resourceId: special.couponId,
+      metadata: {
+        reason: args.reason,
+        plan: special.plan,
+        cadence: special.cadence,
+        price_cents: special.priceCents,
+        periods: special.periods,
+        removed_from_subscription: removedFromSubscription,
+      },
+      ipAddress: args.actor.ipAddress,
+      userAgent: args.actor.userAgent,
+    });
+  }
+
   async releaseTwilioNumber(args: {
     operatorId: string;
     actor: AdminActorContext;
@@ -695,6 +897,15 @@ export class AdminWriteService {
   }
 
   // ── internals ────────────────────────────────────────────────────────────
+
+  /** Retire a coupon in Stripe. Best-effort: a leftover coupon is harmless. */
+  private async deleteCouponQuietly(couponId: string): Promise<void> {
+    try {
+      await this.stripe.client().coupons.del(couponId);
+    } catch (err) {
+      this.logger.warn({ couponId, err }, 'special pricing: could not delete Stripe coupon');
+    }
+  }
 
   private async requireOperator(
     operatorId: string,

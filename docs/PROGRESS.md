@@ -113,6 +113,23 @@ All shipped + pushed this session; **run against prod, then check off**. Migrati
 - [ ] **Address-note append** — post-address access notes ("leave the keys") append to the appointment instead of repeating "got your address".
 - [ ] **Dashboard auto-refresh** — dashboard re-fetches every ~30s (pauses when tab hidden, refreshes on focus).
 
+### ⏳ Admin special pricing per operator — built 2026-10-26, needs prod test
+
+Admin dossier (`/admin/operators/:id`) → **Special pricing** card: pick plan + monthly/annual,
+a price, and N months/years (+ audit reason). API creates a per-operator Stripe coupon
+(`duration: repeating`, N or N×12 months, `max_redemptions: 1`, restricted to that plan's
+product). Not yet subscribed → checkout uses it instead of the Founding coupon. Subscribed on
+the same plan + cadence → attached to the live subscription immediately (different plan →
+refused). After N periods Stripe bills the regular price. Remove → discount comes off the sub.
+Operator sees it on the onboarding plan card + Settings → Billing. Migration
+`20261026000001_operator_special_pricing.sql`. Code: `billing/special-pricing.ts`,
+`AdminWriteService.setSpecialPricing/clearSpecialPricing`, `components/admin/SpecialPricingCard.tsx`.
+Stripe calls verified in test mode ($199 → $50 invoice, 6-month window, clear → $199).
+
+- [ ] Set $50/mo × 6 on the `+livetest` operator → card shows it, onboarding Solo card shows
+      $50/mo, checkout total after trial = $50.
+- [ ] Set on a subscribed operator → coupon on the subscription in Stripe; Remove → gone.
+
 ### ⏳ Missed-calls questionnaire subdomain — built 2026-07-27, needs DNS + prod verify
 
 Six-question research survey for the outbound **lead email**, at

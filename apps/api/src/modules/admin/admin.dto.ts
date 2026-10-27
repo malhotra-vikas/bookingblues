@@ -75,3 +75,19 @@ export const ImpersonateSchema = z.object({
   ttl_seconds: z.coerce.number().int().min(60).max(60 * 60).default(15 * 60),
 });
 export type Impersonate = z.infer<typeof ImpersonateSchema>;
+
+// Special pricing for one operator: pay `price_cents` per month (monthly) or per
+// year (annual) for `periods` months/years on `plan`, then the regular price.
+export const SetSpecialPricingSchema = z.object({
+  plan: z.enum(['solo', 'crew', 'fleet']),
+  cadence: z.enum(['monthly', 'annual']),
+  price_cents: z.number().int().min(0),
+  periods: z.number().int().min(1).max(60),
+  reason: z.string().min(1).max(500),
+});
+export type SetSpecialPricing = z.infer<typeof SetSpecialPricingSchema>;
+
+export const ClearSpecialPricingSchema = z.object({
+  reason: z.string().min(1).max(500),
+});
+export type ClearSpecialPricing = z.infer<typeof ClearSpecialPricingSchema>;

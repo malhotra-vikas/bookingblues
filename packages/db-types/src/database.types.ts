@@ -494,6 +494,12 @@ export type Database = {
           personal_phone_e164: string | null;
           plan: string | null;
           plan_cadence: string | null;
+          special_price_plan: string | null;
+          special_price_cadence: string | null;
+          special_price_cents: number | null;
+          special_price_periods: number | null;
+          special_price_coupon_id: string | null;
+          special_price_set_at: string | null;
           terms_accepted_at: string | null;
           terms_version: string | null;
           service_radius_zones: Json;
@@ -535,6 +541,12 @@ export type Database = {
           personal_phone_e164?: string | null;
           plan?: string | null;
           plan_cadence?: string | null;
+          special_price_plan?: string | null;
+          special_price_cadence?: string | null;
+          special_price_cents?: number | null;
+          special_price_periods?: number | null;
+          special_price_coupon_id?: string | null;
+          special_price_set_at?: string | null;
           terms_accepted_at?: string | null;
           terms_version?: string | null;
           service_radius_zones?: Json;
@@ -576,6 +588,12 @@ export type Database = {
           personal_phone_e164?: string | null;
           plan?: string | null;
           plan_cadence?: string | null;
+          special_price_plan?: string | null;
+          special_price_cadence?: string | null;
+          special_price_cents?: number | null;
+          special_price_periods?: number | null;
+          special_price_coupon_id?: string | null;
+          special_price_set_at?: string | null;
           terms_accepted_at?: string | null;
           terms_version?: string | null;
           service_radius_zones?: Json;

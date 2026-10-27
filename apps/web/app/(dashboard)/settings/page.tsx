@@ -23,6 +23,10 @@ interface Operator {
   subscription_status: string | null;
   plan: string | null;
   plan_cadence: string | null;
+  special_price_plan: string | null;
+  special_price_cadence: string | null;
+  special_price_cents: number | null;
+  special_price_periods: number | null;
   trial_ends_at: string | null;
   stripe_connect_account_id: string | null;
   stripe_connect_charges_enabled: boolean;

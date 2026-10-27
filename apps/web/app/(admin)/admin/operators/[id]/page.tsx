@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation';
 
 import { OperatorActions } from '../../../../../components/admin/OperatorActions';
 import { OperatorTabs } from '../../../../../components/admin/OperatorTabs';
+import { SpecialPricingCard } from '../../../../../components/admin/SpecialPricingCard';
 import { apiAsUser } from '../../../../../lib/api';
 
 interface Operator {
@@ -15,6 +16,13 @@ interface Operator {
   twilio_number_sid: string | null;
   stripe_customer_id: string | null;
   stripe_subscription_id: string | null;
+  plan: string | null;
+  plan_cadence: string | null;
+  special_price_plan: string | null;
+  special_price_cadence: string | null;
+  special_price_cents: number | null;
+  special_price_periods: number | null;
+  special_price_coupon_id: string | null;
   stripe_connect_account_id: string | null;
   stripe_connect_charges_enabled: boolean;
   stripe_connect_payouts_enabled: boolean;
@@ -95,6 +103,16 @@ export default async function DossierPage({
           business_name: op.business_name,
           has_subscription: op.stripe_subscription_id != null,
           has_twilio: op.twilio_number_e164 != null,
+        }}
+      />
+
+      <SpecialPricingCard
+        operator={{
+          ...op,
+          // Mirrors the API: only a subscription that's still billing gets the coupon now.
+          has_subscription:
+            op.stripe_subscription_id != null &&
+            ['trialing', 'active', 'past_due', 'incomplete'].includes(op.subscription_status ?? ''),
         }}
       />
 

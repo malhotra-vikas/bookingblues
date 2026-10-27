@@ -289,8 +289,13 @@ operators
   timezone (IANA, e.g. America/New_York),
   business_hours jsonb,             -- { mon: [{start, end}], ... }
   visit_duration_min int default 60,-- appointment length; AI proposes/books this
-  truck_count int default 1         -- concurrent-capacity: up to N jobs at once,
+  truck_count int default 1,        -- concurrent-capacity: up to N jobs at once,
                                     -- 30-min travel buffer between same-truck jobs
+  special_price_plan, special_price_cadence, special_price_cents,
+  special_price_periods, special_price_coupon_id, special_price_set_at
+                                    -- admin-set special pricing (all set or all null);
+                                    -- per-operator Stripe repeating coupon, replaces the
+                                    -- Founding coupon at checkout (billing/special-pricing.ts)
 
 categories  (lookup table, seeded)
   slug (pk: 'plumbing','roofing','hvac','electrical', ...),
@@ -599,6 +604,8 @@ POST   /v1/admin/operators/:id/deactivate
 POST   /v1/admin/operators/:id/cancel-subscription
 POST   /v1/admin/operators/:id/release-twilio-number
 POST   /v1/admin/operators/:id/refund-payment/:paymentId
+POST   /v1/admin/operators/:id/special-pricing        # $X per mo/yr for N mo/yr on one plan
+POST   /v1/admin/operators/:id/special-pricing/clear
 POST   /v1/admin/operators/:id/impersonate            # short-lived magic link
 POST   /v1/admin/conversations/:id/force-end
 ```
