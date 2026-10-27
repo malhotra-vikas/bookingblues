@@ -108,6 +108,21 @@ function toProblem(exception: unknown, instance: string): ProblemDetails {
     };
   }
 
+  // body-parser rejects oversized bodies with a plain http-errors object
+  // (`expose: true`, status 413) before Nest sees the request. Without this it
+  // became a 500 and a Sentry event per oversized POST.
+  if (isExposedClientError(exception)) {
+    const { status } = exception;
+    return {
+      type: `https://bookingblues.com/errors/http_${status}`,
+      title: titleFor(status),
+      status,
+      detail: exception.message,
+      instance,
+      code: `http_${status}`,
+    };
+  }
+
   return {
     type: 'https://bookingblues.com/errors/internal',
     title: 'Internal Server Error',
@@ -118,9 +133,24 @@ function toProblem(exception: unknown, instance: string): ProblemDetails {
   };
 }
 
+function isExposedClientError(
+  exception: unknown,
+): exception is { status: number; message: string; expose: true } {
+  if (typeof exception !== 'object' || exception === null) return false;
+  const e = exception as { status?: unknown; message?: unknown; expose?: unknown };
+  return (
+    e.expose === true &&
+    typeof e.status === 'number' &&
+    e.status >= 400 &&
+    e.status < 500 &&
+    typeof e.message === 'string'
+  );
+}
+
 function titleFor(status: number): string {
   if (status >= 500) return 'Internal Server Error';
   if (status === 404) return 'Not Found';
+  if (status === 413) return 'Payload Too Large';
   if (status === 401) return 'Unauthorized';
   if (status === 403) return 'Forbidden';
   if (status === 409) return 'Conflict';
