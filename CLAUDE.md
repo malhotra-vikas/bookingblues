@@ -720,7 +720,7 @@ Two services in one project:
 
 Separate environments: `production`, `staging`. Staging uses a separate Supabase project, Twilio subaccount, Stripe test mode, Google OAuth client with staging redirect URIs.
 
-Database migrations run as a Railway pre-deploy command on the API service: `pnpm db:migrate`.
+Database migrations are **not** applied on deploy (there is no `db:migrate` script or Railway pre-deploy step). Apply them yourself **before** pushing code that needs them: `supabase db push` (the CLI is linked to the prod project), then check with `supabase migration list --linked`. From May to Oct 2026 migrations were applied by hand in the SQL editor without recording history, and one (`20260710000001`) was silently missed for months. History was repaired 2026-10-26, so `db push` is safe again — never hand-apply without `supabase migration repair --status applied <version>`.
 
 Background workers: same Docker image as API, started with `node dist/jobs/worker.js`. Separate Railway service so we can scale independently.
 

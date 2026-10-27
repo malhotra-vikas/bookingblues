@@ -107,7 +107,7 @@ Opening SMS lands in a SEPARATE phone thread from bot replies — Twilio-layer (
 ### Gotchas (carry over)
 - **Cloudflare must NOT challenge `api.keeprsteady.com` NOR `keeprsteady.com`** — the web-root challenge blocked Google's crawler (3 verification rejections). `curl -sI` both → 200, no `cf-mitigated: challenge`.
 - `.env.local` → **PROD** Supabase (`ozsckjjlydtujbhajjla`) + service role; local writes hit prod. Use `+test` emails.
-- db-types hand-edited for new columns (`emergency_visit_fee_cents`, …); `pnpm gen:db` regenerates identically. Migrations apply via Railway pre-deploy `pnpm db:migrate`.
+- db-types hand-edited for new columns (`emergency_visit_fee_cents`, …); `pnpm gen:db` regenerates identically. ~~Migrations apply via Railway pre-deploy `pnpm db:migrate`.~~ **Wrong (found 2026-10-26): nothing applies migrations on deploy — run `supabase db push` before pushing. See CLAUDE.md §14.**
 
 ---
 
@@ -144,7 +144,7 @@ manually test on **prod** using the script.
    branch `feat/2026-06-23-auth-sales-usage` (or commit to main if you prefer),
    then deploy. `git status` shows api + web + supabase/migrations + packages/db-types + docs.
 2. **Apply migrations to prod, in order:** `20260622000001`, `20260623000001`,
-   `20260623000002`, `20260623000003` (Railway pre-deploy `pnpm db:migrate` does run).
+   `20260623000002`, `20260623000003` (~~Railway pre-deploy `pnpm db:migrate` does run~~ — wrong, see CLAUDE.md §14).
 3. **Deploy api + web** to prod.
 4. **Prod config:** Supabase → Auth → Redirect URLs must include
    `https://keeprsteady.com/auth/callback`. Confirm `NEXT_PUBLIC_APP_URL` /
@@ -273,7 +273,7 @@ Rejections so far cleared progressively: 30886 (description) ✅ → 30909 (cons
   for `{"window_minutes":60,...}`).
 - `CRON_SHARED_SECRET` is set on the api service (64-char hex, `aa5ae0…e937`);
   local `.env.local` has the same value but **quoted** (dotenv strips quotes).
-- Railway pre-deploy `pnpm db:migrate` **does run** (confirmed — the reminder
+- ~~Railway pre-deploy `pnpm db:migrate` **does run**~~ (WRONG — corrected 2026-10-26, see CLAUDE.md §14; the reminder
   migration applied automatically on deploy).
 - Stripe CLI defaults to the wrong account ("Reaper Labs") — `stripe login` →
   **BookingBlues** (`acct_1TUVtI…`, test mode).
