@@ -15,10 +15,23 @@ config({ path: resolve(__dirname, '../../../.env') });
 // Exit code 0 from curl means the server returned ANY HTTP response (incl.
 // 404), which is sufficient evidence that Supabase is up. Connection refused
 // or timeout (Docker off) yields non-zero and we leave the flag unset.
+//
+// Local only: .env.local points SUPABASE_URL at the PRODUCTION project, and
+// these specs create users and write webhook_events with the service role. A
+// remote URL is skipped unless INTEGRATION_ALLOW_REMOTE=1 is set explicitly.
+function isLocalUrl(url: string): boolean {
+  try {
+    return ['localhost', '127.0.0.1', '::1', '[::1]'].includes(new URL(url).hostname);
+  } catch {
+    return false;
+  }
+}
+
 function probeSupabase(): boolean {
   const url = process.env.SUPABASE_URL;
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !serviceRoleKey) return false;
+  if (!isLocalUrl(url) && process.env.INTEGRATION_ALLOW_REMOTE !== '1') return false;
   try {
     execSync(
       `curl -s -o /dev/null --connect-timeout 1 --max-time 2 "${url}/auth/v1/health"`,

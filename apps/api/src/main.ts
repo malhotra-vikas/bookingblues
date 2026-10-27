@@ -32,10 +32,11 @@ async function bootstrap(): Promise<void> {
   });
   app.useLogger(app.get(Logger));
 
-  // Raise the JSON body limit above the 100kb default so the careers page can
-  // POST a base64-encoded resume (capped ~5MB → ~6.7MB encoded + fields).
-  // Works alongside `rawBody: true` (Nest re-parses; rawBody buffer preserved).
-  app.useBodyParser('json', { limit: '8mb' });
+  // 1mb JSON cap: headroom over the 100kb default for large Stripe/Slack event
+  // payloads, without the old 8mb (sized for base64 resumes, which now upload as
+  // multipart via multer) that let any public route make us buffer and parse
+  // 8mb bodies. Works alongside `rawBody: true` (rawBody buffer preserved).
+  app.useBodyParser('json', { limit: '1mb' });
 
   // Strip the `X-Powered-By: Express` header — small information-disclosure win.
   app.disable('x-powered-by');

@@ -63,7 +63,12 @@ export class CareersController {
   @Post('apply')
   @HttpCode(202)
   @Throttle({ default: { limit: 5, ttl: 60_000 } })
-  @UseInterceptors(FileInterceptor('resume', { limits: { fileSize: MAX_RESUME_BYTES } }))
+  @UseInterceptors(
+    FileInterceptor('resume', {
+      // Bound the non-file parts too: ApplySchema has 10 short fields (≤4000 chars).
+      limits: { fileSize: MAX_RESUME_BYTES, files: 1, fields: 20, fieldSize: 16 * 1024 },
+    }),
+  )
   async apply(
     @Body(new ZodBodyPipe(ApplySchema)) body: Apply,
     @UploadedFile() resume?: UploadedResume,
