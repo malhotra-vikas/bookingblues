@@ -670,7 +670,7 @@ export function Wizard({
       </StepCard>
 
       <StepCard
-        number={8}
+        number={3}
         title="Service area"
         description="The ZIP codes you cover. The AI books only jobs inside this area and sends out-of-area callers a polite handoff. Leave blank to accept any address."
         done={serviceAreaSet || pendingZones.length > 0}
@@ -784,9 +784,9 @@ export function Wizard({
       </StepCard>
 
       <StepCard
-        number={3}
+        number={4}
         title="Get your KeeprSteady phone number"
-        description="A new local US number we'll use to text customers when you miss their call. You'll forward your real business line to it in step 7."
+        description="A new local US number we'll use to text customers when you miss their call. You'll forward your real business line to it in step 8."
         done={twilioDone}
       >
         {!twilioDone ? (
@@ -873,7 +873,7 @@ export function Wizard({
       </StepCard>
 
       <StepCard
-        number={4}
+        number={5}
         title="Connect your Google Calendar"
         description="So the AI knows when you're free and can put new appointments on your calendar automatically."
         done={googleDone}
@@ -899,7 +899,7 @@ export function Wizard({
       </StepCard>
 
       <StepCard
-        number={5}
+        number={6}
         title="Set up payouts (only if you charge a booking fee)"
         description="Lets us send the booking-fee money straight to your bank. Skip this step if you don't take deposits."
         done={stripeConnectDone}
@@ -944,7 +944,7 @@ export function Wizard({
       </StepCard>
 
       <StepCard
-        number={6}
+        number={7}
         title="Booking fee"
         description="Charge a non-refundable deposit before confirming the slot. Cuts down on no-shows."
         done={feeDecided}
@@ -1001,7 +1001,7 @@ export function Wizard({
       </StepCard>
 
       <StepCard
-        number={7}
+        number={8}
         title="Forward your real business line"
         description="When customers call your real number and you don't pick up, your phone carrier sends the call to KeeprSteady. Your phone still rings normally — only missed calls get caught by the AI."
         done={false}
@@ -1010,7 +1010,7 @@ export function Wizard({
           <CarrierForwarding twilioNumber={op!.twilio_number_e164!} />
         ) : (
           <p className="text-sm text-muted dark:text-slate-400">
-            Get your KeeprSteady number first (step 3) — once you have it we&apos;ll show you the
+            Get your KeeprSteady number first (step 4) — once you have it we&apos;ll show you the
             short code to dial on your phone for your carrier.
           </p>
         )}
@@ -1036,7 +1036,7 @@ export function Wizard({
               <li>The number goes back into the public pool — anyone can buy it next.</li>
               <li>We <strong>cannot</strong> get this exact number back for you later.</li>
               <li>Customers who saved this number lose touch with you.</li>
-              <li>Your call-forwarding setup (from step 7) becomes useless until you set it up
+              <li>Your call-forwarding setup (from step 8) becomes useless until you set it up
                 again with a new number.</li>
             </ul>
             <p className="text-xs">

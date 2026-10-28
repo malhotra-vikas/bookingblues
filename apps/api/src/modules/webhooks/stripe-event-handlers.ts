@@ -38,6 +38,12 @@ function unixToIso(unix: number | null | undefined): string | null {
   return unix ? new Date(unix * 1000).toISOString() : null;
 }
 
+/** Stripe sets `cancel_at` for both portal cancel-at-period-end and explicit cancel dates. */
+export function cancelAtIso(sub: Stripe.Subscription): string | null {
+  if (sub.cancel_at) return unixToIso(sub.cancel_at);
+  return sub.cancel_at_period_end ? unixToIso(sub.current_period_end) : null;
+}
+
 export interface HandlerDeps {
   readonly db: SupabaseClient<Database>;
   readonly logger: PinoLogger;
@@ -126,6 +132,9 @@ export async function onSubscriptionUpserted(
       stripe_subscription_id: sub.id,
       subscription_status: mapSubscriptionStatus(sub.status),
       trial_ends_at: unixToIso(sub.trial_end),
+      // Scheduled cancellation (portal "cancel at period end"); status stays
+      // trialing/active until then. Cleared when the customer un-cancels.
+      subscription_cancel_at: cancelAtIso(sub),
       // Current billing cycle — usage metering counts conversations in this
       // window (during a trial these span the trial). Falls back to calendar
       // month in the usage query when null.
@@ -150,6 +159,7 @@ export async function onSubscriptionDeleted(
     .update({
       subscription_status: 'canceled',
       trial_ends_at: null,
+      subscription_cancel_at: null,
     })
     .eq('stripe_customer_id', customerId);
   if (error) throw error;

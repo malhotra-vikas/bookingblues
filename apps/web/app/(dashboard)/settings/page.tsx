@@ -28,6 +28,7 @@ interface Operator {
   special_price_cents: number | null;
   special_price_periods: number | null;
   trial_ends_at: string | null;
+  subscription_cancel_at: string | null;
   stripe_connect_account_id: string | null;
   stripe_connect_charges_enabled: boolean;
   stripe_connect_payouts_enabled: boolean;

@@ -500,6 +500,7 @@ export type Database = {
           special_price_periods: number | null;
           special_price_coupon_id: string | null;
           special_price_set_at: string | null;
+          subscription_cancel_at: string | null;
           terms_accepted_at: string | null;
           terms_version: string | null;
           service_radius_zones: Json;
@@ -547,6 +548,7 @@ export type Database = {
           special_price_periods?: number | null;
           special_price_coupon_id?: string | null;
           special_price_set_at?: string | null;
+          subscription_cancel_at?: string | null;
           terms_accepted_at?: string | null;
           terms_version?: string | null;
           service_radius_zones?: Json;
@@ -594,6 +596,7 @@ export type Database = {
           special_price_periods?: number | null;
           special_price_coupon_id?: string | null;
           special_price_set_at?: string | null;
+          subscription_cancel_at?: string | null;
           terms_accepted_at?: string | null;
           terms_version?: string | null;
           service_radius_zones?: Json;

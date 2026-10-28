@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import { getSupabaseBrowserClient } from '../lib/supabase/browser';
 import { publicEnv } from '../lib/env';
@@ -20,16 +20,58 @@ async function authedFetch(path: string, init?: RequestInit): Promise<Response> 
   });
 }
 
+// After Stripe Checkout redirects back, the webhook that sets the status usually
+// lands a second or two later. Poll the server render briefly instead of
+// telling a customer who just paid that their trial hasn't started.
+const ACTIVATION_POLL_MS = 2000;
+const ACTIVATION_MAX_POLLS = 15;
+
+function shortDate(iso: string): string {
+  return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
 export function TrialBanner({
   status,
   trialEndsAt,
+  cancelAt,
+  justSubscribed = false,
 }: {
   status: string | null;
   trialEndsAt: string | null;
+  cancelAt: string | null;
+  justSubscribed?: boolean;
 }): JSX.Element | null {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [polls, setPolls] = useState(0);
+
+  const activating = !status && justSubscribed && polls < ACTIVATION_MAX_POLLS;
+  useEffect(() => {
+    if (!activating) return;
+    const t = setTimeout(() => {
+      router.refresh();
+      setPolls((n) => n + 1);
+    }, ACTIVATION_POLL_MS);
+    return () => clearTimeout(t);
+  }, [activating, polls, router]);
+
+  if (activating) {
+    return (
+      <span className="text-sm text-muted" role="status">
+        Plan status: <span className="font-medium text-ink">activating your trial…</span>
+      </span>
+    );
+  }
+
+  // Scheduled to cancel (Customer Portal): Stripe keeps the status until the date.
+  if (cancelAt && (status === 'trialing' || status === 'active')) {
+    return (
+      <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-800">
+        Cancels {shortDate(cancelAt)}
+      </span>
+    );
+  }
 
   // No status until Stripe Checkout completes — the trial starts there, card required.
   if (!status) {

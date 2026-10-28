@@ -65,7 +65,7 @@ export default async function OnboardingPage(): Promise<JSX.Element> {
       <header>
         <h1 className="text-2xl font-semibold dark:text-slate-100">Onboarding</h1>
         <p className="text-sm text-muted dark:text-slate-400 mt-1">
-          Six steps to start booking missed calls. You can come back to this page anytime.
+          Eight steps to start booking missed calls. You can come back to this page anytime.
         </p>
       </header>
 

@@ -30,6 +30,7 @@ const baseOperator: Tables<'operators'> = {
   special_price_periods: null,
   special_price_coupon_id: null,
   special_price_set_at: null,
+  subscription_cancel_at: null,
   terms_accepted_at: null,
   terms_version: null,
   subscription_status: 'active',

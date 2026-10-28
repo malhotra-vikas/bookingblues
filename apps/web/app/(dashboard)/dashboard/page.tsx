@@ -12,6 +12,7 @@ interface Metrics {
   fee_revenue_cents: number;
   subscription_status: string | null;
   trial_ends_at: string | null;
+  subscription_cancel_at: string | null;
   month_start_iso: string;
   usage: {
     conversations_used: number;
@@ -95,7 +96,7 @@ const PERIOD_LABEL: Record<string, string> = {
 export default async function DashboardPage({
   searchParams,
 }: {
-  searchParams: Promise<{ period?: string; from?: string; to?: string }>;
+  searchParams: Promise<{ period?: string; from?: string; to?: string; subscription?: string }>;
 }): Promise<JSX.Element> {
   const sp = await searchParams;
   const period = ['month', 'quarter', 'year', 'custom'].includes(sp.period ?? '')
@@ -152,6 +153,8 @@ export default async function DashboardPage({
             <TrialBanner
               status={metricsR.subscription_status}
               trialEndsAt={metricsR.trial_ends_at}
+              cancelAt={metricsR.subscription_cancel_at}
+              justSubscribed={sp.subscription === 'success'}
             />
             <PeriodSelector />
           </div>

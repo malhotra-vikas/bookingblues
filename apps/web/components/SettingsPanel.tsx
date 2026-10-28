@@ -34,6 +34,7 @@ interface Operator extends SpecialPricingFields {
   plan: string | null;
   plan_cadence: string | null;
   trial_ends_at: string | null;
+  subscription_cancel_at: string | null;
   stripe_connect_account_id: string | null;
   stripe_connect_charges_enabled: boolean;
   stripe_connect_payouts_enabled: boolean;
@@ -743,6 +744,7 @@ export function SettingsPanel({ operator }: { operator: Operator }): JSX.Element
                 </span>
               )}
             </div>
+            <CancelLine status={operator.subscription_status} cancelAt={operator.subscription_cancel_at} />
             <PlanLine plan={operator.plan} cadence={operator.plan_cadence} />
             <SpecialPriceLine operator={operator} />
           </div>
@@ -943,6 +945,26 @@ function IntegrationRow({
       </div>
       {action}
     </div>
+  );
+}
+
+function CancelLine({
+  status,
+  cancelAt,
+}: {
+  status: string | null;
+  cancelAt: string | null;
+}): JSX.Element | null {
+  if (!cancelAt || (status !== 'trialing' && status !== 'active')) return null;
+  const date = new Date(cancelAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+  return (
+    <p className="mt-1 text-sm text-red-700 dark:text-red-400">
+      Cancels on {date}
+      {status === 'trialing' ? ' — your card won’t be charged.' : ' — your plan stays on until then.'}{' '}
+      <span className="text-xs text-muted dark:text-slate-400">
+        Changed your mind? Resume it from the billing portal.
+      </span>
+    </p>
   );
 }
 
