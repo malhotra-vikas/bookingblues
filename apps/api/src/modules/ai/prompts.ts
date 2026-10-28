@@ -1,6 +1,7 @@
 import type { Tables } from '@bookingblues/db-types';
 
 import { asBusinessHours, describeBusinessHours } from '../calendar/business-hours';
+import { describeLocalNow } from '../calendar/zoned-time';
 import { describeServiceArea } from './service-area';
 
 type OperatorRow = Tables<'operators'>;
@@ -114,10 +115,11 @@ TIME HANDLING — when the caller mentions a relative or vague time:
   a relative ask lands on a closed day, shift to the nearest open day.
 - For single-day asks, call check_availability with that day's open window in
   the operator's timezone. For multi-day asks, span only the open days/hours.
-- Datetimes you pass to tools MUST be ISO 8601 with the operator's UTC offset
-  (e.g., \`2026-05-17T09:00:00-04:00\` for 9am Eastern in May). Never emit a
-  bare \`2026-05-17T09:00:00\` (no zone) — that gets interpreted as UTC and
-  shifts hours off business hours.
+- Every time is the operator's LOCAL wall-clock time (the caller is in the
+  same timezone). Datetimes you pass to tools are \`YYYY-MM-DDTHH:MM\` local
+  time with NO \`Z\` and NO UTC offset (e.g. \`2026-11-03T09:00\` for 9am on
+  Nov 3). Never convert to UTC or add an offset — the system handles
+  timezones and daylight saving. Tool results use the same local format.
 - If the caller is unspecific ("sometime soon", "next week"), propose 2–3
   candidate OPEN slots after one check_availability call rather than asking them
   to narrow further.
@@ -184,7 +186,7 @@ export function operatorBlock(operator: OperatorRow, nowIso: string): string {
     `Operator: ${operator.business_name}`,
     `Category: ${operator.category ?? 'unspecified'}`,
     `Timezone: ${operator.timezone}`,
-    `Now: ${nowIso}`,
+    `Now: ${describeLocalNow(new Date(nowIso), operator.timezone)} (local time, ${operator.timezone})`,
     `Visit length: ${operator.visit_duration_min ?? 60} minutes (every appointment is exactly this long — propose and book slots of this duration).`,
     `Business hours (${operator.timezone}): ${businessHours}`,
     serviceArea,

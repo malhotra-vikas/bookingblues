@@ -78,7 +78,7 @@ async function postJson(path: string, body: unknown): Promise<unknown> {
   return res.json();
 }
 
-export function OperatorTabs({ operatorId }: { operatorId: string }): JSX.Element {
+export function OperatorTabs({ operatorId, timeZone }: { operatorId: string; timeZone: string }): JSX.Element {
   const [tab, setTab] = useState<TabKey>('conversations');
 
   return (
@@ -90,7 +90,7 @@ export function OperatorTabs({ operatorId }: { operatorId: string }): JSX.Elemen
         <TabBtn id="audit" active={tab} onClick={setTab} label="Audit log" />
       </div>
       {tab === 'conversations' ? <ConversationsTab operatorId={operatorId} /> : null}
-      {tab === 'appointments' ? <AppointmentsTab operatorId={operatorId} /> : null}
+      {tab === 'appointments' ? <AppointmentsTab operatorId={operatorId} timeZone={timeZone} /> : null}
       {tab === 'payments' ? <PaymentsTab operatorId={operatorId} /> : null}
       {tab === 'audit' ? <AuditTab operatorId={operatorId} /> : null}
     </section>
@@ -250,7 +250,7 @@ function ConversationsTab({ operatorId }: { operatorId: string }): JSX.Element {
 
 // ── Appointments ──────────────────────────────────────────────────────────
 
-function AppointmentsTab({ operatorId }: { operatorId: string }): JSX.Element {
+function AppointmentsTab({ operatorId, timeZone }: { operatorId: string; timeZone: string }): JSX.Element {
   const [rows, setRows] = useState<Appointment[]>([]);
   const [error, setError] = useState<string | null>(null);
 
@@ -291,7 +291,8 @@ function AppointmentsTab({ operatorId }: { operatorId: string }): JSX.Element {
               <tr key={a.id} className="border-t border-slate-100 dark:border-slate-800">
                 <td className="px-3 py-2">{a.caller_name}</td>
                 <td className="px-3 py-2 text-xs">
-                  {new Date(a.scheduled_for_start).toLocaleString()}
+                  {/* Operator's timezone, not the admin's browser — matches what the caller was told. */}
+                  {new Date(a.scheduled_for_start).toLocaleString('en-US', { timeZone, timeZoneName: 'short' })}
                 </td>
                 <td className="px-3 py-2">{a.status}</td>
                 <td className="px-3 py-2 text-xs">

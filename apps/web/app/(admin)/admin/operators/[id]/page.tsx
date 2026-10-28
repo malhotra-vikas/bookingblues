@@ -116,7 +116,7 @@ export default async function DossierPage({
         }}
       />
 
-      <OperatorTabs operatorId={op.id} />
+      <OperatorTabs operatorId={op.id} timeZone={op.timezone} />
 
       <details className="rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3 text-xs">
         <summary className="cursor-pointer font-medium text-muted dark:text-slate-400">Provider links</summary>

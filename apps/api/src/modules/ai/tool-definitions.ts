@@ -2,28 +2,26 @@ import type OpenAI from 'openai';
 import { z } from 'zod';
 
 /**
- * Tolerant ISO-8601 datetime. The model occasionally emits offset-less
- * strings like `2026-05-12T19:00:00`; we coerce those to UTC by appending
- * `Z` before zod validates. Anything still malformed after the patch is a
- * legitimate validation error.
+ * Operator-local wall-clock datetime, `YYYY-MM-DDTHH:MM[:SS]`, no zone. The
+ * server converts to UTC in the operator's timezone (calendar/zoned-time.ts)
+ * so the model never does DST math. A `Z`/offset the model adds anyway is
+ * stripped — the wall-clock digits are what the caller agreed to.
  */
-const IsoDateTime = z.preprocess((v) => {
-  if (typeof v !== 'string') return v;
-  // Already has Z or ±HH:MM offset → leave alone.
-  if (/[Zz]$|[+-]\d{2}:?\d{2}$/.test(v)) return v;
-  // Bare `YYYY-MM-DDTHH:MM(:SS(.sss)?)?` → assume UTC.
-  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?$/.test(v)) return `${v}Z`;
-  return v;
-}, z.string().datetime({ offset: true }));
+const LocalDateTime = z.preprocess(
+  (v) => (typeof v === 'string' ? v.trim().replace(/(\.\d+)?([Zz]|[+-]\d{2}:?\d{2})$/, '') : v),
+  z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$/, 'Expected local date-time YYYY-MM-DDTHH:MM'),
+);
 
 export const CheckAvailabilityArgs = z.object({
-  window_start: IsoDateTime,
-  window_end: IsoDateTime,
+  window_start: LocalDateTime,
+  window_end: LocalDateTime,
 });
 export type CheckAvailabilityArgs = z.infer<typeof CheckAvailabilityArgs>;
 
 export const ProposeSlotsArgs = z.object({
-  slots: z.array(z.object({ start: IsoDateTime, end: IsoDateTime })).min(1).max(5),
+  slots: z.array(z.object({ start: LocalDateTime, end: LocalDateTime })).min(1).max(5),
 });
 export type ProposeSlotsArgs = z.infer<typeof ProposeSlotsArgs>;
 
@@ -33,8 +31,8 @@ export const CheckServiceAreaArgs = z.object({
 export type CheckServiceAreaArgs = z.infer<typeof CheckServiceAreaArgs>;
 
 export const BookAppointmentArgs = z.object({
-  start: IsoDateTime,
-  end: IsoDateTime,
+  start: LocalDateTime,
+  end: LocalDateTime,
   caller_name: z.string().min(1).max(120),
   caller_email: z.string().email().optional(),
   job_summary: z.string().min(1).max(500),
@@ -94,12 +92,12 @@ export const TOOL_DEFINITIONS: ReadonlyArray<OpenAI.Chat.Completions.ChatComplet
     function: {
       name: 'check_availability',
       description:
-        "Returns the operator's free time (busy intervals + business hours) between window_start and window_end so you can offer slots of the operator's visit length (see \"Visit length\" in the operator block). Both MUST be ISO 8601 with a `Z` (UTC) or numeric offset like `-04:00` — never offset-less. Example: `2026-05-13T13:00:00Z`. The tool returns slots within the operator's business hours and not already booked.",
+        "Returns the operator's free time (busy intervals + business hours) between window_start and window_end so you can offer slots of the operator's visit length (see \"Visit length\" in the operator block). All times — inputs and outputs — are LOCAL wall-clock time in the operator's timezone, format `YYYY-MM-DDTHH:MM`, with NO `Z` and NO offset. Example: `2026-11-03T09:00`. The tool returns slots within the operator's business hours and not already booked.",
       parameters: {
         type: 'object',
         properties: {
-          window_start: { type: 'string', format: 'date-time' },
-          window_end: { type: 'string', format: 'date-time' },
+          window_start: { type: 'string', description: 'Local wall-clock time YYYY-MM-DDTHH:MM, no offset' },
+          window_end: { type: 'string', description: 'Local wall-clock time YYYY-MM-DDTHH:MM, no offset' },
         },
         required: ['window_start', 'window_end'],
         additionalProperties: false,
@@ -122,8 +120,8 @@ export const TOOL_DEFINITIONS: ReadonlyArray<OpenAI.Chat.Completions.ChatComplet
             items: {
               type: 'object',
               properties: {
-                start: { type: 'string', format: 'date-time' },
-                end: { type: 'string', format: 'date-time' },
+                start: { type: 'string', description: 'Local wall-clock time YYYY-MM-DDTHH:MM, no offset' },
+                end: { type: 'string', description: 'Local wall-clock time YYYY-MM-DDTHH:MM, no offset' },
               },
               required: ['start', 'end'],
               additionalProperties: false,
@@ -140,12 +138,12 @@ export const TOOL_DEFINITIONS: ReadonlyArray<OpenAI.Chat.Completions.ChatComplet
     function: {
       name: 'book_appointment',
       description:
-        'Book or hold the appointment for an agreed slot. The slot MUST be within the operator\'s business hours (never a closed day or out-of-hours time). If a booking fee applies, this holds the slot and the system automatically texts the caller a secure payment link — the appointment is confirmed only after payment, so do not tell the caller it is confirmed yet. If no fee applies, it confirms immediately and creates the Google Calendar event. Only call after the caller has agreed to a specific slot and provided their name and the job summary. On error "slot_unavailable", propose other open slots instead of retrying.',
+        'Book or hold the appointment for an agreed slot. `start`/`end` are LOCAL wall-clock time in the operator\'s timezone, `YYYY-MM-DDTHH:MM`, no offset. The slot MUST be within the operator\'s business hours (never a closed day or out-of-hours time). If a booking fee applies, this holds the slot and the system automatically texts the caller a secure payment link — the appointment is confirmed only after payment, so do not tell the caller it is confirmed yet. If no fee applies, it confirms immediately and creates the Google Calendar event. Only call after the caller has agreed to a specific slot and provided their name and the job summary. On error "slot_unavailable", propose other open slots instead of retrying.',
       parameters: {
         type: 'object',
         properties: {
-          start: { type: 'string', format: 'date-time' },
-          end: { type: 'string', format: 'date-time' },
+          start: { type: 'string', description: 'Local wall-clock time YYYY-MM-DDTHH:MM, no offset' },
+          end: { type: 'string', description: 'Local wall-clock time YYYY-MM-DDTHH:MM, no offset' },
           caller_name: { type: 'string' },
           caller_email: { type: 'string', format: 'email' },
           job_summary: { type: 'string' },

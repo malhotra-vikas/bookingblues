@@ -13,6 +13,7 @@ interface Metrics {
   subscription_status: string | null;
   trial_ends_at: string | null;
   subscription_cancel_at: string | null;
+  timezone: string;
   month_start_iso: string;
   usage: {
     conversations_used: number;
@@ -65,8 +66,11 @@ function relativeTime(iso: string | null): string {
   if (days < 7) return `${days} day${days === 1 ? '' : 's'} ago`;
   return new Date(iso).toLocaleDateString();
 }
-function formatAppointmentTime(iso: string): string {
+// Server component: without an explicit timeZone this renders in the server's
+// zone (UTC on Railway), so a 9am Eastern job showed as 1pm.
+function formatAppointmentTime(iso: string, timeZone: string | undefined): string {
   return new Date(iso).toLocaleString('en-US', {
+    ...(timeZone ? { timeZone } : {}),
     weekday: 'short',
     month: 'short',
     day: 'numeric',
@@ -134,6 +138,7 @@ export default async function DashboardPage({
   }
 
   const hasMetrics = !('error' in metricsR);
+  const operatorTz = 'error' in metricsR ? undefined : metricsR.timezone;
 
   return (
     <div className="space-y-8">
@@ -281,9 +286,10 @@ export default async function DashboardPage({
               <AppointmentsTable
                 title="Upcoming appointments"
                 rows={upcoming}
+                timeZone={operatorTz}
                 emptyBody="No upcoming appointments. New bookings the AI makes will appear here."
               />
-              {past.length > 0 ? <AppointmentsTable title="Past appointments" rows={past} muted /> : null}
+              {past.length > 0 ? <AppointmentsTable title="Past appointments" rows={past} timeZone={operatorTz} muted /> : null}
             </>
           );
         })()
@@ -297,9 +303,11 @@ function AppointmentsTable({
   rows,
   emptyBody,
   muted,
+  timeZone,
 }: {
   title: string;
   rows: Appointment[];
+  timeZone: string | undefined;
   emptyBody?: string;
   muted?: boolean;
 }): JSX.Element {
@@ -326,7 +334,7 @@ function AppointmentsTable({
             <tbody className="dark:text-slate-200">
               {rows.map((a) => (
                 <tr key={a.id} className="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/50">
-                  <td className="px-3 py-2 whitespace-nowrap">{formatAppointmentTime(a.scheduled_for_start)}</td>
+                  <td className="px-3 py-2 whitespace-nowrap">{formatAppointmentTime(a.scheduled_for_start, timeZone)}</td>
                   <td className="px-3 py-2">
                     <div className="font-medium">{a.caller_name}</div>
                     <div className="flex items-center gap-2 text-xs text-muted dark:text-slate-400">

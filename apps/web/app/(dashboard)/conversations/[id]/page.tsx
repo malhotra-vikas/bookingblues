@@ -19,8 +19,10 @@ interface Message {
   created_at: string;
 }
 
-function fmt(iso: string): string {
+// Server component: pass the operator's timezone or this renders in UTC.
+function fmt(iso: string, timeZone: string | undefined): string {
   return new Date(iso).toLocaleString('en-US', {
+    ...(timeZone ? { timeZone } : {}),
     month: 'short',
     day: 'numeric',
     hour: 'numeric',
@@ -37,13 +39,13 @@ export default async function ConversationDetailPage({
 
   let data: { conversation: Conversation; messages: Message[] } | null = null;
   let error: string | null = null;
-  try {
-    data = await apiAsUser<{ conversation: Conversation; messages: Message[] }>(
-      `/v1/conversations/${id}/messages`,
-    );
-  } catch (err) {
-    error = err instanceof ApiError ? err.message : 'Could not load conversation';
-  }
+  const [convoR, operatorR] = await Promise.allSettled([
+    apiAsUser<{ conversation: Conversation; messages: Message[] }>(`/v1/conversations/${id}/messages`),
+    apiAsUser<{ timezone: string }>('/v1/operators/me'),
+  ]);
+  if (convoR.status === 'fulfilled') data = convoR.value;
+  else error = convoR.reason instanceof ApiError ? convoR.reason.message : 'Could not load conversation';
+  const tz = operatorR.status === 'fulfilled' ? operatorR.value?.timezone : undefined;
 
   return (
     <div className="space-y-6">
@@ -64,7 +66,7 @@ export default async function ConversationDetailPage({
             <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted">
               <span>Status: {data.conversation.status}</span>
               <span>Outcome: {data.conversation.outcome ?? '—'}</span>
-              <span>Started: {fmt(data.conversation.started_at)}</span>
+              <span>Started: {fmt(data.conversation.started_at, tz)}</span>
             </div>
             {data.conversation.summary ? (
               <p className="mt-3 text-sm text-ink">{data.conversation.summary}</p>
@@ -98,7 +100,7 @@ export default async function ConversationDetailPage({
                         <div
                           className={`mt-1 text-[10px] ${isCaller || isSystem ? 'text-muted' : 'text-white/70'}`}
                         >
-                          {isCaller ? 'Caller' : isSystem ? 'System' : 'AI'} · {fmt(m.created_at)}
+                          {isCaller ? 'Caller' : isSystem ? 'System' : 'AI'} · {fmt(m.created_at, tz)}
                         </div>
                       </div>
                     </li>

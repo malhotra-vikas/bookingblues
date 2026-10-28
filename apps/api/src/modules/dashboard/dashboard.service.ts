@@ -37,6 +37,8 @@ export interface DashboardMetrics {
   readonly subscription_status: string | null;
   readonly trial_ends_at: string | null;
   readonly subscription_cancel_at: string | null;
+  /** Operator IANA timezone — the dashboard renders every time in it. */
+  readonly timezone: string;
 }
 
 @Injectable()
@@ -51,7 +53,7 @@ export class DashboardService {
       .db()
       .from('operators')
       .select(
-        'id, subscription_status, trial_ends_at, subscription_cancel_at, plan, current_period_start, current_period_end',
+        'id, subscription_status, trial_ends_at, subscription_cancel_at, plan, current_period_start, current_period_end, timezone',
       )
       .eq('user_id', userId)
       .maybeSingle();
@@ -146,6 +148,7 @@ export class DashboardService {
       subscription_status: operator.subscription_status,
       trial_ends_at: operator.trial_ends_at,
       subscription_cancel_at: operator.subscription_cancel_at,
+      timezone: operator.timezone,
     };
   }
 

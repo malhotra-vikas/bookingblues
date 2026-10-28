@@ -6,26 +6,25 @@ import {
 } from './tool-definitions';
 
 describe('Tool argument schemas', () => {
-  it('CheckAvailabilityArgs accepts ISO 8601 with offset', () => {
+  it('CheckAvailabilityArgs accepts local wall-clock times', () => {
     const ok = CheckAvailabilityArgs.safeParse({
-      window_start: '2026-05-07T09:00:00-04:00',
-      window_end: '2026-05-08T17:00:00-04:00',
+      window_start: '2026-11-03T09:00',
+      window_end: '2026-11-03T17:00:00',
     });
     expect(ok.success).toBe(true);
   });
 
-  it('CheckAvailabilityArgs tolerates offset-less datetimes (coerced to UTC)', () => {
-    // The model regularly emits `YYYY-MM-DDTHH:MM:SS` without a zone. We
-    // preprocess by appending `Z` rather than failing the tool call. See
-    // tool-definitions.ts → IsoDateTime.
+  it('strips a Z or offset the model adds anyway (wall clock wins)', () => {
+    // The model's offset arithmetic is what breaks across DST; the server
+    // applies the operator's timezone instead. See calendar/zoned-time.ts.
     const parsed = CheckAvailabilityArgs.safeParse({
-      window_start: '2026-05-07T09:00:00',
-      window_end: '2026-05-08T17:00:00',
+      window_start: '2026-11-03T09:00:00-04:00',
+      window_end: '2026-11-03T17:00:00.000Z',
     });
     expect(parsed.success).toBe(true);
     if (parsed.success) {
-      expect(parsed.data.window_start.endsWith('Z')).toBe(true);
-      expect(parsed.data.window_end.endsWith('Z')).toBe(true);
+      expect(parsed.data.window_start).toBe('2026-11-03T09:00:00');
+      expect(parsed.data.window_end).toBe('2026-11-03T17:00:00');
     }
   });
 

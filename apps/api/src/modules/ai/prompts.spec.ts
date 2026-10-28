@@ -111,6 +111,16 @@ describe('assembleSystemPrompt', () => {
     expect(prompt.split('---')).toHaveLength(3);
   });
 
+  it('renders Now in the operator timezone, not UTC', () => {
+    const prompt = assembleSystemPrompt({
+      operator: baseOperator,
+      category: null,
+      nowIso: '2026-11-04T02:30:00Z', // 9:30pm Tue Nov 3 Eastern (EST, after DST ends)
+    });
+    expect(prompt).toContain('Now: Tue 2026-11-03 21:30 (local time, America/New_York)');
+    expect(prompt).not.toContain('2026-11-04T02:30');
+  });
+
   it('omits category section when no category is set', () => {
     const prompt = assembleSystemPrompt({
       operator: baseOperator,

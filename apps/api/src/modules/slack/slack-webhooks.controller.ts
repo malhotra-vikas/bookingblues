@@ -768,7 +768,15 @@ export class SlackWebhooksController {
 
       const feeNote = result.feeCheckoutUrl ? ' Booking-fee Checkout link sent.' : '';
       await notify(
-        `📅 <@${slackUserId}> booked ${callerName} for ${new Date(startIso).toUTCString()}. ` +
+        `📅 <@${slackUserId}> booked ${callerName} for ${new Date(startIso).toLocaleString('en-US', {
+          timeZone: op.timezone,
+          weekday: 'short',
+          month: 'short',
+          day: 'numeric',
+          hour: 'numeric',
+          minute: '2-digit',
+          timeZoneName: 'short',
+        })}. ` +
           `ICS link sent to caller.${feeNote}`,
       );
     } catch (err) {

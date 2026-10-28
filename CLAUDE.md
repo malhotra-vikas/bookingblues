@@ -448,6 +448,7 @@ The Web app uses the anon key and reads via RLS. The API uses the service role a
 
 **Tool execution rules**:
 - All tools execute server-side in the API. The model never sees raw secrets.
+- Times in tool args and results are the operator's **local wall-clock time** (`YYYY-MM-DDTHH:MM`, no offset; caller and operator share the timezone). The prompt's `Now` is local too. The server converts to/from UTC in `calendar/zoned-time.ts`, so the model never does DST math; any offset it emits is stripped.
 - `book_appointment` is wrapped in a Postgres advisory lock keyed on `(operator_id, slot_start)` to prevent double-booking when two callers race.
 - Every tool call writes to `messages.ai_tool_calls`.
 

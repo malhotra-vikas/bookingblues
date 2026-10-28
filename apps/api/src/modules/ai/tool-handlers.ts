@@ -33,6 +33,7 @@ import type {
 } from './tool-definitions';
 import { describeServiceArea, isZipInServiceArea, parseRadiusZones } from './service-area';
 import { fullyBookedIntervals, TRAVEL_BUFFER_MIN } from '../appointments/capacity';
+import { localWallTimeToUtcIso, utcToLocalWallTime } from '../calendar/zoned-time';
 
 type OperatorRow = Tables<'operators'>;
 type ConversationRow = Tables<'conversations'>;
@@ -100,8 +101,9 @@ export async function checkAvailability(
   // once, so a time is only unavailable when the Nth truck is taken. External
   // Google events are intentionally not counted here (product decision).
   const truckCount = ctx.operator.truck_count ?? 1;
-  const windowStartMs = new Date(args.window_start).getTime();
-  const windowEndMs = new Date(args.window_end).getTime();
+  const tz = ctx.operator.timezone;
+  const windowStartMs = new Date(localWallTimeToUtcIso(args.window_start, tz)).getTime();
+  const windowEndMs = new Date(localWallTimeToUtcIso(args.window_end, tz)).getTime();
   const bufferMs = TRAVEL_BUFFER_MIN * 60_000;
 
   const { data: rows, error } = await ctx.supabase
@@ -123,11 +125,17 @@ export async function checkAvailability(
     truckCount,
     windowStart: windowStartMs,
     windowEnd: windowEndMs,
-  }).map((iv) => ({ start: new Date(iv.start).toISOString(), end: new Date(iv.end).toISOString() }));
+  }).map((iv) => ({
+    start: utcToLocalWallTime(new Date(iv.start).toISOString(), tz),
+    end: utcToLocalWallTime(new Date(iv.end).toISOString(), tz),
+  }));
 
+  // Everything the model sees is local wall-clock time (no offsets) — it
+  // round-trips through book_appointment without the model doing DST math.
   return {
     content: {
-      timezone: ctx.operator.timezone,
+      timezone: tz,
+      times_are: 'local wall-clock time in the operator timezone',
       business_hours: ctx.operator.business_hours,
       truck_count: truckCount,
       busy,
@@ -166,8 +174,8 @@ export async function bookAppointment(
     ...(args.caller_email ? { callerEmail: args.caller_email } : {}),
     jobSummary: args.job_summary,
     urgency: args.urgency,
-    startIso: args.start,
-    endIso: args.end,
+    startIso: localWallTimeToUtcIso(args.start, ctx.operator.timezone),
+    endIso: localWallTimeToUtcIso(args.end, ctx.operator.timezone),
   };
 
   const feeCollectible = isBookingFeeCollectible(ctx.operator);
@@ -237,7 +245,7 @@ export async function bookAppointment(
       return { content: { error: 'fee_unavailable', message } };
     }
 
-    const friendlyTime = new Date(args.start).toLocaleString('en-US', {
+    const friendlyTime = new Date(common.startIso).toLocaleString('en-US', {
       timeZone: ctx.operator.timezone,
       weekday: 'short',
       month: 'short',

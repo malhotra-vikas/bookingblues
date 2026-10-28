@@ -316,7 +316,7 @@ export function SettingsPanel({ operator }: { operator: Operator }): JSX.Element
         throw new Error(detail.detail ?? `Test booking failed (${res.status})`);
       }
       const data = (await res.json()) as { start: string; html_link: string | null };
-      const when = new Date(data.start).toLocaleString();
+      const when = new Date(data.start).toLocaleString('en-US', { timeZone: operator.timezone });
       setTestBooking({ when, link: data.html_link });
       setInfo(`Test appointment created for ${when} on your Google Calendar.`);
     });
