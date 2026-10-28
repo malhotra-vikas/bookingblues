@@ -561,7 +561,8 @@ POST   /v1/operators/me/google/connect   # returns OAuth URL
 POST   /v1/operators/me/google/disconnect
 POST   /v1/operators/me/connect/onboarding-link  # Stripe Connect Express
 GET    /v1/billing/portal-session
-POST   /v1/billing/checkout-session
+POST   /v1/billing/checkout-session     # returning customers (sub ended): no trial, no Founding coupon
+POST   /v1/billing/resume               # undo a scheduled cancel (portal cancel-at-period-end)
 GET    /v1/conversations?cursor=&status=
 GET    /v1/conversations/:id
 GET    /v1/appointments?cursor=&status=&from=&to=

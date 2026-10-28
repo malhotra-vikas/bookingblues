@@ -36,6 +36,12 @@ export class BillingController {
     return this.service.createPortalSession(user.userId);
   }
 
+  @Post('resume')
+  async resume(@CurrentUser() user: AuthenticatedUser): Promise<{ ok: true }> {
+    await this.service.resumeSubscription(user.userId);
+    return { ok: true };
+  }
+
   @Post('end-trial')
   async endTrial(@CurrentUser() user: AuthenticatedUser): Promise<{ ok: true }> {
     await this.service.endTrialNow(user.userId);

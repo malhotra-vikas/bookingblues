@@ -19,6 +19,7 @@ import type {
   PortalSessionResponse,
 } from './billing.dto';
 import { foundingCouponForCheckout } from './founding-promo';
+import { isReturningCustomer, resumeUpdate } from './reactivation';
 import { specialCouponForCheckout } from './special-pricing';
 
 type OperatorRow = Tables<'operators'>;
@@ -84,9 +85,17 @@ export class BillingService {
     // promo ($25 first month on monthly plans through the promo end date, as a
     // `duration: once` coupon). Checkout takes a single coupon, so it's one or
     // the other; both are no-ops when they don't apply to this plan + cadence.
+    //
+    // Returning customers (previous subscription ended) re-activate by paying:
+    // no new trial, no Founding coupon — see reactivation.ts. Their special
+    // coupon is single-use, so skip it if the old subscription already used it.
+    const returning = isReturningCustomer(operator);
+    let specialCoupon = specialCouponForCheckout(operator, plan, cadence);
+    if (specialCoupon && returning && !(await this.couponStillValid(specialCoupon))) {
+      specialCoupon = null;
+    }
     const coupon =
-      specialCouponForCheckout(operator, plan, cadence) ??
-      foundingCouponForCheckout(this.env, plan, cadence);
+      specialCoupon ?? (returning ? null : foundingCouponForCheckout(this.env, plan, cadence));
 
     const session = await this.stripe.client().checkout.sessions.create({
       mode: 'subscription',
@@ -96,10 +105,14 @@ export class BillingService {
       line_items: [{ price: priceId, quantity: 1 }],
       ...(coupon ? { discounts: [{ coupon }] } : {}),
       subscription_data: {
-        trial_period_days: this.env.TRIAL_DAYS,
-        trial_settings: {
-          end_behavior: { missing_payment_method: 'cancel' },
-        },
+        ...(returning
+          ? {}
+          : {
+              trial_period_days: this.env.TRIAL_DAYS,
+              trial_settings: {
+                end_behavior: { missing_payment_method: 'cancel' as const },
+              },
+            }),
         metadata,
       },
       success_url: `${this.env.APP_URL}/dashboard?subscription=success`,
@@ -156,7 +169,46 @@ export class BillingService {
     });
   }
 
+  /**
+   * Undo a scheduled cancellation (portal "cancel at period end") so the plan
+   * keeps going and the card on file is charged as normal. The webhook mirrors
+   * the change; we also clear the column now so the page doesn't lag behind it.
+   */
+  async resumeSubscription(userId: string): Promise<void> {
+    const operator = await this.getOperatorByUserId(userId);
+    if (!operator) throw new NotFoundError('Operator not found');
+    if (!operator.stripe_subscription_id) {
+      throw new ConflictError('Operator has no subscription to resume');
+    }
+    const stripe = this.stripe.client();
+    const sub = await stripe.subscriptions.retrieve(operator.stripe_subscription_id);
+    if (sub.status === 'canceled' || sub.status === 'incomplete_expired') {
+      throw new ConflictError(
+        'This subscription has already ended — pick a plan to reactivate instead.',
+      );
+    }
+    const update = resumeUpdate(sub);
+    if (!update) return; // nothing scheduled — already resumed
+    await stripe.subscriptions.update(sub.id, update);
+
+    const { error } = await this.supabase
+      .db()
+      .from('operators')
+      .update({ subscription_cancel_at: null })
+      .eq('id', operator.id);
+    if (error) throw error;
+  }
+
   // ── helpers ──────────────────────────────────────────────────────────────
+
+  private async couponStillValid(couponId: string): Promise<boolean> {
+    try {
+      return (await this.stripe.client().coupons.retrieve(couponId)).valid;
+    } catch (err) {
+      if ((err as { code?: string }).code === 'resource_missing') return false;
+      throw err;
+    }
+  }
 
   private priceForPlan(plan: Plan, cadence: Cadence): string {
     const key = `STRIPE_PRICE_${plan.toUpperCase()}_${cadence.toUpperCase()}` as

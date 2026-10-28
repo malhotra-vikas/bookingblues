@@ -34,6 +34,7 @@ interface Operator extends SpecialPricingFields {
   service_radius_zones: Array<{ center_zip: string; radius_miles: number }>;
   truck_count: number | null;
   subscription_status: string | null;
+  stripe_subscription_id: string | null;
   plan: string | null;
   onboarding_completed_at: string | null;
 }
@@ -395,12 +396,21 @@ export function Wizard({
   }
 
   const subscribed = op?.subscription_status === 'trialing' || op?.subscription_status === 'active';
+  // Mirrors the API's isReturningCustomer (billing/reactivation.ts): a previous
+  // subscription that ended re-activates by paying — no new trial, no Founding coupon.
+  const returning =
+    !!op?.stripe_subscription_id &&
+    (op.subscription_status === 'canceled' || op.subscription_status === 'incomplete_expired');
   const currentPlan = subscribed ? PLANS.find((p) => p.slug === op?.plan) : undefined;
   const depositMandatory = currentPlan?.depositMode === 'mandatory';
   const subscribeDescription = subscribed
     ? currentPlan
       ? `You're on the ${currentPlan.name} plan — ${currentPlan.conversationsPerMonth.toLocaleString()} conversations/mo included. Change or cancel anytime in Settings.`
       : "You're subscribed. Change or cancel your plan anytime in Settings."
+    : returning
+      ? special
+        ? `Welcome back. Pick a plan to reactivate — billing starts today, no trial. Your special price: ${special.planName} at ${specialPriceLabel(special)}, then ${regularPriceLabel(special)}.`
+        : 'Welcome back. Pick a plan to reactivate — billing starts today, no trial.'
     : special
       ? `7-day free trial. We need a card up front, but you won't be charged until day 8. Your special price: ${special.planName} at ${specialPriceLabel(special)}, then ${regularPriceLabel(special)}.`
       : promo.foundingActive
@@ -547,7 +557,7 @@ export function Wizard({
                 const showSpecial =
                   special != null && special.plan === plan.slug && special.cadence === pendingCadence;
                 const showFounding =
-                  !showSpecial && promo.foundingActive && pendingCadence === 'monthly';
+                  !showSpecial && !returning && promo.foundingActive && pendingCadence === 'monthly';
                 return (
                   <div
                     key={plan.slug}
@@ -621,7 +631,9 @@ export function Wizard({
                     >
                       {busyHere
                         ? 'Opening checkout…'
-                        : `Start trial — ${plan.name}`}
+                        : returning
+                          ? `Reactivate — ${plan.name}`
+                          : `Start trial — ${plan.name}`}
                     </button>
                   </div>
                 );

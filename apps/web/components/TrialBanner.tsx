@@ -46,7 +46,9 @@ export function TrialBanner({
   const [error, setError] = useState<string | null>(null);
   const [polls, setPolls] = useState(0);
 
-  const activating = !status && justSubscribed && polls < ACTIVATION_MAX_POLLS;
+  // A returning customer still reads 'canceled' until the new subscription's webhook lands.
+  const live = status === 'trialing' || status === 'active';
+  const activating = !live && justSubscribed && polls < ACTIVATION_MAX_POLLS;
   useEffect(() => {
     if (!activating) return;
     const t = setTimeout(() => {
@@ -59,16 +61,32 @@ export function TrialBanner({
   if (activating) {
     return (
       <span className="text-sm text-muted" role="status">
-        Plan status: <span className="font-medium text-ink">activating your trial…</span>
+        Plan status: <span className="font-medium text-ink">activating your plan…</span>
       </span>
     );
   }
 
   // Scheduled to cancel (Customer Portal): Stripe keeps the status until the date.
-  if (cancelAt && (status === 'trialing' || status === 'active')) {
+  if (cancelAt && live) {
     return (
-      <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-800">
-        Cancels {shortDate(cancelAt)}
+      <div className="flex items-center gap-3 text-sm">
+        <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-800">
+          Cancels {shortDate(cancelAt)}
+        </span>
+        <Link href="/settings" className="text-xs text-accent hover:underline">
+          Resume
+        </Link>
+      </div>
+    );
+  }
+
+  if (status === 'canceled' || status === 'incomplete_expired') {
+    return (
+      <span className="text-sm text-muted">
+        Plan status: <span className="font-medium text-ink">canceled</span>{' '}
+        <Link href="/onboarding" className="text-xs text-accent hover:underline">
+          Reactivate
+        </Link>
       </span>
     );
   }

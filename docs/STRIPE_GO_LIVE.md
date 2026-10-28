@@ -122,6 +122,13 @@ The script prints a ready-to-paste block of every env var it produced.
       switch plan). The portal has separate test and live configuration; if it's
       unconfigured in live, `GET /v1/billing/portal-session` will fail.
 - [ ] Branding (logo, colors) for Checkout + the portal.
+- **Radar — decision 2026-10-27: no further changes at launch.** Live Radar already has
+  "Block if CVC verification fails" enabled, but trials save the card via a $0 SetupIntent and
+  standard block rules act on payments — so a wrong-CVC card *can start a trial* (seen in the
+  go-live test: `cvc_check: fail`, card saved) and is only blocked at the first real charge
+  (day 8 → `past_due` → AI no-booking mode). Accepted: worst case is a free 7-day trial.
+  Revisit only if trial abuse appears; levers are Radar for Fraud Teams (rules on SetupIntents)
+  or the "Request 3DS" rule.
 
 ---
 
@@ -210,6 +217,17 @@ Unavoidable; test `acct_…` IDs don't exist in live.
 - [ ] Booking-fee loop: a real deposit charge → `payment_intent.succeeded` on the
       **Connect** endpoint → `payments.status='succeeded'`,
       `appointments.fee_status='paid'`, application fee on the platform balance.
+
+### Verify results — 2026-10-27 (live, `+livetest` / operator Liove Test)
+- ✅ Checkout: Solo monthly, $0 today, Founding coupon `hUqyBXRv` ($25 first month).
+- ✅ Webhooks 2xx + processed → `trialing`, live `cus_`/`sub_`, plan `solo`/`monthly`.
+- ✅ Admin special pricing on the live sub: $50 × 6 replaced Founding; portal + Settings show it.
+- ✅ Portal cancel → `customer.subscription.updated` processed; cancels at trial end, never charged.
+- ✅ Special pricing **Remove**: discount off the live sub, single-use coupon deleted, audit-logged.
+  Note: Remove does not restore the Founding coupon (sub reverts to full price).
+- ✅ Pending cancel now mirrored (`operators.subscription_cancel_at`): dashboard "Cancels Nov 3",
+  Settings "Cancels on … — your card won't be charged".
+- ⏳ Connect onboarding + booking-fee loop (no operator has a Connect account yet).
 
 ## 6. Rollback
 

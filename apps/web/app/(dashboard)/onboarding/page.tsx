@@ -19,6 +19,7 @@ interface Operator {
   service_radius_zones: Array<{ center_zip: string; radius_miles: number }>;
   truck_count: number | null;
   subscription_status: string | null;
+  stripe_subscription_id: string | null;
   plan: string | null;
   special_price_plan: string | null;
   special_price_cadence: string | null;

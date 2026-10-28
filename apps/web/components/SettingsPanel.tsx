@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 
@@ -955,16 +956,61 @@ function CancelLine({
   status: string | null;
   cancelAt: string | null;
 }): JSX.Element | null {
+  const router = useRouter();
+  const [resuming, setResuming] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  if (status === 'canceled' || status === 'incomplete_expired') {
+    return (
+      <p className="mt-1 text-sm text-red-700 dark:text-red-400">
+        Your subscription has ended.{' '}
+        <Link href="/onboarding" className="font-medium text-accent hover:underline">
+          Reactivate — pick a plan
+        </Link>
+      </p>
+    );
+  }
   if (!cancelAt || (status !== 'trialing' && status !== 'active')) return null;
+
+  async function resume(): Promise<void> {
+    setResuming(true);
+    setError(null);
+    try {
+      const res = await authedFetch('/v1/billing/resume', { method: 'POST' });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.detail ?? `Could not resume (${res.status})`);
+      }
+      router.refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Something went wrong');
+    } finally {
+      setResuming(false);
+    }
+  }
+
   const date = new Date(cancelAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
   return (
-    <p className="mt-1 text-sm text-red-700 dark:text-red-400">
-      Cancels on {date}
-      {status === 'trialing' ? ' — your card won’t be charged.' : ' — your plan stays on until then.'}{' '}
-      <span className="text-xs text-muted dark:text-slate-400">
-        Changed your mind? Resume it from the billing portal.
-      </span>
-    </p>
+    <div className="mt-1 text-sm text-red-700 dark:text-red-400">
+      <p>
+        Cancels on {date}
+        {status === 'trialing' ? ' — your card won’t be charged.' : ' — your plan stays on until then.'}
+      </p>
+      <button
+        type="button"
+        onClick={resume}
+        disabled={resuming}
+        className="mt-2 rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-white hover:bg-accent-dark disabled:opacity-50"
+      >
+        {resuming ? 'Resuming…' : 'Resume subscription'}
+      </button>
+      <p className="mt-1 text-xs text-muted dark:text-slate-400">
+        {status === 'trialing'
+          ? `Keeps your plan — your card on file is charged when the trial ends on ${date}.`
+          : `Keeps your plan — it renews on ${date} with your card on file.`}
+      </p>
+      {error ? <p className="mt-1 text-xs text-red-600">{error}</p> : null}
+    </div>
   );
 }
 
