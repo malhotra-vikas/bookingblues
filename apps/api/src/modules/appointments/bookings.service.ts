@@ -17,6 +17,7 @@ import { ConversationsService } from '../conversations/conversations.service';
 import {
   bookingConfirmationSms,
   bookingFeeLine,
+  type FeeCharge,
   holdExpiredSms,
 } from '../conversations/templates/sms-templates';
 import { isBookingFeeCollectible } from '../ai/prompts';
@@ -164,6 +165,7 @@ export class BookingsService {
     //     contract. Stripe failures are logged and skipped; the appointment
     //     itself is durable so we still send the booking confirmation.
     let feeCheckoutUrl: string | null = null;
+    let feeCharge: FeeCharge | null = null;
     if (args.chargeFeeIfEligible && isBookingFeeCollectible(args.operator)) {
       try {
         const session = await this.payments.createBookingFeeCheckout({
@@ -171,6 +173,7 @@ export class BookingsService {
           appointmentId,
         });
         feeCheckoutUrl = session.url;
+        feeCharge = session.charge;
       } catch (err) {
         this.logger.warn(
           { appointmentId, err: (err as Error).message },
@@ -191,6 +194,7 @@ export class BookingsService {
         startIso: args.startIso,
         icsUrl,
         feeCheckoutUrl,
+        feeCharge,
         callerName: args.callerName,
         // Ask for the address only on the AI conversational path (which can
         // handle the reply); manual/Slack-button books pass chargeFeeIfEligible
@@ -441,6 +445,7 @@ export class BookingsService {
         startIso: appt.scheduled_for_start,
         icsUrl: this.icsUrl(appt.id),
         feeCheckoutUrl: null,
+        feeCharge: null,
         callerName: appt.caller_name,
         askAddress: true,
       }).catch((smsErr) => {
@@ -737,6 +742,7 @@ export class BookingsService {
     startIso: string;
     icsUrl: string;
     feeCheckoutUrl: string | null;
+    feeCharge?: FeeCharge | null;
     callerName?: string | null;
     /** Ask for the full property address in the confirmation (post-confirm). */
     askAddress?: boolean;
@@ -750,8 +756,8 @@ export class BookingsService {
       hour: 'numeric',
       minute: '2-digit',
     });
-    const cents = args.operator.booking_fee_cents ?? 0;
-    const feeLine = args.feeCheckoutUrl ? bookingFeeLine(cents, args.feeCheckoutUrl) : '';
+    const feeLine =
+      args.feeCheckoutUrl && args.feeCharge ? bookingFeeLine(args.feeCharge, args.feeCheckoutUrl) : '';
     const body = bookingConfirmationSms({
       businessName: args.operator.business_name,
       friendlyTime,

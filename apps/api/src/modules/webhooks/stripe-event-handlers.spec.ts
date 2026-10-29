@@ -1,6 +1,6 @@
 import type Stripe from 'stripe';
 
-import { cancelAtIso, mapSubscriptionStatus } from './stripe-event-handlers';
+import { cancelAtIso, mapSubscriptionStatus, periodBounds } from './stripe-event-handlers';
 
 describe('mapSubscriptionStatus', () => {
   it.each([
@@ -35,5 +35,28 @@ describe('cancelAtIso', () => {
     expect(cancelAtIso(sub({ cancel_at_period_end: true }))).toBe(
       new Date(1_793_000_000 * 1000).toISOString(),
     );
+  });
+});
+
+describe('periodBounds', () => {
+  it('reads the legacy top-level fields (acacia)', () => {
+    const sub = { current_period_start: 100, current_period_end: 200, items: { data: [] } } as unknown as Stripe.Subscription;
+    expect(periodBounds(sub)).toEqual({ start: 100, end: 200 });
+  });
+
+  it('falls back to the first item (dahlia webhook payloads)', () => {
+    const sub = {
+      items: { data: [{ current_period_start: 1_793_219_594, current_period_end: 1_795_897_994 }] },
+    } as unknown as Stripe.Subscription;
+    expect(periodBounds(sub)).toEqual({ start: 1_793_219_594, end: 1_795_897_994 });
+  });
+
+  it('feeds cancelAtIso for a dahlia cancel-at-period-end', () => {
+    const sub = {
+      cancel_at: null,
+      cancel_at_period_end: true,
+      items: { data: [{ current_period_end: 1_795_897_994 }] },
+    } as unknown as Stripe.Subscription;
+    expect(cancelAtIso(sub)).toBe(new Date(1_795_897_994 * 1000).toISOString());
   });
 });

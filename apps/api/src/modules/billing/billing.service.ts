@@ -142,7 +142,8 @@ export class BillingService {
       // /settings page is the natural landing — it already shows subscription
       // status and the "Open billing portal" button, so the customer ends
       // up exactly where they would've expected.
-      return_url: `${this.env.APP_URL}/settings`,
+      // ?billing=updated → Settings polls until the webhook lands (PlanSync).
+      return_url: `${this.env.APP_URL}/settings?billing=updated`,
     });
     return { url: session.url };
   }

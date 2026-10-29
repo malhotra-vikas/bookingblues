@@ -33,6 +33,15 @@ interface Payment {
   status: string;
   created_at: string;
 }
+interface SubscriptionCharge {
+  id: string;
+  amount_cents: number;
+  amount_refunded_cents: number;
+  currency: string;
+  status: string;
+  description: string | null;
+  created_at: string;
+}
 interface AuditEntry {
   id: string;
   action: string;
@@ -341,7 +350,10 @@ function PaymentsTab({ operatorId }: { operatorId: string }): JSX.Element {
   }, [operatorId]);
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-6">
+      <SubscriptionChargesSection operatorId={operatorId} />
+      <div className="space-y-2">
+        <h3 className="text-sm font-semibold dark:text-slate-100">Booking deposits</h3>
       {error ? (
         <p className="rounded-md bg-red-50 dark:bg-red-950/40 px-3 py-2 text-xs text-red-700 dark:text-red-300">{error}</p>
       ) : null}
@@ -428,6 +440,132 @@ function PaymentsTab({ operatorId }: { operatorId: string }): JSX.Element {
             );
           } finally {
             setBusyId(null);
+            setConfirmFor(null);
+          }
+        }}
+      />
+      </div>
+    </div>
+  );
+}
+
+/** KeeprSteady subscription charges (platform Stripe account), read live from Stripe. */
+function SubscriptionChargesSection({ operatorId }: { operatorId: string }): JSX.Element {
+  const [rows, setRows] = useState<SubscriptionCharge[] | null>(null);
+  const [confirmFor, setConfirmFor] = useState<SubscriptionCharge | null>(null);
+  const [reason, setReason] = useState('');
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const data = await getJson<{ items: SubscriptionCharge[] }>(
+          `/v1/admin/operators/${operatorId}/subscription-charges`,
+        );
+        if (!cancelled) setRows(data.items);
+      } catch (err) {
+        if (!cancelled) setError(err instanceof Error ? err.message : 'failed');
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [operatorId]);
+
+  const usd = (cents: number): string => `$${(cents / 100).toFixed(2)}`;
+
+  return (
+    <div className="space-y-2">
+      <h3 className="text-sm font-semibold dark:text-slate-100">Subscription charges</h3>
+      {error ? (
+        <p className="rounded-md bg-red-50 dark:bg-red-950/40 px-3 py-2 text-xs text-red-700 dark:text-red-300">{error}</p>
+      ) : null}
+      <div className="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-800">
+        <table className="w-full text-left text-sm">
+          <thead className="bg-slate-50 dark:bg-slate-800 text-xs uppercase tracking-wide text-muted dark:text-slate-400">
+            <tr>
+              <th className="px-3 py-2">When</th>
+              <th className="px-3 py-2">Amount</th>
+              <th className="px-3 py-2">Refunded</th>
+              <th className="px-3 py-2">Status</th>
+              <th className="px-3 py-2"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {(rows ?? []).map((c) => {
+              const refundable = c.status === 'succeeded' && c.amount_refunded_cents < c.amount_cents;
+              return (
+                <tr key={c.id} className="border-t border-slate-100 dark:border-slate-800">
+                  <td className="px-3 py-2 text-xs">{new Date(c.created_at).toLocaleString()}</td>
+                  <td className="px-3 py-2">{usd(c.amount_cents)} {c.currency.toUpperCase()}</td>
+                  <td className="px-3 py-2">{c.amount_refunded_cents > 0 ? usd(c.amount_refunded_cents) : '—'}</td>
+                  <td className="px-3 py-2">{c.status}</td>
+                  <td className="px-3 py-2 text-right">
+                    {refundable ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setReason('');
+                          setConfirmFor(c);
+                        }}
+                        className="rounded border border-red-200 dark:border-red-900 px-2 py-1 text-xs text-red-700 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40"
+                      >
+                        Refund
+                      </button>
+                    ) : null}
+                  </td>
+                </tr>
+              );
+            })}
+            {rows && rows.length === 0 ? (
+              <tr>
+                <td colSpan={5} className="px-3 py-6 text-center text-muted dark:text-slate-400">
+                  No subscription charges.
+                </td>
+              </tr>
+            ) : null}
+          </tbody>
+        </table>
+      </div>
+
+      <ConfirmModal
+        open={confirmFor != null}
+        title="Refund this subscription charge?"
+        severity="danger"
+        confirmLabel="Refund"
+        body={
+          <div className="space-y-3">
+            <p>
+              Refunds {confirmFor ? usd(confirmFor.amount_cents - confirmFor.amount_refunded_cents) : ''} to the
+              operator&apos;s card. It does not cancel the subscription, and Stripe keeps its processing fee.
+              Cannot be undone.
+            </p>
+            <label className="block text-xs text-muted dark:text-slate-400">
+              Reason (required, recorded in audit log)
+              <textarea
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+                className="mt-1 w-full rounded-md border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 dark:text-slate-100 px-3 py-2 text-sm focus:border-accent focus:outline-none"
+                rows={2}
+                required
+              />
+            </label>
+          </div>
+        }
+        onClose={() => setConfirmFor(null)}
+        onConfirm={async () => {
+          if (!confirmFor || !reason.trim()) throw new Error('Reason is required');
+          const target = confirmFor;
+          try {
+            await postJson(
+              `/v1/admin/operators/${operatorId}/refund-subscription-charge/${target.id}`,
+              { reason },
+            );
+            setRows((rs) =>
+              (rs ?? []).map((r) => (r.id === target.id ? { ...r, amount_refunded_cents: r.amount_cents } : r)),
+            );
+          } finally {
             setConfirmFor(null);
           }
         }}

@@ -21,9 +21,32 @@ export function openingSms(businessName: string): string {
   );
 }
 
+/**
+ * What the caller is actually charged at Checkout, itemised. The platform fee
+ * is charged ON TOP of the deposit, so quoting only the deposit made the SMS
+ * disagree with the Checkout page (E2E test 2026-10-28: "$10.00" vs $11.50).
+ */
+export interface FeeCharge {
+  readonly totalCents: number;
+  readonly depositCents: number;
+  /** Emergency visit fee included in the charge (0 when not an emergency). */
+  readonly emergencyFeeCents: number;
+  readonly serviceFeeCents: number;
+}
+
+const usd = (cents: number): string => `$${(cents / 100).toFixed(2)}`;
+
+/** "$11.50 ($10.00 deposit + $1.50 service fee)" */
+export function describeFeeCharge(c: FeeCharge): string {
+  const parts = [`${usd(c.depositCents)} deposit`];
+  if (c.emergencyFeeCents > 0) parts.push(`${usd(c.emergencyFeeCents)} emergency fee`);
+  parts.push(`${usd(c.serviceFeeCents)} service fee`);
+  return `${usd(c.totalCents)} (${parts.join(' + ')})`;
+}
+
 /** Optional booking-fee line appended to the confirmation when a fee is due. */
-export function bookingFeeLine(feeCents: number, checkoutUrl: string): string {
-  return ` Please secure your slot with the $${(feeCents / 100).toFixed(2)} booking fee: ${checkoutUrl}`;
+export function bookingFeeLine(charge: FeeCharge, checkoutUrl: string): string {
+  return ` Please secure your slot with the ${describeFeeCharge(charge)} booking fee: ${checkoutUrl}`;
 }
 
 /** First name only — keeps SMS personal without echoing a full legal name. */
@@ -99,8 +122,9 @@ export function aiUnavailableFallbackSms(businessName: string): string {
 }
 
 /** Booking-fee payment link, sent by the request_payment_link tool. */
-export function paymentLinkSms(checkoutUrl: string): string {
-  return `Reserve your slot with the booking fee here: ${checkoutUrl}`;
+export function paymentLinkSms(checkoutUrl: string, charge?: FeeCharge): string {
+  if (!charge) return `Reserve your slot with the booking fee here: ${checkoutUrl}`;
+  return `Reserve your slot by paying ${describeFeeCharge(charge)} here: ${checkoutUrl}`;
 }
 
 /**
@@ -112,7 +136,7 @@ export function paymentLinkSms(checkoutUrl: string): string {
 export function reservationHoldSms(args: {
   businessName: string;
   friendlyTime: string;
-  feeCents: number;
+  charge: FeeCharge;
   checkoutUrl: string;
   callerName?: string | null;
 }): string {
@@ -120,7 +144,7 @@ export function reservationHoldSms(args: {
   const lead = fn ? `Almost done, ${fn}!` : 'Almost done!';
   return (
     `${lead} Your ${args.friendlyTime} slot with ${args.businessName} is held for 30 min. ` +
-    `Pay the $${(args.feeCents / 100).toFixed(2)} booking fee to confirm it: ${args.checkoutUrl}`
+    `Pay ${describeFeeCharge(args.charge)} to confirm it: ${args.checkoutUrl}`
   );
 }
 

@@ -1,5 +1,6 @@
 import Link from 'next/link';
 
+import { PlanSync } from '../../../components/PlanSync';
 import { SettingsPanel } from '../../../components/SettingsPanel';
 import { ApiError, apiAsUser } from '../../../lib/api';
 
@@ -34,7 +35,12 @@ interface Operator {
   stripe_connect_payouts_enabled: boolean;
 }
 
-export default async function SettingsPage(): Promise<JSX.Element> {
+export default async function SettingsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ billing?: string }>;
+}): Promise<JSX.Element> {
+  const sp = await searchParams;
   let operator: Operator | null = null;
   let notFound = false;
   try {
@@ -64,6 +70,11 @@ export default async function SettingsPage(): Promise<JSX.Element> {
       <header>
         <h1 className="text-2xl font-semibold dark:text-slate-100">Settings</h1>
       </header>
+      {/* Set by the billing-portal return_url (billing.service.ts). */}
+      <PlanSync
+        active={sp.billing === 'updated'}
+        signature={[operator.subscription_status, operator.plan, operator.plan_cadence, operator.subscription_cancel_at].join('|')}
+      />
       <SettingsPanel operator={operator} />
     </div>
   );

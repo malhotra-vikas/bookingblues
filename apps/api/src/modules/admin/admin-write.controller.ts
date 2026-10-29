@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Delete,
+  Get,
   Param,
   ParseUUIDPipe,
   Post,
@@ -40,7 +41,7 @@ import {
   type ReleaseSalesLeads,
   type SetSpecialPricing,
 } from './admin.dto';
-import { AdminWriteService } from './admin-write.service';
+import { AdminWriteService, type SubscriptionCharge } from './admin-write.service';
 
 /**
  * Admin write actions. Throttled at 10 req/min to discourage automation; an
@@ -248,6 +249,31 @@ export class AdminWriteController {
     await this.write.refundPayment({
       operatorId,
       paymentId,
+      reason: body.reason,
+      actor: { actorUserId: actor.userId, ...ctx },
+    });
+    return { ok: true };
+  }
+
+  @Get('operators/:id/subscription-charges')
+  async subscriptionCharges(
+    @Param('id', new ParseUUIDPipe()) operatorId: string,
+  ): Promise<{ items: SubscriptionCharge[] }> {
+    return { items: await this.write.listSubscriptionCharges(operatorId) };
+  }
+
+  @Post('operators/:id/refund-subscription-charge/:chargeId')
+  async refundSubscriptionCharge(
+    @Req() req: Request,
+    @CurrentUser() actor: AuthenticatedUser,
+    @Param('id', new ParseUUIDPipe()) operatorId: string,
+    @Param('chargeId') chargeId: string,
+    @Body(new ZodBodyPipe(RefundPaymentSchema)) body: RefundPayment,
+  ): Promise<{ ok: true }> {
+    const ctx = this.audit.fromRequest(req);
+    await this.write.refundSubscriptionCharge({
+      operatorId,
+      chargeId,
       reason: body.reason,
       actor: { actorUserId: actor.userId, ...ctx },
     });

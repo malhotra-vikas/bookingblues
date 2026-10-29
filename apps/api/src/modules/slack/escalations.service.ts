@@ -8,7 +8,7 @@ import { SupabaseService } from '../../common/supabase/supabase.service';
 import { TwilioService } from '../../common/twilio/twilio.service';
 import { fetchCallerJobs, formatCallerJobsForSlack } from '../appointments/caller-history';
 import { ConversationsService } from '../conversations/conversations.service';
-import { paymentLinkSms } from '../conversations/templates/sms-templates';
+import { type FeeCharge, paymentLinkSms } from '../conversations/templates/sms-templates';
 import { PaymentsService } from '../payments/payments.service';
 
 import { SlackApiClient } from './slack-api.client';
@@ -133,6 +133,7 @@ export class EscalationsService {
 
     // Create the checkout link (emergency = include emergency fee if configured).
     let url: string;
+    let charge: FeeCharge;
     try {
       const res = await this.payments.createBookingFeeCheckout({
         operatorId: convo.operator_id,
@@ -140,6 +141,7 @@ export class EscalationsService {
         emergency: true,
       });
       url = res.url;
+      charge = res.charge;
     } catch (err) {
       // ensureFeeEligible throws AppError (fee not enabled / Connect not ready).
       const msg = err instanceof AppError ? err.message : 'unexpected error';
@@ -150,7 +152,7 @@ export class EscalationsService {
     const send = await this.twilio.sendSms({
       from: op.twilio_number_e164,
       to: convo.caller_phone_e164,
-      body: paymentLinkSms(url),
+      body: paymentLinkSms(url, charge),
     });
     const last4 = convo.caller_phone_e164.slice(-4);
     if ('skipped' in send) {
@@ -159,7 +161,7 @@ export class EscalationsService {
     await this.conversations.appendMessage({
       conversationId: convo.id,
       role: 'system',
-      body: paymentLinkSms(url),
+      body: paymentLinkSms(url, charge),
       twilioMessageSid: send.sid,
     });
     await reply(`💳 <@${args.slackUserId}> sent a payment request to the caller (•••${last4}).`);

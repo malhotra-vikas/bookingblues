@@ -38,10 +38,25 @@ function unixToIso(unix: number | null | undefined): string | null {
   return unix ? new Date(unix * 1000).toISOString() : null;
 }
 
+/**
+ * Billing-period bounds. Our SDK is pinned to 2024-10-28.acacia, but webhook
+ * events arrive in the account's default API version (2026-04-22.dahlia on
+ * live), where the period moved from the subscription onto each item — so the
+ * top-level fields are undefined there. Read either.
+ */
+export function periodBounds(sub: Stripe.Subscription): { start: number | null; end: number | null } {
+  const legacy = sub as Partial<Pick<Stripe.Subscription, 'current_period_start' | 'current_period_end'>>;
+  const item = sub.items?.data?.[0] as { current_period_start?: number; current_period_end?: number } | undefined;
+  return {
+    start: legacy.current_period_start ?? item?.current_period_start ?? null,
+    end: legacy.current_period_end ?? item?.current_period_end ?? null,
+  };
+}
+
 /** Stripe sets `cancel_at` for both portal cancel-at-period-end and explicit cancel dates. */
 export function cancelAtIso(sub: Stripe.Subscription): string | null {
   if (sub.cancel_at) return unixToIso(sub.cancel_at);
-  return sub.cancel_at_period_end ? unixToIso(sub.current_period_end) : null;
+  return sub.cancel_at_period_end ? unixToIso(periodBounds(sub).end) : null;
 }
 
 export interface HandlerDeps {
@@ -126,6 +141,7 @@ export async function onSubscriptionUpserted(
   const plan = fromPrice?.plan ?? planFromMetadata(sub.metadata);
   const cadence = fromPrice?.cadence ?? cadenceFromMetadata(sub.metadata);
 
+  const period = periodBounds(sub);
   const { error } = await deps.db
     .from('operators')
     .update({
@@ -138,8 +154,8 @@ export async function onSubscriptionUpserted(
       // Current billing cycle — usage metering counts conversations in this
       // window (during a trial these span the trial). Falls back to calendar
       // month in the usage query when null.
-      current_period_start: unixToIso(sub.current_period_start),
-      current_period_end: unixToIso(sub.current_period_end),
+      current_period_start: unixToIso(period.start),
+      current_period_end: unixToIso(period.end),
       ...(plan != null ? { plan } : {}),
       ...(cadence != null ? { plan_cadence: cadence } : {}),
       ...(stripePriceId != null ? { stripe_price_id: stripePriceId } : {}),

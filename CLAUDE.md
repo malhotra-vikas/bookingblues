@@ -606,6 +606,8 @@ POST   /v1/admin/operators/:id/deactivate
 POST   /v1/admin/operators/:id/cancel-subscription
 POST   /v1/admin/operators/:id/release-twilio-number
 POST   /v1/admin/operators/:id/refund-payment/:paymentId
+GET    /v1/admin/operators/:id/subscription-charges   # platform subscription charges, live from Stripe
+POST   /v1/admin/operators/:id/refund-subscription-charge/:chargeId
 POST   /v1/admin/operators/:id/special-pricing        # $X per mo/yr for N mo/yr on one plan
 POST   /v1/admin/operators/:id/special-pricing/clear
 POST   /v1/admin/operators/:id/impersonate            # short-lived magic link

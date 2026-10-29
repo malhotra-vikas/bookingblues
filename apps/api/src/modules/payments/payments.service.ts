@@ -1,5 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { PinoLogger } from 'nestjs-pino';
+import type Stripe from 'stripe';
 
 import {
   ConflictError,
@@ -14,6 +15,7 @@ import type { Env } from '../../config/env';
 import { platformTakeRateBpsForPlan } from '../billing/plan-policy';
 import { compactUuid } from '../../common/util/uuid';
 import { computeBookingFeeCharge } from './pricing';
+import type { FeeCharge } from '../conversations/templates/sms-templates';
 
 @Injectable()
 export class PaymentsService {
@@ -80,7 +82,7 @@ export class PaymentsService {
     appointmentId: string;
     /** Emergency booking — adds the operator's emergency visit fee to the charge. */
     emergency?: boolean;
-  }): Promise<{ url: string; paymentId: string }> {
+  }): Promise<{ url: string; paymentId: string; charge: FeeCharge }> {
     const eligibility = await this.ensureFeeEligible(args.operatorId);
     // Take rate is per-plan (Solo 15% / Crew 12% / Fleet 10% by default), charged on
     // top of the deposit and paid by the caller. Rates are env-configurable via
@@ -99,20 +101,30 @@ export class PaymentsService {
       minPlatformFeeCents: this.env.MIN_PLATFORM_FEE_CENTS,
     });
 
+    const emergencyFeeCents = args.emergency ? eligibility.emergencyFeeCents : 0;
+    const charge: FeeCharge = {
+      totalCents: pricing.chargeCents,
+      depositCents: eligibility.feeCents,
+      emergencyFeeCents,
+      serviceFeeCents: pricing.applicationFeeCents,
+    };
+    const item = (name: string, cents: number): Stripe.Checkout.SessionCreateParams.LineItem => ({
+      price_data: { currency: 'usd', product_data: { name }, unit_amount: cents },
+      quantity: 1,
+    });
+    const lineItems = [
+      item('Booking deposit', charge.depositCents),
+      ...(emergencyFeeCents > 0 ? [item('Emergency visit fee', emergencyFeeCents)] : []),
+      item('Service fee', charge.serviceFeeCents),
+    ];
+
     const session = await this.stripe.client().checkout.sessions.create(
       {
         mode: 'payment',
         client_reference_id: args.appointmentId,
-        line_items: [
-          {
-            price_data: {
-              currency: 'usd',
-              product_data: { name: 'Booking fee' },
-              unit_amount: pricing.chargeCents,
-            },
-            quantity: 1,
-          },
-        ],
+        // Itemised so the caller sees exactly what the SMS quoted; the sum is
+        // still pricing.chargeCents.
+        line_items: lineItems,
         payment_intent_data: {
           application_fee_amount: pricing.applicationFeeCents,
           metadata: {
@@ -201,7 +213,11 @@ export class PaymentsService {
     // Hand back a short, branded, hyphen-free link (tappable in SMS) that 302s to
     // the long Stripe Checkout URL. The raw `session.url` would break at its
     // `#`/`%` fragment, and a hyphenated UUID breaks link detection at the first `-`.
-    return { url: `${this.env.API_URL}/pay/${compactUuid(args.appointmentId)}`, paymentId: data.id };
+    return {
+      url: `${this.env.API_URL}/pay/${compactUuid(args.appointmentId)}`,
+      paymentId: data.id,
+      charge,
+    };
   }
 
   /**

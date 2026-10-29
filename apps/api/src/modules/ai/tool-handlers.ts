@@ -232,7 +232,7 @@ export async function bookAppointment(
       throw err;
     }
 
-    let session: { url: string; paymentId: string };
+    let session: Awaited<ReturnType<typeof ctx.payments.createBookingFeeCheckout>>;
     try {
       session = await ctx.payments.createBookingFeeCheckout({
         operatorId: ctx.operator.id,
@@ -258,6 +258,9 @@ export async function bookAppointment(
         appointment_id: appointmentId,
         payment_required: true,
         fee_cents: operatorTakeCents,
+        // What the caller actually pays (deposit + service fee on top) — quote
+        // this, not fee_cents, if the caller asks.
+        total_charged_cents: session.charge.totalCents,
         emergency: isEmergency,
         payment_url: session.url,
         status: 'held_pending_payment',
@@ -267,7 +270,7 @@ export async function bookAppointment(
       outboundMessage: reservationHoldSms({
         businessName: ctx.operator.business_name,
         friendlyTime,
-        feeCents: operatorTakeCents,
+        charge: session.charge,
         checkoutUrl: session.url,
         callerName: args.caller_name,
       }),

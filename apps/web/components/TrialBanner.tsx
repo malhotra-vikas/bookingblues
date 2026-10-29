@@ -6,6 +6,7 @@ import { useEffect, useState } from 'react';
 
 import { getSupabaseBrowserClient } from '../lib/supabase/browser';
 import { publicEnv } from '../lib/env';
+import { Spinner } from './PlanSync';
 
 async function authedFetch(path: string, init?: RequestInit): Promise<Response> {
   const supabase = getSupabaseBrowserClient();
@@ -61,7 +62,7 @@ export function TrialBanner({
   if (activating) {
     return (
       <span className="text-sm text-muted" role="status">
-        Plan status: <span className="font-medium text-ink">activating your plan…</span>
+        <Spinner /> Plan status: <span className="font-medium text-ink">activating your plan…</span>
       </span>
     );
   }

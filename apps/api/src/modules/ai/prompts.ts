@@ -175,7 +175,9 @@ export function operatorBlock(operator: OperatorRow, nowIso: string): string {
   // costing real bookings. Fall through to no-fee instead.
   const fee = isBookingFeeCollectible(operator)
     ? `A non-refundable booking fee of $${(operator.booking_fee_cents! / 100).toFixed(2)} ` +
-      `is collected via the secure checkout link before the appointment is confirmed.`
+      `is collected via the secure checkout link before the appointment is confirmed. ` +
+      `A small service fee is added on top; the payment text states the exact total — ` +
+      `if asked, say so rather than quoting only the deposit.`
     : 'No booking fee is collected.';
   // Describe the area semantically — the authoritative in/out decision is the
   // `check_service_area` tool (deterministic), NOT the model reading a ZIP list.

@@ -38,6 +38,16 @@ export interface AdminActorContext {
   readonly userAgent: string | null;
 }
 
+export interface SubscriptionCharge {
+  readonly id: string;
+  readonly amount_cents: number;
+  readonly amount_refunded_cents: number;
+  readonly currency: string;
+  readonly status: string;
+  readonly description: string | null;
+  readonly created_at: string;
+}
+
 @Injectable()
 export class AdminWriteService {
   constructor(
@@ -795,6 +805,73 @@ export class AdminWriteService {
       ipAddress: args.actor.ipAddress,
       userAgent: args.actor.userAgent,
     });
+  }
+
+  // ── subscription charges (platform account, not Connect) ────────────────
+
+  /**
+   * The operator's KeeprSteady subscription charges, straight from Stripe —
+   * they aren't in the `payments` table (that's booking deposits only).
+   */
+  async listSubscriptionCharges(operatorId: string): Promise<SubscriptionCharge[]> {
+    const customerId = await this.stripeCustomerIdOf(operatorId);
+    if (!customerId) return [];
+    const charges = await this.stripe.client().charges.list({ customer: customerId, limit: 24 });
+    return charges.data.map((c) => ({
+      id: c.id,
+      amount_cents: c.amount,
+      amount_refunded_cents: c.amount_refunded,
+      currency: c.currency,
+      status: c.status,
+      description: c.description,
+      created_at: new Date(c.created * 1000).toISOString(),
+    }));
+  }
+
+  /** Full (remaining) refund of one subscription charge on the platform account. */
+  async refundSubscriptionCharge(args: {
+    operatorId: string;
+    chargeId: string;
+    reason: string;
+    actor: AdminActorContext;
+  }): Promise<void> {
+    if (!/^(ch|py)_[A-Za-z0-9]+$/.test(args.chargeId)) throw new ValidationError('Invalid charge id');
+    const customerId = await this.stripeCustomerIdOf(args.operatorId);
+    const charge = await this.stripe.client().charges.retrieve(args.chargeId);
+    const chargeCustomer = typeof charge.customer === 'string' ? charge.customer : charge.customer?.id;
+    // Cross-tenant guard: never refund a charge that isn't this operator's.
+    if (!customerId || chargeCustomer !== customerId) {
+      throw new ConflictError('Charge does not belong to this operator');
+    }
+    if (charge.refunded) throw new ConflictError('Charge is already fully refunded');
+
+    const refund = await this.stripe.client().refunds.create(
+      { charge: charge.id, metadata: { operator_id: args.operatorId, reason: args.reason } },
+      { idempotencyKey: `admin-sub-refund-${charge.id}-${charge.amount_refunded}` },
+    );
+
+    await this.audit.write({
+      actorUserId: args.actor.actorUserId,
+      operatorId: args.operatorId,
+      action: 'subscription_charge.refund',
+      resourceType: 'stripe_charge',
+      resourceId: charge.id,
+      metadata: { reason: args.reason, amount_cents: refund.amount, refund_id: refund.id },
+      ipAddress: args.actor.ipAddress,
+      userAgent: args.actor.userAgent,
+    });
+  }
+
+  private async stripeCustomerIdOf(operatorId: string): Promise<string | null> {
+    const { data, error } = await this.supabase
+      .db()
+      .from('operators')
+      .select('stripe_customer_id')
+      .eq('id', operatorId)
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) throw new NotFoundError('Operator not found');
+    return data.stripe_customer_id;
   }
 
   // ── conversations ────────────────────────────────────────────────────────
