@@ -48,7 +48,7 @@ export default async function FaqPage(): Promise<JSX.Element> {
     },
     {
       q: 'How do plans and pricing work?',
-      a: `Solo ${usd(prices.solo.monthlyUsd)}/mo includes 80 AI conversations/mo; deposit collection is off by default and you can enable it anytime (KeeprSteady adds 10% on top, charged to the customer). Crew ${usd(prices.crew.monthlyUsd)}/mo includes 500 conversations; deposit is on by default and can be disabled in onboarding (we add 15% on top); overages are billed at $100 per 50 additional conversations. Fleet ${usd(prices.fleet.monthlyUsd)}/mo includes 1,500 conversations; deposit collection is mandatory at this tier (we add 20% on top); overages same as Crew. Annual billing saves you 2 months on every plan.`,
+      a: `Solo ${usd(prices.solo.monthlyUsd)}/mo includes 80 AI conversations/mo (a conversation is one person the AI talks with in a month); deposit collection is off by default and you can enable it anytime (KeeprSteady adds 15% on top, charged to the customer); there are no overages — at the limit, new callers get a "we'll call you back" text. Crew ${usd(prices.crew.monthlyUsd)}/mo includes 500 conversations; deposit is on by default and can be disabled in onboarding (we add 12% on top); overages are billed at $100 per 50 additional conversations. Fleet ${usd(prices.fleet.monthlyUsd)}/mo includes 1,500 conversations; deposit collection is mandatory at this tier (we add 10% on top); overages same as Crew. Annual billing saves you 2 months on every plan.`,
     },
     {
       q: 'How do overages work on Crew and Fleet?',
@@ -64,7 +64,7 @@ export default async function FaqPage(): Promise<JSX.Element> {
     },
     {
       q: 'What happens when my free trial ends?',
-      a: 'Your card is charged on day 8 at your plan rate. You will receive an email reminder on day 6. Cancel before day 8 and you will not be charged. Your number is released after a 7-day grace period post-cancellation.',
+      a: 'Your card is charged on day 8 at your plan rate — or right away if you choose to end the trial early from your dashboard (for example, once you reach the 30-person trial limit). You will receive an email reminder on day 6. Cancel before day 8 and you will not be charged. Your number is released after a 7-day grace period post-cancellation.',
     },
     {
       q: 'Is the free trial limited?',
@@ -72,7 +72,15 @@ export default async function FaqPage(): Promise<JSX.Element> {
     },
     {
       q: 'Where does my customer data live?',
-      a: `Postgres on Supabase, with row-level security so other subscribers on the platform can never see your data. Twilio holds the phone numbers, Google holds the calendar, Stripe holds the cards. ${BRAND.name} holds the conversation transcripts and appointment metadata only.`,
+      a: `Postgres on Supabase, with row-level security so other subscribers on the platform can never see your data. Twilio holds the phone numbers, Google holds the calendar, Stripe holds the cards. ${BRAND.name} holds the conversation transcripts and appointment metadata only. For insurance agencies, the client's intake answers (name, date of birth, doctor, prescriptions) are additionally stored encrypted and shown only to you — on your dashboard, booking email and calendar event — and are never included in the client's calendar link. The text transcript itself (which contains whatever the client typed) is visible to you and to our monitoring team, like any conversation.`,
+    },
+    {
+      q: 'Does KeeprSteady work for insurance agencies?',
+      a: `Yes. Insurance agencies (Medicare, health, life and other personal insurance) get a version built for office and phone appointments: no service area, deposits or emergency handling. The AI asks what the caller needs, then their name, date of birth, current doctor and prescriptions — saying why each is asked, recording only what the caller actually says, and accepting "I'd rather not say". It never asks for a Medicare number or Social Security number, and never gives insurance or medical advice or recommends a plan — that's for your licensed agent. The booking confirmation and the 24-hour reminder tell the client what to bring: their Medicare card, a photo ID, current plan card and letters, a medication list, their doctors' and pharmacy names, and any Medicaid or Extra Help letters.`,
+    },
+    {
+      q: 'Can callers reschedule by text?',
+      a: `For insurance agencies, yes: a client who texts to change their appointment is offered open times, and the AI moves the existing appointment — your calendar updates, the old time is released, and the client gets a text with the new time. It never books a second appointment for the same client; cancellations and requests for an additional appointment go to our team. For home-service trades, the reminder text asks customers to call you directly to reschedule or cancel, and any change to an existing job is handed to our team rather than handled by the AI.`,
     },
     {
       q: 'Can I cancel?',

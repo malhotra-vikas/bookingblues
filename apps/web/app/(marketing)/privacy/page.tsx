@@ -71,6 +71,13 @@ export default function PrivacyPage(): JSX.Element {
         <ul>
           <li>Their phone number (provided by Twilio)</li>
           <li>The full content of the SMS conversation</li>
+          <li>
+            For insurance agency Subscribers: appointment intake details the End User chooses to
+            share (name, date of birth, current doctor, prescriptions). These are stored encrypted,
+            shown only to that Subscriber, and never included in the End User&apos;s calendar link.
+            We never ask for a Medicare number (MBI) or Social Security number, and intake records
+            reject them; if an End User types one anyway, it remains part of the conversation text.
+          </li>
           <li>Timestamps and message metadata</li>
           <li>
             Any personally identifying information they voluntarily provide during the

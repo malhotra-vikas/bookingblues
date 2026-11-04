@@ -36,11 +36,17 @@ export default async function TermsPage(): Promise<JSX.Element> {
       <Section title="2. Description of Service">
         <p>
           {BRAND.name} provides an AI-powered SMS booking and dispatch assistant for home service
-          contractors. The Service includes:
+          contractors and insurance agencies. The Service includes:
         </p>
         <ul>
           <li>A dedicated Twilio phone number that receives calls forwarded by the Subscriber</li>
           <li>An AI assistant that texts back missed callers and books appointments</li>
+          <li>
+            For insurance agencies: collection of appointment intake details (name, date of birth,
+            current doctor and prescriptions), a &ldquo;what to bring&rdquo; list in confirmation
+            and reminder texts, and moving a client&apos;s existing appointment when they ask to
+            reschedule by text (see Section 5a)
+          </li>
           <li>Google Calendar integration for appointment scheduling</li>
           <li>Optional non-refundable booking deposit collection via Stripe</li>
           <li>Human-in-the-loop monitoring by {BRAND.name} staff</li>
@@ -54,19 +60,23 @@ export default async function TermsPage(): Promise<JSX.Element> {
         <ul>
           <li>
             <strong>Solo — {usd(prices.solo.monthlyUsd)}/month:</strong> Up to 80 AI conversations/mo. Optional deposit
-            collection (10% platform fee).
+            collection (15% platform fee). No overages (see Section 3e).
           </li>
           <li>
             <strong>Crew — {usd(prices.crew.monthlyUsd)}/month:</strong> Up to 500 AI conversations/mo. Deposit collection
             on by default, disableable in onboarding. Subscriber sets deposit amount and receives
-            100% of it; {BRAND.name} adds 15% on top charged to the End User via Stripe Connect
+            100% of it; {BRAND.name} adds 12% on top charged to the End User via Stripe Connect
             application fee. Overages billed at $100 per 50 additional conversations.
           </li>
           <li>
             <strong>Fleet — {usd(prices.fleet.monthlyUsd)}/month:</strong> Up to 1,500 AI conversations/mo. Deposit
             collection is mandatory and cannot be disabled. Subscriber sets deposit amount and
-            receives 100% of it; {BRAND.name} adds 20% on top charged to the End User via Stripe
+            receives 100% of it; {BRAND.name} adds 10% on top charged to the End User via Stripe
             Connect application fee. Overages billed at $100 per 50 additional conversations.
+          </li>
+          <li>
+            Insurance agency Subscribers do not collect booking deposits on any plan; the
+            conversation limits, overages and free-trial terms above apply unchanged.
           </li>
         </ul>
         <h3>3b. Free Trial</h3>
@@ -230,6 +240,30 @@ export default async function TermsPage(): Promise<JSX.Element> {
           </li>
           <li>Maintain the confidentiality of your account credentials</li>
         </ul>
+        <h3>5a. Insurance Agency Subscribers</h3>
+        <p>
+          If you use the Service as an insurance agency, the AI books an office or phone
+          appointment with your agency. Before booking it asks the End User what they need and,
+          where they choose to share them, their name, date of birth, current doctor and
+          prescriptions. It records only what the End User actually says and accepts a refusal to
+          answer. The AI never asks for a Medicare number (MBI), Social Security number or payment
+          details, and does not give insurance or medical advice, quote premiums, recommend a plan
+          or assess eligibility — those are for your licensed agent. Intake answers are stored
+          encrypted and shown to you on your dashboard, booking email and calendar event.
+        </p>
+        <p>
+          When an End User texts to change an existing appointment, the AI may move that
+          appointment to a newly agreed time within your business hours; your calendar is updated
+          and the End User is texted the new time. Cancellations and requests for additional
+          appointments are passed to our team.
+        </p>
+        <p>
+          You are solely responsible for holding the licenses your business requires and for
+          complying with the laws and regulations that apply to your insurance marketing and
+          sales activities and to the health information your clients share — including, for
+          Medicare, the applicable federal marketing and appointment rules. You are responsible
+          for determining whether your use of the Service meets those requirements.
+        </p>
       </Section>
 
       <Section title="6. TCPA Compliance">

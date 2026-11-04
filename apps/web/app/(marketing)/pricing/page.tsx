@@ -108,6 +108,9 @@ export default async function PricingPage(): Promise<JSX.Element> {
           See real missed calls turn into booked jobs before you pay a cent. If it&rsquo;s not
           recovering work for you, cancel in 2 clicks from Settings — no email, no phone call.
         </p>
+        <p className="mt-2 text-sm text-muted">
+          The trial covers up to 30 people on any plan · one free trial per business.
+        </p>
       </section>
 
       <p className="text-center mt-8 text-sm text-muted">
@@ -167,11 +170,15 @@ const INLINE_FAQ: ReadonlyArray<{ q: string; a: string }> = [
   },
   {
     q: 'What happens after my free trial?',
-    a: 'Your card is charged on day 8 at your plan rate. You will get an email reminder on day 6. Cancel before day 8 and you will not be charged.',
+    a: 'Your card is charged on day 8 at your plan rate — or right away if you end the trial early from your dashboard. You will get an email reminder on day 6. Cancel before day 8 and you will not be charged.',
+  },
+  {
+    q: 'Is the free trial limited?',
+    a: 'The trial covers up to 30 people on any plan, and there is one free trial per business. Reach 30 before day 8? End the trial from your dashboard to start your plan right away with its full monthly limit.',
   },
   {
     q: 'What counts as a "conversation"?',
-    a: 'One complete inbound lead interaction with the AI — typically 8–15 messages back and forth, from the first text after a missed call until the bot books, declines, or hands off. We count conversations, not individual SMS segments.',
+    a: 'One person the AI texts with during your monthly usage period — however many messages that takes, and the same caller coming back later that month still counts once. We count people, not individual SMS segments. You get an email at 80% and 100% of your limit. On Crew and Fleet, extra people are billed at $100 per 50; on Solo, new callers past the limit get a "we\'ll call you back" text until you upgrade or the month resets.',
   },
   {
     q: 'Is deposit collection required?',
