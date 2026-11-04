@@ -791,6 +791,7 @@ export class BookingsService {
       feeLine,
       callerName: args.callerName ?? null,
       ...(args.askAddress ? { askAddress: true } : {}),
+      category: args.operator.category,
     });
     const send = await this.twilio.sendSms({
       from: args.operator.twilio_number_e164,

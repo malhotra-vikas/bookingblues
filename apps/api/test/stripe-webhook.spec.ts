@@ -5,6 +5,8 @@ import type { Database } from '@bookingblues/db-types';
 import Stripe from 'stripe';
 import request from 'supertest';
 
+import { StripeService } from '../src/common/stripe/stripe.service';
+import { TRIAL_GUARD_EFFECTIVE_FROM_UNIX, TrialGuardService } from '../src/modules/billing/trial-guard.service';
 import { UsageBillingService } from '../src/modules/usage/usage-billing.service';
 import { WebhookReplayService } from '../src/modules/webhooks/webhook-replay.service';
 import { buildTestApp } from './helpers/app';
@@ -28,6 +30,7 @@ process.env.STRIPE_PRICE_CREW_MONTHLY ||= 'price_test_crew_monthly';
 process.env.STRIPE_PRICE_CREW_ANNUAL ||= 'price_test_crew_annual';
 process.env.STRIPE_PRICE_FLEET_MONTHLY ||= 'price_test_fleet_monthly';
 process.env.STRIPE_PRICE_FLEET_ANNUAL ||= 'price_test_fleet_annual';
+process.env.STRIPE_COUPON_FOUNDING_SOLO ||= 'coupon_test_founding_solo';
 
 function signedRequest(
   app: INestApplication,
@@ -51,6 +54,8 @@ function subscriptionCreatedEvent(opts: {
   subscriptionId: string;
   status: Stripe.Subscription.Status;
   trialEndUnix: number | null;
+  paymentMethodId?: string;
+  couponId?: string;
 }): object {
   return {
     id: opts.eventId,
@@ -62,9 +67,12 @@ function subscriptionCreatedEvent(opts: {
       object: {
         id: opts.subscriptionId,
         object: 'subscription',
+        created: Math.floor(Date.now() / 1000),
         customer: opts.customerId,
         status: opts.status,
         trial_end: opts.trialEndUnix,
+        default_payment_method: opts.paymentMethodId ?? null,
+        discount: opts.couponId ? { object: 'discount', coupon: { id: opts.couponId } } : null,
         items: { object: 'list', data: [] },
       },
     },
@@ -78,7 +86,7 @@ describeIfSupabase('Stripe platform webhook', () => {
 
   beforeAll(async () => {
     app = await buildTestApp();
-    tenants = await setupTenants(2);
+    tenants = await setupTenants(4);
     const env = readTestEnv()!;
     serviceClient = createClient<Database>(env.url, env.serviceRoleKey, {
       auth: { autoRefreshToken: false, persistSession: false },
@@ -243,6 +251,123 @@ describeIfSupabase('Stripe platform webhook', () => {
       .single();
     expect(row?.processed_at).not.toBeNull();
     spy.mockRestore();
+  });
+
+  describe('one free trial per person', () => {
+    const stamp = `${Date.now()}${Math.floor(Math.random() * 1000)}`;
+    const fingerprint = `fp_test_${stamp}`;
+    const phone = `+1555${stamp.slice(-7)}`;
+    let fakeStripe: {
+      webhooks: Stripe['webhooks'];
+      paymentMethods: { retrieve: jest.Mock };
+      subscriptions: { update: jest.Mock; deleteDiscount: jest.Mock; retrieve: jest.Mock };
+    };
+
+    beforeAll(async () => {
+      const [, , c, d] = tenants;
+      for (const t of [c!, d!]) {
+        const { error } = await serviceClient
+          .from('operators')
+          .update({ stripe_customer_id: `cus_tg_${t.operatorId.slice(0, 8)}` })
+          .eq('id', t.operatorId);
+        if (error) throw error;
+      }
+      // C signed up with a mobile number; D (the repeat signup) did not enter it.
+      await serviceClient.from('operators').update({ personal_phone_e164: phone }).eq('id', c!.operatorId);
+    });
+
+    beforeEach(() => {
+      const real = app.get(StripeService).client();
+      fakeStripe = {
+        // Signature verification still runs for real.
+        webhooks: real.webhooks,
+        paymentMethods: { retrieve: jest.fn().mockResolvedValue({ id: 'pm_x', card: { fingerprint } }) },
+        subscriptions: {
+          update: jest.fn().mockResolvedValue({}),
+          deleteDiscount: jest.fn().mockResolvedValue({}),
+          retrieve: jest.fn(),
+        },
+      };
+      jest.spyOn(app.get(StripeService), 'client').mockReturnValue(fakeStripe as unknown as Stripe);
+    });
+
+    afterEach(() => jest.restoreAllMocks());
+
+    it('the first trial on a card is left alone', async () => {
+      const c = tenants[2]!;
+      const res = await signedRequest(
+        app,
+        subscriptionCreatedEvent({
+          eventId: `evt_tg_c_${stamp}`,
+          customerId: `cus_tg_${c.operatorId.slice(0, 8)}`,
+          subscriptionId: `sub_tg_c_${stamp}`,
+          status: 'trialing',
+          trialEndUnix: Math.floor(Date.now() / 1000) + 7 * 86_400,
+          paymentMethodId: 'pm_c',
+        }),
+      );
+      expect(res.status).toBe(200);
+      expect(fakeStripe.subscriptions.update).not.toHaveBeenCalled();
+    });
+
+    it('a new account paying with the same card has its trial ended and the Founding coupon removed', async () => {
+      const d = tenants[3]!;
+      const subId = `sub_tg_d_${stamp}`;
+      const res = await signedRequest(
+        app,
+        subscriptionCreatedEvent({
+          eventId: `evt_tg_d_${stamp}`,
+          customerId: `cus_tg_${d.operatorId.slice(0, 8)}`,
+          subscriptionId: subId,
+          status: 'trialing',
+          trialEndUnix: Math.floor(Date.now() / 1000) + 7 * 86_400,
+          paymentMethodId: 'pm_d',
+          couponId: process.env.STRIPE_COUPON_FOUNDING_SOLO!,
+        }),
+      );
+      expect(res.status).toBe(200);
+      expect(fakeStripe.subscriptions.deleteDiscount).toHaveBeenCalledWith(subId);
+      expect(fakeStripe.subscriptions.update).toHaveBeenCalledWith(subId, {
+        trial_end: 'now',
+        proration_behavior: 'none',
+      });
+
+      const { data: audit } = await serviceClient
+        .from('audit_log')
+        .select('action, metadata')
+        .eq('operator_id', d.operatorId)
+        .eq('action', 'trial.ended_duplicate');
+      expect(audit).toHaveLength(1);
+      expect((audit![0]!.metadata as { matched: string[] }).matched).toEqual(['card']);
+    });
+
+    it('a subscription created before the guard shipped keeps its trial (grandfathered)', async () => {
+      const d = tenants[3]!;
+      const event = subscriptionCreatedEvent({
+        eventId: `evt_tg_old_${stamp}`,
+        customerId: `cus_tg_${d.operatorId.slice(0, 8)}`,
+        subscriptionId: `sub_tg_old_${stamp}`,
+        status: 'trialing',
+        trialEndUnix: Math.floor(Date.now() / 1000) + 7 * 86_400,
+        paymentMethodId: 'pm_d',
+      });
+      (event as unknown as { data: { object: { created: number } } }).data.object.created =
+        TRIAL_GUARD_EFFECTIVE_FROM_UNIX - 3_600;
+      const res = await signedRequest(app, event);
+      expect(res.status).toBe(200);
+      expect(fakeStripe.subscriptions.update).not.toHaveBeenCalled();
+    });
+
+    it('checkout gives no trial to an email alias or a phone number already used', async () => {
+      const guard = app.get(TrialGuardService);
+      const [, , c, d] = tenants;
+      const alias = c!.email.replace('@', '+again@');
+      expect(await guard.hadTrialElsewhere({ id: d!.operatorId, personal_phone_e164: null }, alias)).toBe(true);
+      expect(await guard.hadTrialElsewhere({ id: d!.operatorId, personal_phone_e164: phone }, 'new@x.test')).toBe(true);
+      expect(await guard.hadTrialElsewhere({ id: d!.operatorId, personal_phone_e164: null }, `fresh_${stamp}@x.test`)).toBe(false);
+      // The account that holds the identity is not blocked by itself (returning-customer logic covers it).
+      expect(await guard.hadTrialElsewhere({ id: c!.operatorId, personal_phone_e164: phone }, c!.email)).toBe(false);
+    });
   });
 
   it('does not touch unrelated tenants', async () => {

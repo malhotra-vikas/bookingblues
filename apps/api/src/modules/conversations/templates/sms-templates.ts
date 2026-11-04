@@ -13,8 +13,20 @@
  */
 const STOP_DISCLOSURE = 'Reply STOP to opt out. Msg & data rates may apply.';
 
-/** Opening SMS sent after the voice greeting — carries the opt-out disclosure. */
-export function openingSms(businessName: string): string {
+/**
+ * Opening SMS sent after the voice greeting — carries the opt-out disclosure.
+ * Insurance gets its own wording: the trades' "get you on the schedule" read as
+ * generic, and naming the common reasons gets a useful first reply instead of
+ * "I need to know more about insurance" (live test 2026-11-04).
+ */
+export function openingSms(businessName: string, category?: string | null): string {
+  if (category === 'insurance') {
+    return (
+      `Hi, this is ${businessName} — sorry we missed your call! Are you looking at Medicare ` +
+      `or another plan, reviewing your current coverage, or have a question? Reply here and ` +
+      `we'll set up a time with one of our agents. ${STOP_DISCLOSURE}`
+    );
+  }
   return (
     `Hi! Thanks for calling ${businessName}. What can we help with today? ` +
     `Reply here and we'll get you on the schedule. ${STOP_DISCLOSURE}`
@@ -54,6 +66,36 @@ export function firstName(name: string | null | undefined): string {
   return (name ?? '').trim().split(/\s+/)[0] ?? '';
 }
 
+/**
+ * What the caller should bring, per category. Sent by default (confirmation +
+ * 24h reminder) so the caller arrives prepared without having to ask, and fed
+ * into the AI prompt so its answer to "what should I bring?" matches the SMS.
+ * Null = the category has nothing to bring (field-service trades).
+ */
+const BRING_LISTS: Readonly<Record<string, { list: string; note?: string }>> = {
+  insurance: {
+    // The MBI is on the Medicare card: the caller BRINGS it to the appointment.
+    // The bot must never collect it by text (CLAUDE.md §16), hence the note.
+    list:
+      'your Medicare card (it shows your Medicare number/MBI), a photo ID, your current ' +
+      'plan card and any plan letters (like the Annual Notice of Change), a list of your ' +
+      "medications or the bottles, your doctors' and pharmacy names, and any Medicaid or " +
+      'Extra Help letters',
+    note: "For your privacy, please don't text us your Medicare number — just bring the card.",
+  },
+};
+
+export function bringListFor(category: string | null | undefined): string | null {
+  return (category && BRING_LISTS[category]?.list) || null;
+}
+
+/** " Please bring …." (+ privacy note) — empty string when the category has no bring-list. */
+export function bringListLine(category: string | null | undefined): string {
+  const entry = category ? BRING_LISTS[category] : undefined;
+  if (!entry) return '';
+  return ` Please bring ${entry.list}.` + (entry.note ? ` ${entry.note}` : '');
+}
+
 /** Booking confirmation to the caller. `feeLine` is appended verbatim (may be empty). */
 export function bookingConfirmationSms(args: {
   businessName: string;
@@ -63,6 +105,8 @@ export function bookingConfirmationSms(args: {
   callerName?: string | null;
   /** When true, ask the caller for their full property address (post-confirm). */
   askAddress?: boolean;
+  /** Operator category — adds the "Please bring …" line where one is defined. */
+  category?: string | null;
 }): string {
   const fn = firstName(args.callerName);
   const lead = fn ? `✅ ${fn}, you're booked` : `✅ You're booked`;
@@ -70,8 +114,9 @@ export function bookingConfirmationSms(args: {
     ? ' What is the full property address (street, unit, city, ZIP) so our tech can find you?'
     : '';
   return (
-    `${lead} with ${args.businessName} for ${args.friendlyTime}. ` +
-    `Add to your calendar: ${args.icsUrl}` +
+    `${lead} with ${args.businessName} for ${args.friendlyTime}.` +
+    bringListLine(args.category) +
+    ` Add to your calendar: ${args.icsUrl}` +
     (args.feeLine ?? '') +
     addressAsk
   );
@@ -219,8 +264,11 @@ export function appointmentReminderSms(
   businessName: string,
   friendlyTime: string,
   operatorPhoneE164?: string | null,
+  category?: string | null,
 ): string {
-  const base = `Reminder: your appointment with ${businessName} is coming up at ${friendlyTime}.`;
+  const base =
+    `Reminder: your appointment with ${businessName} is coming up at ${friendlyTime}.` +
+    bringListLine(category);
   const phone = formatUsPhone(operatorPhoneE164);
   const change = phone
     ? ` Need to reschedule or cancel? Please call ${businessName} directly at ${phone}.`

@@ -2,6 +2,7 @@ import type { Tables } from '@bookingblues/db-types';
 
 import { asBusinessHours, describeBusinessHours } from '../calendar/business-hours';
 import { describeLocalNow } from '../calendar/zoned-time';
+import { bringListFor } from '../conversations/templates/sms-templates';
 import { isOfficeAppointmentCategory } from './category-profile';
 import { describeServiceArea } from './service-area';
 
@@ -190,14 +191,27 @@ INTAKE — do this BEFORE calling check_availability:
   a time, in conversational order. Skip a question only if the caller already
   answered it.
 - Once you have the answers, call \`save_intake_answers\` with them. Call it again
-  if the caller corrects something. Dates of birth go to the tool as YYYY-MM-DD.
+  if the caller corrects something, and acknowledge it ("Got it — updated.").
+- Record ONLY what the caller actually said. NEVER guess, complete or reword an
+  answer: if they give only a birth year, save just the year; if they give one
+  name, save only that; if they describe what a medicine is for instead of its
+  name, save their words. Leave out anything they didn't give.
+- When you ask for something personal, say in a few words why the agent needs it
+  (the category prompt below gives the reason). If they'd rather not share, say
+  that's fine — the agent can cover it at the appointment — and move on.
 - Be respectful and reassuring: these are personal details. Never repeat a
-  caller's date of birth or prescriptions back in full; a short "Thanks, got it"
-  is enough.
+  caller's date of birth or prescriptions back in full.
 
 PERSONALIZATION:
 - Once you know the caller's first name, address them by it naturally (don't
   overuse it).
+
+WHAT TO BRING — if the operator block has a \`What to bring\` line, the booking
+confirmation SMS already lists it. If the caller asks what to bring or how to
+prepare, give exactly that list; never say they don't need to bring anything.
+Never ask the caller to text their Medicare number (MBI) or SSN — they bring the
+card to the appointment. If they start sending it, tell them not to and that the
+agent will see the card in person.
 
 BUSINESS HOURS — the operator block lists \`Business hours\` (per weekday, with
 closed days named). This is a HARD constraint:
@@ -267,6 +281,10 @@ export function operatorBlock(operator: OperatorRow, nowIso: string): string {
     `Business hours (${operator.timezone}): ${businessHours}`,
     // Office appointments have no service area (callers come to / call the office).
     ...(office ? [] : [serviceArea]),
+    // Same list the confirmation + reminder SMS carry (sms-templates.bringListFor).
+    ...(bringListFor(operator.category)
+      ? [`What to bring: ${bringListFor(operator.category)}`]
+      : []),
     `Fee policy: ${fee}`,
   ].join('\n');
 }

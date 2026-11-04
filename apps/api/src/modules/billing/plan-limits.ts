@@ -44,6 +44,41 @@ export function overLimitPolicyForPlan(plan: string | null | undefined): OverLim
   return null;
 }
 
+/**
+ * Free-trial cap: at most 30 people on ANY plan while a Stripe trial runs, and
+ * it blocks (no overage — trial usage is never billed). The operator lifts it by
+ * ending the trial early (TrialBanner → POST /v1/billing/end-trial), which starts
+ * the paid period and a fresh window at the full plan limit.
+ */
+export const TRIAL_PEOPLE_LIMIT = 30;
+
+export interface UsageLimits {
+  readonly limit: number | null;
+  readonly policy: OverLimitPolicy | null;
+  /** True while the trial cap (not the plan limit) applies. */
+  readonly trial: boolean;
+}
+
+/**
+ * The limit in force for an operator. A trial is a STRIPE trial (trialing with a
+ * subscription id); comped / sales-rep accounts are `trialing` with no Stripe
+ * subscription and keep their plan's rules (none, when they have no plan).
+ */
+export function usageLimitsFor(op: {
+  readonly plan: string | null;
+  readonly subscription_status: string | null;
+  readonly stripe_subscription_id: string | null;
+}): UsageLimits {
+  if (op.subscription_status === 'trialing' && op.stripe_subscription_id) {
+    return { limit: TRIAL_PEOPLE_LIMIT, policy: 'block', trial: true };
+  }
+  return {
+    limit: conversationLimitForPlan(op.plan),
+    policy: overLimitPolicyForPlan(op.plan),
+    trial: false,
+  };
+}
+
 export interface Overage {
   readonly extraPeople: number;
   readonly batches: number;

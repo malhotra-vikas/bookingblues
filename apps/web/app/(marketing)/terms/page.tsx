@@ -73,7 +73,12 @@ export default async function TermsPage(): Promise<JSX.Element> {
         <p>
           New Subscribers receive a 7-day free trial. A valid payment method is required to start
           the trial. You will not be charged if you cancel before the trial period ends. If you
-          do not cancel, your subscription begins automatically on day 8.
+          do not cancel, your subscription begins automatically on day 8. The free trial covers up
+          to 30 people on any plan; once reached, new callers receive a short follow-up text instead
+          of the AI until you end the trial and start your paid plan, which you may do at any time.
+          The free trial is limited to one per person or business: a new account that reuses the
+          email address, phone number, payment card or calendar account of an earlier subscription
+          starts without a free trial and is charged immediately.
         </p>
         <h3>3c. Billing Cycle</h3>
         <p>

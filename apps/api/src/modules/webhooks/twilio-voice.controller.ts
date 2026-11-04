@@ -250,7 +250,7 @@ export class TwilioVoiceController {
   }
 
   private async startConversationFromCall(
-    operator: { id: string; business_name: string; twilio_number_e164: string | null },
+    operator: { id: string; business_name: string; category?: string | null; twilio_number_e164: string | null },
     callerPhone: string | undefined,
   ): Promise<void> {
     if (!callerPhone || !operator.twilio_number_e164) return;
@@ -272,7 +272,7 @@ export class TwilioVoiceController {
     // limit gets a polite "we'll follow up" text instead of the AI invite.
     const admitted = await this.usage.wouldAdmit(operator.id, callerPhone);
     const opening = admitted
-      ? openingSms(operator.business_name)
+      ? openingSms(operator.business_name, operator.category)
       : usageLimitOpeningSms(operator.business_name);
 
     const send = await this.twilio.sendSms({

@@ -23,6 +23,8 @@ interface Usage {
   conversations_limit: number | null;
   /** 'block' = Solo stops new people at the limit; 'overage' = Crew/Fleet billed for extras. */
   policy?: 'block' | 'overage' | null;
+  /** The 30-person free-trial cap applies instead of the plan limit. */
+  trial?: boolean;
   period_start: string;
   period_end: string | null;
 }
@@ -407,16 +409,20 @@ function UsageMeter({
 }: {
   usage: Usage;
 }): JSX.Element {
-  const { conversations_used: used, conversations_limit: limit, period_end, policy } = usage;
+  const { conversations_used: used, conversations_limit: limit, period_end, policy, trial } = usage;
   const pct = limit && limit > 0 ? Math.min(100, Math.round((used / limit) * 100)) : null;
   const atLimit = limit != null && used >= limit;
   const over = limit != null && used > limit;
   const warn = pct != null && pct >= 80 && !atLimit;
-  const renews = period_end ? new Date(period_end).toLocaleDateString() : null;
+  // A trial's cap lifts when the trial ends, not at the window reset.
+  const renews = period_end && !trial ? new Date(period_end).toLocaleDateString() : null;
   const blocked = atLimit && policy === 'block';
 
   let note: string;
   if (limit == null) note = 'People the AI talked to this period.';
+  else if (trial && atLimit)
+    note = `Free-trial limit reached — new callers get a “we’ll call you back” text instead of the AI. End your trial (top of the page) to start your plan and unlock its full limit.`;
+  else if (trial) note = `Your free trial includes ${limit} people. Ending the trial early unlocks your plan’s full limit.`;
   else if (blocked)
     note = 'Limit reached — new callers get a “we’ll call you back” text instead of the AI. Upgrade to keep every caller covered.';
   else if (over && policy === 'overage')
@@ -450,7 +456,7 @@ function UsageMeter({
       <p className="mt-2 text-[11px] text-muted dark:text-slate-400">
         {note}
         {renews ? ` Resets ${renews}.` : ''}
-        {blocked ? (
+        {blocked && !trial ? (
           <>
             {' '}
             <Link href="/settings" className="underline text-accent">

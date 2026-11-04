@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import type { Database, Tables } from '@bookingblues/db-types';
 
 import { SupabaseService } from '../../common/supabase/supabase.service';
+import { isOfficeAppointmentCategory } from '../ai/category-profile';
 
 type ConversationRow = Tables<'conversations'>;
 type MessageRole = Database['public']['Enums']['message_role'];
@@ -109,10 +110,14 @@ export class ConversationsService {
         .from('conversations')
         // Reset `started_at` so the §9.3 caller-turn cap counts only THIS
         // follow-up engagement, not the turns from the prior (completed) one.
+        // Keep `booked`: a "what should I bring?" after booking must not erase
+        // the result (live test 2026-11-04 — admin showed outcome "—", and the
+        // stale sweep would have closed it abandoned/timeout). Other outcomes
+        // are cleared since the follow-up may change them.
         .update({
           status: 'awaiting_bot',
           completed_at: null,
-          outcome: null,
+          outcome: recent.outcome === 'booked' ? 'booked' : null,
           started_at: new Date().toISOString(),
         })
         .eq('id', recent.id)
@@ -194,7 +199,7 @@ export class ConversationsService {
     const { data: stale, error } = await this.supabase
       .db()
       .from('conversations')
-      .select('id')
+      .select('id, operators(category)')
       .in('status', OPEN as unknown as string[])
       .lt('last_message_at', cutoffIso)
       .limit(200);
@@ -214,7 +219,10 @@ export class ConversationsService {
       // CRITICAL: never close a booked conversation that's still missing the
       // service address — keep it open so the address can still be collected
       // (caller reply, or the operator's manual "Mark resolved + add address").
-      const bookedButNoAddress = booked && (appts ?? []).every((a) => !a.service_address);
+      // Office appointments (insurance) never collect an address — without this
+      // a booked insurance conversation that got a follow-up stayed open forever.
+      const office = isOfficeAppointmentCategory(c.operators?.category);
+      const bookedButNoAddress = booked && !office && (appts ?? []).every((a) => !a.service_address);
       if (bookedButNoAddress) continue;
 
       const { error: updErr } = await this.supabase

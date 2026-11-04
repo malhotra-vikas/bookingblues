@@ -243,6 +243,8 @@ All variables loaded via `apps/api/src/config/env.ts` using `zod` validation. Th
 | `PLATFORM_TAKE_RATE_BPS` | api | Default 1000 (10%) for booking fee cut |
 | `MIN_PLATFORM_FEE_CENTS` | api | Default 100 ($1.00) floor on platform fee |
 | `TRIAL_DAYS` | api | Default 7; mirrored on Stripe Checkout creation |
+| `TRIAL_GUARD_EXEMPT_EMAIL_DOMAINS` | api | Comma-separated login-email domains skipped by the one-trial-per-person guard (§17 Trial abuse). Unset in prod. |
+| `TRIAL_GUARD_EXEMPT_EMAILS` | api | Comma-separated mailboxes skipped by the same guard; each covers all its `+tag` / Gmail-dot aliases. Prod: `malhotra.vikas@gmail.com` (owner's test accounts). |
 | `GOOGLE_OAUTH_CLIENT_ID` | api | |
 | `GOOGLE_OAUTH_CLIENT_SECRET` | api | |
 | `GOOGLE_OAUTH_REDIRECT_URI` | api | |
@@ -373,18 +375,25 @@ audit_log
 usage_callers                        -- plan usage: one row per unique person per monthly window
   operator_id, window_start, caller_phone_e164
   unique (operator_id, window_start, caller_phone_e164)
-usage_alerts                         -- 80% / 100% emails, one per threshold per window
-  operator_id, window_start, threshold_pct (80|100), unique (operator_id, window_start, threshold_pct)
+usage_alerts                         -- 80% / 100% emails, one per threshold per window per limit
+  operator_id, window_start, threshold_pct (80|100), limit_people,
+  unique (operator_id, window_start, threshold_pct, limit_people)  -- a mid-window upgrade re-alerts at the new limit
 usage_overage_charges                -- one claim per billed window (idempotency for overage billing)
   operator_id, window_start, window_end, people_used, people_included, batches, amount_cents,
   status ('none','pending','invoiced','paid','failed'), stripe_invoice_id, stripe_invoice_item_id
   unique (operator_id, window_start)
+trial_identities                     -- one free trial per person (billing/trial-guard.service.ts); service role only
+  kind ('email','phone','card','google'), value_hash (sha256), operator_id (on delete set null)
+  unique (kind, value_hash, operator_id)
 operators.overage_unpaid_invoice_id  -- set while a standalone (annual-plan) overage invoice is unpaid → AI paused
 ```
 
 Usage windows are monthly, anchored on `operators.current_period_start` (`modules/usage/usage-window.ts`).
 Limits (`billing/plan-limits.ts`): Solo 80 people (blocks new callers at the limit), Crew 500 / Fleet 1500
-(overage $100 per started batch of 50). New usage tables are read-own-only under RLS; writes via service role.
+(overage $100 per started batch of 50). **Free trial: 30 people on any plan, blocking, never billed**
+(`usageLimitsFor`, `TRIAL_PEOPLE_LIMIT`) — applies only to Stripe trials (`trialing` + `stripe_subscription_id`);
+comped / sales-rep accounts (`trialing`, no subscription) keep their plan's rules. Ending the trial early
+(`POST /v1/billing/end-trial`) starts a fresh window at the full plan limit. New usage tables are read-own-only under RLS; writes via service role.
 
 ### RLS policies (MVP set)
 
@@ -817,7 +826,7 @@ Roadmap order after MVP: dashboard analytics → Operator-editable bot persona �
 - **Stripe test mode vs Connect**: Connect onboarding in test mode requires the test SSN `000-00-0000` and other test values. Document in `apps/api/test/SMOKE.md`.
 - **Supabase Auth email links**: redirect URL must be in Supabase allowlist. Update for each environment.
 - **OpenAI cost**: log token usage per conversation. If average conversation exceeds $0.10, optimize the prompt before optimizing the model.
-- **Trial abuse**: card required at signup is the primary defense. Add secondary checks: rate-limit signups per IP, block disposable email domains, dedupe trials by `personal_phone_e164` (one trial per verified mobile number, lifetime). Implement these checks at signup, not retroactively.
+- **Trial abuse**: card required at signup is the primary defense. **One free trial per person, lifetime** (`billing/trial-guard.service.ts`, table `trial_identities`, migration `20261104000002`): every account that gets a subscription records hashed identifiers — login email (lowercased, `+tag` dropped, Gmail dots removed), `personal_phone_e164`, card fingerprint, Google Calendar email. A new account matching another account's identifier gets no trial and no Founding coupon at checkout (email/phone), or has its trial ended on the spot with the Founding coupon removed (card on `customer.subscription.created`, Google email at calendar connect) → Stripe charges the card that day. Audited as `trial.denied_at_checkout` / `trial.ended_duplicate`. Rows survive operator deletion (`on delete set null`). `TRIAL_GUARD_EXEMPT_EMAIL_DOMAINS` / `TRIAL_GUARD_EXEMPT_EMAILS` skip internal/test accounts — neither checked nor recorded (release E2E: domain `e2e.test`; prod: the owner's `malhotra.vikas@gmail.com` and all its aliases). Not covered: a genuinely different person, card, phone and Google account each time (virtual/prepaid cards); `personal_phone_e164` is not yet SMS-verified.
 - **MoR boundary**: BookingBlues is explicitly NOT the merchant of record for booking fees. The Operator's connected account is. Do not write code that holds caller funds, schedules transfers, or routes payouts. If a future feature seems to require that, escalate; it likely changes our compliance posture.
 - **Direct charges and `Stripe-Account` header**: every Stripe API call related to booking fees must pass the connected account ID, both creating Checkout Sessions and issuing refunds. Wrap the Stripe SDK in a small helper that requires the connected account ID as a typed argument so this can't be forgotten. Calls without the header will succeed against the platform account, charging the wrong entity.
 - **Webhook routing for Direct Charges**: payment events for booking fees arrive on the **Connect** endpoint, not the platform endpoint. The event envelope's `account` field identifies which Operator's account. Always cross-reference against `operators.stripe_connect_account_id` before acting.

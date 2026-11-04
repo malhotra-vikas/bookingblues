@@ -90,6 +90,13 @@ const baseSchema = z.object({
   MIN_PLATFORM_FEE_CENTS: z.coerce.number().int().min(0).default(100),
   DEFAULT_BOOKING_FEE_CENTS: z.coerce.number().int().min(0).default(2500),
   TRIAL_DAYS: z.coerce.number().int().min(0).default(7),
+  // Comma-separated login-email domains skipped by the one-trial-per-person guard
+  // (billing/trial-guard.service.ts), e.g. internal test accounts. The release E2E
+  // sets `e2e.test` because every run pays with the same test card.
+  TRIAL_GUARD_EXEMPT_EMAIL_DOMAINS: z.string().optional(),
+  // Comma-separated mailboxes skipped by the same guard; each entry also covers
+  // its +tag and Gmail-dot aliases (malhotra.vikas@gmail.com → malhotra.vikas+3@…).
+  TRIAL_GUARD_EXEMPT_EMAILS: z.string().optional(),
 
   // Google OAuth
   GOOGLE_OAUTH_CLIENT_ID: z.string().optional(),

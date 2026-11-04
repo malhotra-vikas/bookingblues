@@ -8,6 +8,7 @@ import { ENV_TOKEN } from '../../config/config.module';
 import type { Env } from '../../config/env';
 import { BookingsService } from '../appointments/bookings.service';
 import { type PlanAndCadence, buildPricePlanMap } from '../billing/plan-pricing';
+import { TrialGuardService } from '../billing/trial-guard.service';
 import { UsageBillingService } from '../usage/usage-billing.service';
 import { dispatchConnectEvent } from './stripe-connect-event-handlers';
 import { dispatchPlatformEvent } from './stripe-event-handlers';
@@ -29,6 +30,7 @@ export class StripeEventProcessor {
     private readonly supabase: SupabaseService,
     private readonly usageBilling: UsageBillingService,
     private readonly bookings: BookingsService,
+    private readonly trialGuard: TrialGuardService,
     private readonly logger: PinoLogger,
     @Inject(ENV_TOKEN) env: Env,
   ) {
@@ -44,6 +46,7 @@ export class StripeEventProcessor {
       logger: this.logger,
       priceMap: this.priceMap,
       billing: this.usageBilling,
+      trialGuard: this.trialGuard,
     });
   }
 

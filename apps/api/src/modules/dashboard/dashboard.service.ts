@@ -21,6 +21,8 @@ export interface DashboardMetrics {
     readonly conversations_used: number;
     readonly conversations_limit: number | null;
     readonly policy: OverLimitPolicy | null;
+    /** True while the 30-person free-trial cap applies instead of the plan limit. */
+    readonly trial: boolean;
     readonly period_start: string;
     readonly period_end: string | null;
   };
@@ -60,7 +62,7 @@ export class DashboardService {
       .db()
       .from('operators')
       .select(
-        'id, user_id, business_name, subscription_status, trial_ends_at, subscription_cancel_at, plan, current_period_start, current_period_end, timezone',
+        'id, user_id, business_name, subscription_status, stripe_subscription_id, trial_ends_at, subscription_cancel_at, plan, current_period_start, current_period_end, timezone',
       )
       .eq('user_id', userId)
       .maybeSingle();
@@ -121,6 +123,7 @@ export class DashboardService {
         conversations_used: usage.used,
         conversations_limit: usage.limit,
         policy: usage.policy,
+        trial: usage.trial,
         period_start: usage.window.start.toISOString(),
         period_end: usage.window.end.toISOString(),
       },

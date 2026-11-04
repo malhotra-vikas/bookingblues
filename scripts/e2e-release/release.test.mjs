@@ -35,6 +35,10 @@ const run = crypto.randomUUID().slice(0, 6);
 const PASSWORD = `e2e-${run}-Passw0rd!`;
 const BUSINESS = `Summit Senior Insurance ${run}`;
 const OP_NUMBER = `+1555${String(crypto.randomInt(1_000_000, 9_999_999))}`;
+/** apps/api/src/modules/billing/plan-limits.ts TRIAL_PEOPLE_LIMIT — any plan, while a Stripe trial runs. */
+const TRIAL_CAP = 30;
+const SOLO_LIMIT = 80;
+const CREW_LIMIT = 500;
 const brand = readFileSync(resolve(here, '../../apps/web/lib/brand.ts'), 'utf8');
 const TERMS_VERSION = /version:\s*'([^']+)'/.exec(brand.slice(brand.indexOf('TERMS')))?.[1] ?? 'unknown';
 
@@ -356,7 +360,16 @@ await stage('5. real AI conversation (OpenAI) → booking with intake answers', 
   check(/birth/.test(all), 'bot asked for date of birth');
   check(/doctor|physician/.test(all), 'bot asked for the doctor');
   check(/prescri|medication/.test(all), 'bot asked for prescriptions');
-  check(!/medicare (number|id)|\bmbi\b|social security/.test(all), 'bot never asked for MBI/SSN');
+  // The booking confirmation itself says "bring your Medicare card (it shows your
+  // Medicare number/MBI) … please don't text us your Medicare number" — that's
+  // the opposite of asking, so it's excluded; every other bot line must not ask.
+  const asks = transcript
+    .filter((l) => l.startsWith('BOT') && !/you're booked/i.test(l))
+    .join(' ')
+    .toLowerCase();
+  check(!/medicare (number|id)|\bmbi\b|social security/.test(asks), 'bot never asked for MBI/SSN');
+  check(/please bring your medicare card/.test(all), 'confirmation lists what to bring (Medicare card, …)');
+  check(/don't text us your medicare number/.test(all), 'confirmation tells the caller NOT to text their Medicare number');
   check(!/address|deposit|emergency/.test(all), 'bot never asked for an address, a deposit or about emergencies');
   if (!S.appt) return;
   check(S.appt.status === 'confirmed', `appointment status confirmed (${S.appt.status})`);
@@ -382,7 +395,12 @@ await stage('6. operator view (dashboard API)', async () => {
   const m = await api('/v1/dashboard/metrics', { as: S.email });
   check(m.status === 200, 'dashboard metrics load');
   info(`usage: ${JSON.stringify(m.body?.usage)}`);
-  check(m.body?.usage?.conversations_limit === 80 && m.body?.usage?.conversations_used >= 1, `usage meter Solo ${m.body?.usage?.conversations_used}/${m.body?.usage?.conversations_limit}`);
+  // During a Stripe trial every plan is capped at the trial limit (plan-limits.ts TRIAL_PEOPLE_LIMIT).
+  check(
+    m.body?.usage?.conversations_limit === TRIAL_CAP && m.body?.usage?.trial === true && m.body?.usage?.conversations_used >= 1,
+    `usage meter shows the free-trial cap ${m.body?.usage?.conversations_used}/${m.body?.usage?.conversations_limit} (trial)`,
+    JSON.stringify(m.body?.usage),
+  );
   const appts = await api('/v1/appointments', { as: S.email });
   const mine = (appts.body?.items ?? appts.body?.data ?? appts.body ?? []).find?.((a) => a.id === S.appt?.id);
   check(mine, 'appointment listed for the operator');
@@ -396,42 +414,62 @@ await stage('6. operator view (dashboard API)', async () => {
   check(msgs.status === 200, 'operator can read the transcript');
 });
 
-await stage('7. Solo usage: 80% and 100% emails, then new callers blocked', async () => {
+/**
+ * Fill `window` to exactly `target - 1` people (real callers already in it are
+ * kept), then text from a NEW number so person #target is counted by the real
+ * SMS path. Returns that caller's number.
+ */
+async function fillTo(window, target, body) {
+  const now = await countPeople(S.opId, window);
+  const { count: seeded } = await db
+    .from('usage_callers')
+    .select('id', { count: 'exact', head: true })
+    .eq('operator_id', S.opId)
+    .eq('window_start', window)
+    .like('caller_phone_e164', '+1999%');
+  const real = now - (seeded ?? 0);
+  await seedPeople(S.opId, window, target - 1 - real);
+  const before = await countPeople(S.opId, window);
+  check(before === target - 1, `${target - 1} people before caller #${target} (${before})`);
+  const c = phone();
+  await sms(S.opId, c, body);
+  await eventually(async () => (await countPeople(S.opId, window)) >= target);
+  return c;
+}
+
+/** Missed call + reply from a NEW number while at the limit: polite text, no AI, not counted. */
+async function expectBlocked(window, label, used) {
+  const c = phone();
+  await twilio(`/webhooks/twilio/voice/${S.opId}`, { From: c, To: OP_NUMBER, CallSid: `CA_e2e_${run}_${label}` });
+  await twilio(`/webhooks/twilio/voice/${S.opId}/consent?attempt=1`, { From: c, To: OP_NUMBER, CallSid: `CA_e2e_${run}_${label}`, Digits: '1' });
+  const open = await eventually(async () => (await messages(S.opId, c)).msgs.find((m) => m.role === 'bot'));
+  check(open && /follow up/i.test(open.body), `caller #${label} gets the polite "we'll follow up" text, not the AI`, open?.body);
+  const since = new Date().toISOString();
+  await sms(S.opId, c, 'Can I book a time to talk about Medicare?');
+  await sleep(12_000);
+  const after = (await messages(S.opId, c)).msgs.filter((m) => m.role === 'bot' && m.created_at > since);
+  check(after.every((m) => /follow up/i.test(m.body)) && after.length <= 1, `caller #${label}'s text gets no AI reply (${after.length} follow-up notices)`, after.map((m) => m.body).join(' | '));
+  check((await countPeople(S.opId, window)) === used, `caller #${label} NOT counted (still ${used})`);
+  return c;
+}
+
+await stage(`7. free-trial cap (${TRIAL_CAP} people): 80% and 100% emails, then new callers blocked`, async () => {
   const { data: rows } = await db.from('usage_callers').select('window_start').eq('operator_id', S.opId).limit(1);
   S.trialWindow = rows?.[0]?.window_start;
   check(S.trialWindow, `Maria counted in window starting ${S.trialWindow}`);
   if (!S.trialWindow) return;
 
-  await seedPeople(S.opId, S.trialWindow, 62); // Maria + 62 = 63
-  const c64 = phone();
-  await sms(S.opId, c64, 'Hi, do you help with Medicare supplements?');
-  await eventually(async () => (await countPeople(S.opId, S.trialWindow)) >= 64);
-  check(await eventually(() => emailsTo(S.email, /80%|80 ?percent|approaching|almost/i).length > 0, { timeout: 20_000 }), 'operator got the 80% email (64/80)');
-  check(emailsTo(S.adminEmail).some((e) => /80%/i.test(e.body?.subject ?? '')), 'admin got the 80% email');
+  const at80 = Math.ceil(TRIAL_CAP * 0.8); // 24
+  await fillTo(S.trialWindow, at80, 'Hi, do you help with Medicare supplements?');
+  check(await eventually(() => emailsTo(S.email, /80% of your free trial/i).length > 0, { timeout: 20_000 }), `operator got the trial 80% email (${at80}/${TRIAL_CAP})`);
+  check(emailsTo(S.adminEmail).some((e) => /\[Trial 80%\]/.test(e.body?.subject ?? '')), 'admin got the trial 80% email');
 
-  // Maria + c64 are real; seeded phones are index-based, so seeding 77 adds 15 → 79 total.
-  await seedPeople(S.opId, S.trialWindow, 77);
-  const used = await countPeople(S.opId, S.trialWindow);
-  check(used === 79, `79 people before caller #80 (${used})`);
-  const c80 = phone();
-  await sms(S.opId, c80, 'Hello, I need help picking a drug plan');
-  await eventually(async () => (await countPeople(S.opId, S.trialWindow)) >= 80);
-  check(await eventually(() => emailsTo(S.email, /100%|limit|reached/i).length > 0, { timeout: 20_000 }), 'operator got the 100% email (80/80)');
-  check(emailsTo(S.adminEmail).some((e) => /100%|limit/i.test(e.body?.subject ?? '')), 'admin got the 100% email');
-  check(emailsTo(S.email, /80%/).length === 1, 'the 80% email was sent once, not repeated');
+  await fillTo(S.trialWindow, TRIAL_CAP, 'Hello, I need help picking a drug plan');
+  check(await eventually(() => emailsTo(S.email, /free-trial limit/i).length > 0, { timeout: 20_000 }), `operator got the trial-limit email (${TRIAL_CAP}/${TRIAL_CAP})`);
+  check(emailsTo(S.adminEmail).some((e) => /\[Trial 100%\]/.test(e.body?.subject ?? '')), 'admin got the trial 100% email');
+  check(emailsTo(S.email, /80% of your free trial/i).length === 1, 'the trial 80% email was sent once, not repeated');
 
-  // caller #81: missed call → limit opening text instead of the AI
-  S.blocked = phone();
-  await twilio(`/webhooks/twilio/voice/${S.opId}`, { From: S.blocked, To: OP_NUMBER, CallSid: `CA_e2e_${run}_81` });
-  await twilio(`/webhooks/twilio/voice/${S.opId}/consent?attempt=1`, { From: S.blocked, To: OP_NUMBER, CallSid: `CA_e2e_${run}_81`, Digits: '1' });
-  const open81 = await eventually(async () => (await messages(S.opId, S.blocked)).msgs.find((m) => m.role === 'bot'));
-  check(open81 && /follow up/i.test(open81.body), 'caller #81 gets the polite "we\'ll follow up" text, not the AI', open81?.body);
-  const since = new Date().toISOString();
-  await sms(S.opId, S.blocked, 'Can I book a time to talk about Medicare?');
-  await sleep(12_000);
-  const after = (await messages(S.opId, S.blocked)).msgs.filter((m) => m.role === 'bot' && m.created_at > since);
-  check(after.every((m) => /follow up/i.test(m.body)) && after.length <= 1, `caller #81's text gets no AI reply (${after.length} follow-up notices)`, after.map((m) => m.body).join(' | '));
-  check((await countPeople(S.opId, S.trialWindow)) === 80, 'caller #81 NOT counted');
+  S.blocked = await expectBlocked(S.trialWindow, TRIAL_CAP + 1, TRIAL_CAP);
 
   const since2 = new Date().toISOString();
   await sms(S.opId, S.maria, 'Thank you! What should I bring to the appointment?');
@@ -447,23 +485,14 @@ await stage('7. Solo usage: 80% and 100% emails, then new callers blocked', asyn
   check(back && !back.some((m) => offersSlots(m.body)), 'follow-up is not met with a fresh slot offer (bot knows she is booked)', back?.map((m) => m.body).join(' | '));
   info(`Maria's follow-up reply: ${back?.map((m) => m.body).join(' | ')}`);
   const m = await api('/v1/dashboard/metrics', { as: S.email });
-  check(m.body?.usage?.conversations_used === 80 && m.body?.usage?.conversations_limit === 80, `dashboard meter shows 80/80`, JSON.stringify(m.body?.usage));
+  check(
+    m.body?.usage?.conversations_used === TRIAL_CAP && m.body?.usage?.conversations_limit === TRIAL_CAP && m.body?.usage?.trial === true,
+    `dashboard meter shows ${TRIAL_CAP}/${TRIAL_CAP} (trial)`,
+    JSON.stringify(m.body?.usage),
+  );
 });
 
-await stage('8. upgrade Solo → Crew (as the billing portal does)', async () => {
-  const sub = await stripe.subscriptions.retrieve(S.subId);
-  await stripe.subscriptions.update(S.subId, { items: [{ id: sub.items.data[0].id, price: process.env.STRIPE_PRICE_CREW_MONTHLY }], proration_behavior: 'create_prorations' });
-  const op = await eventually(async () => ((await operatorRow(S.opId)).plan === 'crew' ? true : null));
-  check(op, 'webhook → operator plan is now crew');
-  const m = await api('/v1/dashboard/metrics', { as: S.email });
-  check(m.body?.usage?.conversations_limit === 500, `meter limit now 500 (${m.body?.usage?.conversations_used}/${m.body?.usage?.conversations_limit})`);
-  const since = new Date().toISOString();
-  await sms(S.opId, S.blocked, 'Hi again, can we set up a call about Medicare Advantage?');
-  const replies = await botRepliesAfter(S.opId, S.blocked, since, 90_000);
-  check(replies && replies.some(isAiReply), 'previously blocked caller now gets the AI', replies?.map((m) => m.body).join(' | '));
-});
-
-await stage('9. end trial → first Crew charge (test card) → fresh usage window', async () => {
+await stage('8. end trial early → first Solo charge (test card) → fresh window at the full Solo limit', async () => {
   const before = (await operatorRow(S.opId)).current_period_start;
   check(await advanceClock(S.clockId, Math.floor(Date.now() / 1000) - 5), 'test clock brought to the real present (1 day into the trial)');
   const r = await api('/v1/billing/end-trial', { method: 'POST', as: S.email });
@@ -473,26 +502,76 @@ await stage('9. end trial → first Crew charge (test card) → fresh usage wind
     return o.subscription_status === 'active' && o.current_period_start !== before ? o : null;
   }, { timeout: 90_000 });
   check(op, 'webhook → active, new billing period');
-  S.crewWindow = op?.current_period_start;
+  S.paidWindow = op?.current_period_start ? new Date(op.current_period_start).toISOString() : null;
   S.periodEnd = op?.current_period_end;
   const inv = S.subId ? (await stripe.invoices.list({ subscription: S.subId, limit: 5 })).data.find((i) => i.amount_paid > 0) : null;
-  check(inv && inv.status === 'paid', `paid invoice in Stripe test mode: $${(inv?.amount_paid ?? 0) / 100}`);
+  check(inv && inv.status === 'paid' && inv.amount_paid === 19_900, `first Solo invoice PAID in Stripe test mode: $${(inv?.amount_paid ?? 0) / 100} (expect $199)`);
   const { data: trialCharges } = await db.from('usage_overage_charges').select('*').eq('operator_id', S.opId);
   check(!trialCharges?.some((c) => c.amount_cents > 0), 'usage during the trial is never billed as overage');
   const m = await api('/v1/dashboard/metrics', { as: S.email });
-  check(m.body?.usage?.conversations_used === 0, `usage meter reset for the paid period (${m.body?.usage?.conversations_used}/${m.body?.usage?.conversations_limit})`);
+  check(
+    m.body?.usage?.conversations_used === 0 && m.body?.usage?.conversations_limit === SOLO_LIMIT && m.body?.usage?.trial === false,
+    `meter reset to 0/${SOLO_LIMIT} for the paid period`,
+    JSON.stringify(m.body?.usage),
+  );
+  const since = new Date().toISOString();
+  await sms(S.opId, S.blocked, 'Hi again, can we set up a call about Medicare Advantage?');
+  const replies = await botRepliesAfter(S.opId, S.blocked, since, 90_000);
+  check(replies && replies.some(isAiReply), 'the caller blocked during the trial now gets the AI', replies?.map((m) => m.body).join(' | '));
 });
 
-await stage('10. Crew over the limit: 80%/100% emails, AI keeps working (overage, no block)', async () => {
-  if (!S.crewWindow) return fail('no Crew window');
-  await seedPeople(S.opId, new Date(S.crewWindow).toISOString(), 550);
-  const before = emailsTo(S.email).length;
-  const c = phone();
+await stage(`9. Solo paid plan (${SOLO_LIMIT} people): 80% and 100% emails, then new callers blocked`, async () => {
+  if (!S.paidWindow) return fail('no paid window');
+  const mailsBefore = emailsTo(S.email).length;
+  const at80 = Math.ceil(SOLO_LIMIT * 0.8); // 64
+  await fillTo(S.paidWindow, at80, 'Hi, do you help with Medicare supplements?');
+  const soloMails = () => emailsTo(S.email).slice(mailsBefore).map((e) => e.body?.subject ?? '');
+  check(await eventually(() => soloMails().some((s) => /80%/.test(s) && !/trial/i.test(s)), { timeout: 20_000 }), `operator got the Solo 80% email (${at80}/${SOLO_LIMIT})`, JSON.stringify(soloMails()));
+  check(emailsTo(S.adminEmail).some((e) => /80%/.test(e.body?.subject ?? '') && !/Trial/.test(e.body?.subject ?? '')), 'admin got the Solo 80% email');
+
+  await fillTo(S.paidWindow, SOLO_LIMIT, 'Hello, I need help picking a drug plan');
+  check(await eventually(() => soloMails().some((s) => /100%|limit|reached/i.test(s)), { timeout: 20_000 }), `operator got the Solo 100% email (${SOLO_LIMIT}/${SOLO_LIMIT})`, JSON.stringify(soloMails()));
+  check(soloMails().filter((s) => /80%/.test(s)).length === 1, 'the Solo 80% email was sent once, not repeated');
+
+  S.blockedSolo = await expectBlocked(S.paidWindow, SOLO_LIMIT + 1, SOLO_LIMIT);
+  const m = await api('/v1/dashboard/metrics', { as: S.email });
+  check(m.body?.usage?.conversations_used === SOLO_LIMIT && m.body?.usage?.conversations_limit === SOLO_LIMIT, `dashboard meter shows ${SOLO_LIMIT}/${SOLO_LIMIT}`, JSON.stringify(m.body?.usage));
+});
+
+await stage('10. upgrade Solo → Crew mid-period (prorated charge paid) → limit lifts', async () => {
+  const sub = await stripe.subscriptions.retrieve(S.subId);
+  // Prorations are invoiced right away so the renewal invoice (stage 12) is clean.
+  await stripe.subscriptions.update(S.subId, {
+    items: [{ id: sub.items.data[0].id, price: process.env.STRIPE_PRICE_CREW_MONTHLY }],
+    proration_behavior: 'always_invoice',
+  });
+  const op = await eventually(async () => ((await operatorRow(S.opId)).plan === 'crew' ? true : null));
+  check(op, 'webhook → operator plan is now crew');
+  const proration = await eventually(async () => {
+    const i = (await stripe.invoices.list({ subscription: S.subId, limit: 3 })).data[0];
+    return i && i.billing_reason === 'subscription_update' && i.status === 'paid' ? i : null;
+  }, { timeout: 60_000, every: 2_000 });
+  check(proration, `prorated upgrade invoice PAID: $${(proration?.amount_paid ?? 0) / 100}`);
+  const m = await api('/v1/dashboard/metrics', { as: S.email });
+  check(
+    m.body?.usage?.conversations_limit === CREW_LIMIT && m.body?.usage?.policy === 'overage',
+    `meter now ${m.body?.usage?.conversations_used}/${CREW_LIMIT}, overage instead of block`,
+    JSON.stringify(m.body?.usage),
+  );
   const since = new Date().toISOString();
-  await sms(S.opId, c, 'Hi, I just turned 65 and need help with Medicare.');
-  const replies = await botRepliesAfter(S.opId, c, since, 90_000);
+  await sms(S.opId, S.blockedSolo, 'Hi again, are you able to help me now?');
+  const replies = await botRepliesAfter(S.opId, S.blockedSolo, since, 90_000);
+  check(replies && replies.some(isAiReply), 'the caller blocked on Solo now gets the AI on Crew', replies?.map((m) => m.body).join(' | '));
+});
+
+await stage('11. Crew over the limit: 80%/100% emails, AI keeps working (overage, no block)', async () => {
+  if (!S.paidWindow) return fail('no paid window');
+  S.crewWindow = S.paidWindow;
+  const before = emailsTo(S.email).length;
+  const c = await fillTo(S.crewWindow, 551, 'Hi, I just turned 65 and need help with Medicare.');
+  const replies = await botRepliesAfter(S.opId, c, new Date(Date.now() - 60_000).toISOString(), 90_000);
   check(replies && replies.some(isAiReply), 'caller #551 still gets the AI on Crew (overage, not blocked)');
-  const used = await countPeople(S.opId, new Date(S.crewWindow).toISOString());
+  const used = await countPeople(S.opId, S.crewWindow);
   check(used === 551, `551 people this window (${used})`);
   const newMails = emailsTo(S.email).slice(before).map((e) => e.body?.subject);
   info(`new operator emails: ${JSON.stringify(newMails)}`);
@@ -501,7 +580,7 @@ await stage('10. Crew over the limit: 80%/100% emails, AI keeps working (overage
   info(`meter: ${JSON.stringify(m.body?.usage)}`);
 });
 
-await stage('11. renewal (test clock) → $200 overage added to the Crew invoice and paid', async () => {
+await stage('12. renewal (test clock) → $200 overage added to the Crew invoice and paid', async () => {
   if (!S.periodEnd) return fail('no period end');
   const target = Math.floor(new Date(S.periodEnd).getTime() / 1000) + 120;
   check(await advanceClock(S.clockId, target), 'test clock advanced to renewal');
@@ -528,7 +607,7 @@ await stage('11. renewal (test clock) → $200 overage added to the Crew invoice
   }
 });
 
-await stage('12. failed renewal → past_due → AI paused + email; card fixed → resumed + email', async () => {
+await stage('13. failed renewal → past_due → AI paused + email; card fixed → resumed + email', async () => {
   const pm = await stripe.paymentMethods.attach('pm_card_chargeCustomerFail', { customer: S.customerId });
   await stripe.customers.update(S.customerId, { invoice_settings: { default_payment_method: pm.id } });
   await stripe.subscriptions.update(S.subId, { default_payment_method: pm.id });
@@ -557,7 +636,7 @@ await stage('12. failed renewal → past_due → AI paused + email; card fixed �
   check(await eventually(() => emailsTo(S.email, /resum|back on|active again/i).length > 0, { timeout: 30_000 }), 'operator got the "resumed" email');
 });
 
-await stage('13. admin view', async () => {
+await stage('14. admin view', async () => {
   const metrics = await api('/v1/admin/metrics', { as: S.adminEmail });
   check(metrics.status === 200, 'admin metrics load');
   const list = await api(`/v1/admin/operators?q=${encodeURIComponent(BUSINESS)}`, { as: S.adminEmail });
@@ -577,7 +656,7 @@ await stage('13. admin view', async () => {
   check(audit.status === 200, 'admin audit log loads');
 });
 
-await stage('14. tenant isolation', async () => {
+await stage('15. tenant isolation', async () => {
   const otherOp = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_ANON_KEY, { auth: { persistSession: false } });
   await otherOp.auth.signInWithPassword({ email: S.otherEmail, password: PASSWORD });
   const r1 = await api(`/v1/conversations/${S.mariaConvoId}/messages`, { as: S.otherEmail });
@@ -598,7 +677,7 @@ await stage('14. tenant isolation', async () => {
   check(cron.status === 401 || cron.status === 403, `usage cron rejects a wrong secret (${cron.status})`);
 });
 
-await stage('15. captured emails → gallery', async () => {
+await stage('16. captured emails → gallery', async () => {
   const dir = resolve(LOGS, 'emails');
   mkdirSync(dir, { recursive: true });
   const mails = captured('email');

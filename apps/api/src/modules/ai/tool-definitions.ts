@@ -226,28 +226,44 @@ const SAVE_INTAKE_ANSWERS_TOOL: OpenAI.Chat.Completions.ChatCompletionTool = {
   function: {
     name: 'save_intake_answers',
     description:
-      "Save the caller's intake answers so they're attached to their appointment for the agent. Call once you have them (and again if the caller corrects something), BEFORE booking. Never include a Medicare number (MBI), SSN, or payment details.",
+      "Save the caller's intake answers so they're attached to their appointment for the agent. Call once you have them (and again if the caller corrects something — send just the changed field, earlier answers are kept), BEFORE booking. Record ONLY what the caller actually said: never guess, complete or reword a value, and leave a field out if it wasn't given. Never include a Medicare number (MBI), SSN, or payment details.",
     parameters: {
       type: 'object',
       properties: {
         first_name: { type: 'string' },
-        last_name: { type: 'string' },
-        date_of_birth: { type: 'string', description: 'YYYY-MM-DD' },
+        last_name: {
+          type: 'string',
+          description: 'Only if the caller gave it. Omit — never invent — if they gave just a first name or an initial.',
+        },
+        date_of_birth: {
+          type: 'string',
+          description:
+            'Exactly as precise as the caller said it: YYYY-MM-DD for a full date, YYYY-MM for month and year, YYYY for year only. NEVER fill in a month or day the caller did not say.',
+        },
+        date_of_birth_declined: {
+          type: 'boolean',
+          description: 'True if the caller preferred not to give their date of birth.',
+        },
         doctor: {
           type: 'string',
-          description: 'Current doctor or doctor\'s office. "None" if they have none; "Declined" if they prefer not to say.',
+          description: 'Current doctor or doctor\'s office as the caller said it. "None" if they have none. Omit if not given.',
+        },
+        doctor_declined: {
+          type: 'boolean',
+          description: 'True if the caller preferred not to name their doctor.',
         },
         prescriptions: {
           type: 'array',
           items: { type: 'string' },
-          description: 'Each prescription as the caller said it (name, and strength if given). Empty if none or declined.',
+          description:
+            'Each prescription in the caller\'s own words (name, and strength if given). If they only named what it is for, record that as said, e.g. "for high blood pressure" — never invent a drug name. Empty if none or declined.',
         },
         prescriptions_declined: {
           type: 'boolean',
           description: 'True if the caller preferred not to share their prescriptions.',
         },
       },
-      required: ['first_name', 'last_name', 'date_of_birth', 'doctor', 'prescriptions'],
+      required: ['first_name'],
       additionalProperties: false,
     },
   },

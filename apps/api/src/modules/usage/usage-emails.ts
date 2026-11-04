@@ -33,6 +33,8 @@ export function usageAlertEmail(args: {
   used: number;
   limit: number;
   policy: OverLimitPolicy;
+  /** The free-trial cap (plan-limits.ts TRIAL_PEOPLE_LIMIT), not the plan limit. */
+  trial?: boolean;
   resetsAt: Date;
   appUrl: string;
 }): { operator: EmailContent; admin: EmailContent } {
@@ -40,6 +42,10 @@ export function usageAlertEmail(args: {
   const plan = planName(operator.plan);
   const resets = dateLabel(args.resetsAt);
   const settingsUrl = `${args.appUrl}/settings`;
+
+  if (args.trial) {
+    return trialLimitEmail({ ...args, plan, dashboardUrl: `${args.appUrl}/dashboard` });
+  }
 
   let heading: string;
   let detail: string;
@@ -89,6 +95,46 @@ export function usageAlertEmail(args: {
   return {
     operator: operatorEmail,
     admin: adminEmail(adminSubject, `${adminDetail} Usage resets ${resets}.`, operator, args.appUrl),
+  };
+}
+
+function trialLimitEmail(args: {
+  operator: OperatorRef;
+  threshold: UsageAlertThreshold;
+  used: number;
+  limit: number;
+  plan: string;
+  dashboardUrl: string;
+  appUrl: string;
+}): { operator: EmailContent; admin: EmailContent } {
+  const { operator, threshold, used, limit, plan } = args;
+  const reached = threshold === 100;
+  const heading = reached
+    ? `You've reached the free-trial limit of ${limit} people`
+    : `You've used ${threshold}% of your free trial`;
+  const detail =
+    `Your AI dispatcher has talked to ${used} of the ${limit} people included in your free trial. ` +
+    (reached
+      ? `New callers no longer get the AI — they get a short text saying you'll call them back. `
+      : `At ${limit}, new callers stop getting the AI until your trial ends. `) +
+    `People who already talked to the AI can keep texting it. ` +
+    `End your trial now to start your ${plan} plan and unlock its full monthly limit right away.`;
+  const operatorEmail: EmailContent = {
+    subject: heading,
+    html: brandedEmailHtml({
+      heading: escapeHtml(heading),
+      bodyHtml: `<p>${escapeHtml(detail)}</p>`,
+      cta: { label: 'End trial and start plan', href: args.dashboardUrl },
+    }),
+    text: `${heading}\n\n${detail}\n\n${args.dashboardUrl}`,
+  };
+  const adminSubject = `[Trial ${threshold}%] ${operator.businessName} — ${used}/${limit} people (${plan} trial)`;
+  const adminDetail = reached
+    ? 'Trial cap reached: new callers are no longer getting the AI until they end the trial.'
+    : 'Trial nearing its cap — a good moment to suggest starting the plan.';
+  return {
+    operator: operatorEmail,
+    admin: adminEmail(adminSubject, adminDetail, operator, args.appUrl),
   };
 }
 

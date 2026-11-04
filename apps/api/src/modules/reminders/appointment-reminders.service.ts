@@ -109,6 +109,7 @@ export class AppointmentRemindersService {
         operator.business_name,
         friendlyTime,
         operator.personal_phone_e164,
+        operator.category,
       );
 
       try {

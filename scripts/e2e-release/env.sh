@@ -53,6 +53,9 @@ export API_URL="http://localhost:$E2E_API_PORT"
 export ENCRYPTION_KEY="1:e2e0e2e0e2e0e2e0e2e0e2e0e2e0e2e0e2e0e2e0e2e0e2e0e2e0e2e0e2e0e2e0"
 export CRON_SHARED_SECRET="e2e_cron_secret"
 export TRIAL_DAYS=7
+# Every run pays with card 4242 — without this the one-trial-per-person guard
+# would (correctly) end run #2's trial on sight.
+export TRIAL_GUARD_EXEMPT_EMAIL_DOMAINS="e2e.test"
 export PROMO_FOUNDING_ENDS_AT="2020-01-01T00:00:00Z"
 export ENABLED_CATEGORIES="plumbing,hvac,electrical,roofing,garage_door,insurance"
 

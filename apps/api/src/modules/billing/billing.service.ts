@@ -21,6 +21,7 @@ import type {
 import { foundingCouponForCheckout } from './founding-promo';
 import { isReturningCustomer, resumeUpdate } from './reactivation';
 import { specialCouponForCheckout } from './special-pricing';
+import { TrialGuardService } from './trial-guard.service';
 
 type OperatorRow = Tables<'operators'>;
 
@@ -43,6 +44,7 @@ export class BillingService {
   constructor(
     private readonly stripe: StripeService,
     private readonly supabase: SupabaseService,
+    private readonly trialGuard: TrialGuardService,
     @Inject(ENV_TOKEN) private readonly env: Env,
   ) {}
 
@@ -94,8 +96,12 @@ export class BillingService {
     if (specialCoupon && returning && !(await this.couponStillValid(specialCoupon))) {
       specialCoupon = null;
     }
+    // A new account for a person (email alias / phone) who already had a
+    // subscription gets the returning-customer treatment too. The card is
+    // checked after checkout by the webhook (trial-guard.service.ts).
+    const noTrial = returning || (await this.trialGuard.hadTrialElsewhere(operator, userEmail));
     const coupon =
-      specialCoupon ?? (returning ? null : foundingCouponForCheckout(this.env, plan, cadence));
+      specialCoupon ?? (noTrial ? null : foundingCouponForCheckout(this.env, plan, cadence));
 
     const session = await this.stripe.client().checkout.sessions.create({
       mode: 'subscription',
@@ -105,7 +111,7 @@ export class BillingService {
       line_items: [{ price: priceId, quantity: 1 }],
       ...(coupon ? { discounts: [{ coupon }] } : {}),
       subscription_data: {
-        ...(returning
+        ...(noTrial
           ? {}
           : {
               trial_period_days: this.env.TRIAL_DAYS,

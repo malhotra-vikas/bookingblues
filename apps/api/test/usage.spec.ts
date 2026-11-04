@@ -46,7 +46,7 @@ describeIfSupabase('Usage metering, limits, alerts and overage billing', () => {
   const operatorRow = async (id: string): Promise<UsageOperator & { overage_unpaid_invoice_id: string | null }> => {
     const { data, error } = await db
       .from('operators')
-      .select('id, user_id, business_name, plan, current_period_start, overage_unpaid_invoice_id')
+      .select('id, user_id, business_name, plan, current_period_start, subscription_status, stripe_subscription_id, overage_unpaid_invoice_id')
       .eq('id', id)
       .single();
     if (error) throw error;
@@ -65,7 +65,7 @@ describeIfSupabase('Usage metering, limits, alerts and overage billing', () => {
     const env = readTestEnv();
     if (!env) throw new Error('no test env');
     db = makeServiceClient(env);
-    tenants = await setupTenants(6);
+    tenants = await setupTenants(8);
     app = await buildTestApp();
     usage = app.get(UsageService);
     billing = app.get(UsageBillingService);
@@ -190,6 +190,48 @@ describeIfSupabase('Usage metering, limits, alerts and overage billing', () => {
     // Next monthly window resets the count.
     const next = await usage.admitCaller(op, phone(81), new Date('2026-11-06T00:00:00Z'));
     expect(next).toMatchObject({ allowed: true, used: 1 });
+  });
+
+  it('Free trial (even on Fleet): blocks the 31st new person, trial emails, full limit once the trial ends', async () => {
+    const t = tenants[6]!;
+    await setPlan(t.operatorId, {
+      plan: 'fleet',
+      subscription_status: 'trialing',
+      stripe_subscription_id: 'sub_usage_trial_cap',
+    });
+    const op = await operatorRow(t.operatorId);
+
+    for (let i = 1; i <= 30; i += 1) {
+      expect((await usage.admitCaller(op, phone(i), IN_WINDOW)).allowed).toBe(true);
+    }
+    expect(sent.map((s) => s.kind)).toEqual(['usage_80', 'usage_100']);
+    expect(sent[1]!.subject).toMatch(/free-trial limit of 30 people/);
+
+    const blocked = await usage.admitCaller(op, phone(31), IN_WINDOW);
+    expect(blocked).toMatchObject({ allowed: false, used: 30, limit: 30, policy: 'block', trial: true });
+    expect(await usage.wouldAdmit(op.id, phone(31), IN_WINDOW)).toBe(false);
+    expect(await usage.admitCaller(op, phone(7), IN_WINDOW)).toMatchObject({ allowed: true });
+    expect(await usage.summary(op, IN_WINDOW)).toMatchObject({ used: 30, limit: 30, trial: true });
+
+    // Trial ended early → paid Fleet rules (1500, overage) on the same counts.
+    await setPlan(t.operatorId, { subscription_status: 'active' });
+    const paid = await operatorRow(t.operatorId);
+    expect(await usage.admitCaller(paid, phone(31), IN_WINDOW)).toMatchObject({
+      allowed: true,
+      limit: 1500,
+      policy: 'overage',
+      trial: false,
+    });
+  });
+
+  it('a comped account (trialing, no Stripe subscription) is not trial-capped', async () => {
+    const t = tenants[7]!;
+    await setPlan(t.operatorId, { plan: null, subscription_status: 'trialing', stripe_subscription_id: null });
+    const op = await operatorRow(t.operatorId);
+    expect(await usage.summary(op, IN_WINDOW)).toMatchObject({ limit: null, trial: false });
+    for (let i = 1; i <= 31; i += 1) {
+      expect((await usage.admitCaller(op, phone(i), IN_WINDOW)).allowed).toBe(true);
+    }
   });
 
   it('Crew monthly: keeps answering past the limit and bills overage on the renewal invoice once', async () => {

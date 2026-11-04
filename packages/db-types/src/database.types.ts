@@ -764,6 +764,38 @@ export type Database = {
           },
         ];
       };
+      trial_identities: {
+        Row: {
+          created_at: string;
+          id: string;
+          kind: string;
+          operator_id: string | null;
+          value_hash: string;
+        };
+        Insert: {
+          created_at?: string;
+          id?: string;
+          kind: string;
+          operator_id?: string | null;
+          value_hash: string;
+        };
+        Update: {
+          created_at?: string;
+          id?: string;
+          kind?: string;
+          operator_id?: string | null;
+          value_hash?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "trial_identities_operator_id_fkey";
+            columns: ["operator_id"];
+            isOneToOne: false;
+            referencedRelation: "operators";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       twilio_numbers: {
         Row: {
           created_at: string;
@@ -812,6 +844,7 @@ export type Database = {
         Row: {
           created_at: string;
           id: string;
+          limit_people: number;
           operator_id: string;
           threshold_pct: number;
           updated_at: string;
@@ -820,6 +853,7 @@ export type Database = {
         Insert: {
           created_at?: string;
           id?: string;
+          limit_people?: number;
           operator_id: string;
           threshold_pct: number;
           updated_at?: string;
@@ -828,6 +862,7 @@ export type Database = {
         Update: {
           created_at?: string;
           id?: string;
+          limit_people?: number;
           operator_id?: string;
           threshold_pct?: number;
           updated_at?: string;

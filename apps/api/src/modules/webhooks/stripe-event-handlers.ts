@@ -71,6 +71,10 @@ export interface HandlerDeps {
   readonly priceMap?: ReadonlyMap<string, PlanAndCadence>;
   /** Usage overage + failed-payment pause/resume emails (modules/usage). */
   readonly billing?: BillingEventHooks;
+  /** One-trial-per-person guard (billing/trial-guard.service.ts). */
+  readonly trialGuard?: {
+    onSubscription(sub: Stripe.Subscription, operatorId: string): Promise<void>;
+  };
 }
 
 export async function onCheckoutCompleted(
@@ -170,6 +174,9 @@ export async function onSubscriptionUpserted(
   if (operator.subscription_status !== nextStatus) {
     await deps.billing?.onSubscriptionStatusChanged(operator.id, operator.subscription_status, nextStatus);
   }
+
+  // After the sync, so a guard failure (event retried) never leaves the row stale.
+  await deps.trialGuard?.onSubscription(sub, operator.id);
 }
 
 export async function onSubscriptionDeleted(

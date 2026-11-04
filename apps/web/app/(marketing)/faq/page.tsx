@@ -67,6 +67,10 @@ export default async function FaqPage(): Promise<JSX.Element> {
       a: 'Your card is charged on day 8 at your plan rate. You will receive an email reminder on day 6. Cancel before day 8 and you will not be charged. Your number is released after a 7-day grace period post-cancellation.',
     },
     {
+      q: 'Is the free trial limited?',
+      a: 'The trial covers up to 30 people on any plan, and there is one free trial per business. If you reach 30 before day 8, end the trial from your dashboard to start your plan right away with its full monthly limit.',
+    },
+    {
       q: 'Where does my customer data live?',
       a: `Postgres on Supabase, with row-level security so other subscribers on the platform can never see your data. Twilio holds the phone numbers, Google holds the calendar, Stripe holds the cards. ${BRAND.name} holds the conversation transcripts and appointment metadata only.`,
     },

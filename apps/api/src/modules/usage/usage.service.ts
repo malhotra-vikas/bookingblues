@@ -4,9 +4,8 @@ import { PinoLogger } from 'nestjs-pino';
 import { SupabaseService } from '../../common/supabase/supabase.service';
 import {
   type OverLimitPolicy,
-  conversationLimitForPlan,
-  overLimitPolicyForPlan,
   thresholdsReached,
+  usageLimitsFor,
 } from '../billing/plan-limits';
 import { usageAlertEmail } from './usage-emails';
 import { UsageNotifierService } from './usage-notifier.service';
@@ -19,19 +18,22 @@ export interface UsageOperator {
   readonly business_name: string;
   readonly plan: string | null;
   readonly current_period_start: string | null;
-  /** Stamped on each counted person: trial windows are never billed for overage. */
-  readonly subscription_status?: string | null;
+  /** Trial cap (plan-limits.ts usageLimitsFor); stamped on each counted person — trial windows are never billed. */
+  readonly subscription_status: string | null;
+  readonly stripe_subscription_id: string | null;
 }
 
 export interface UsageSummary {
   readonly used: number;
   readonly limit: number | null;
   readonly policy: OverLimitPolicy | null;
+  /** The 30-person free-trial cap applies instead of the plan limit. */
+  readonly trial: boolean;
   readonly window: UsageWindow;
 }
 
 export interface Admission extends UsageSummary {
-  /** False only for a NEW person on a blocking plan (Solo) that is at its limit. */
+  /** False only for a NEW person on a blocking plan (Solo, or any trial) that is at its limit. */
   readonly allowed: boolean;
 }
 
@@ -83,7 +85,7 @@ export class UsageService {
 
     const used = await this.countPeople(operator.id, check.window.start);
     if (check.limit != null && check.policy != null) {
-      await this.alertIfCrossed(operator, check.window, used, check.limit, check.policy);
+      await this.alertIfCrossed(operator, check.window, used, check.limit, check.policy, check.trial);
     }
     return { ...check, used };
   }
@@ -99,8 +101,7 @@ export class UsageService {
     const window = usageWindow(operator.current_period_start, now);
     return {
       used: await this.countPeople(operator.id, window.start),
-      limit: conversationLimitForPlan(operator.plan),
-      policy: overLimitPolicyForPlan(operator.plan),
+      ...usageLimitsFor(operator),
       window,
     };
   }
@@ -139,8 +140,7 @@ export class UsageService {
     now: Date,
   ): Promise<Admission & { counted: boolean }> {
     const window = usageWindow(operator.current_period_start, now);
-    const limit = conversationLimitForPlan(operator.plan);
-    const policy = overLimitPolicyForPlan(operator.plan);
+    const { limit, policy, trial } = usageLimitsFor(operator);
 
     const { data: existing, error } = await this.supabase
       .db()
@@ -154,9 +154,9 @@ export class UsageService {
 
     const used = await this.countPeople(operator.id, window.start);
     // Someone already counted this window keeps the AI, even past the limit.
-    if (existing) return { allowed: true, counted: true, used, limit, policy, window };
+    if (existing) return { allowed: true, counted: true, used, limit, policy, trial, window };
     const allowed = !(policy === 'block' && limit != null && used >= limit);
-    return { allowed, counted: false, used, limit, policy, window };
+    return { allowed, counted: false, used, limit, policy, trial, window };
   }
 
   private async alertIfCrossed(
@@ -165,13 +165,17 @@ export class UsageService {
     used: number,
     limit: number,
     policy: OverLimitPolicy,
+    trial: boolean,
   ): Promise<void> {
     for (const threshold of thresholdsReached(used, limit)) {
-      // The unique row is the "already sent" flag: one email per threshold per window.
+      // The unique row is the "already sent" flag: one email per threshold per
+      // window PER LIMIT — after a mid-window upgrade (Solo 80 → Crew 500) the
+      // new plan's 80%/100% emails still go out (100% is where overage starts).
       const { error } = await this.supabase.db().from('usage_alerts').insert({
         operator_id: operator.id,
         window_start: window.start.toISOString(),
         threshold_pct: threshold,
+        limit_people: limit,
       });
       if (error) {
         if (error.code === '23505') continue;
@@ -193,6 +197,7 @@ export class UsageService {
             used,
             limit,
             policy,
+            trial,
             resetsAt: window.end,
             appUrl: this.notifier.appUrl,
           }),
@@ -211,7 +216,7 @@ export class UsageService {
     const { data, error } = await this.supabase
       .db()
       .from('operators')
-      .select('id, user_id, business_name, plan, current_period_start')
+      .select('id, user_id, business_name, plan, current_period_start, subscription_status, stripe_subscription_id')
       .eq('id', operatorId)
       .maybeSingle();
     if (error) throw error;

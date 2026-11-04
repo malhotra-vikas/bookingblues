@@ -9,6 +9,7 @@ import {
 } from '@nestjs/common';
 import { SkipThrottle } from '@nestjs/throttler';
 import type { Response } from 'express';
+import { PinoLogger } from 'nestjs-pino';
 
 import { AuthGuard } from '../../common/auth/auth.guard';
 import { CurrentUser } from '../../common/auth/current-user.decorator';
@@ -17,6 +18,7 @@ import { ValidationError } from '../../common/errors/app-error';
 import { SupabaseService } from '../../common/supabase/supabase.service';
 import { ENV_TOKEN } from '../../config/config.module';
 import type { Env } from '../../config/env';
+import { TrialGuardService } from '../billing/trial-guard.service';
 import { CalendarService } from './calendar.service';
 import { signState, verifyState } from './calendar-state';
 import { GoogleOAuthService } from './google-oauth.service';
@@ -27,8 +29,12 @@ export class CalendarController {
     private readonly calendar: CalendarService,
     private readonly google: GoogleOAuthService,
     private readonly supabase: SupabaseService,
+    private readonly trialGuard: TrialGuardService,
+    private readonly logger: PinoLogger,
     @Inject(ENV_TOKEN) private readonly env: Env,
-  ) {}
+  ) {
+    this.logger.setContext(CalendarController.name);
+  }
 
   @Post('operators/me/google/connect')
   @UseGuards(AuthGuard)
@@ -127,8 +133,10 @@ export class CalendarController {
       return this.redirect(res, { error: 'operator_not_found' });
     }
 
+    let connectedEmail: string | null = null;
     try {
       const tokens = await this.google.exchangeCode(code);
+      connectedEmail = tokens.email ?? null;
       await this.calendar.upsertConnection({
         operatorId: operator.id,
         refreshToken: tokens.refreshToken,
@@ -140,6 +148,18 @@ export class CalendarController {
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       return this.redirect(res, { error: `exchange_failed:${msg}` });
+    }
+
+    // One trial per person: a Google account seen on another subscription ends
+    // this trial. A failure here must not break the connect; the next
+    // subscription webhook re-checks with the stored calendar email.
+    try {
+      await this.trialGuard.onCalendarConnected(operator.id, connectedEmail);
+    } catch (err) {
+      this.logger.error(
+        { operatorId: operator.id, err: err instanceof Error ? err.message : String(err) },
+        'trial guard failed after calendar connect',
+      );
     }
 
     return this.redirect(res, { connected: 'google' });

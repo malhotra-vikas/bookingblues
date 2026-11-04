@@ -19,25 +19,45 @@ const GOV_ID_MESSAGE =
 const text = (max: number) =>
   z.string().trim().min(1).max(max).refine(noGovernmentIds, { message: GOV_ID_MESSAGE });
 
-/** `YYYY-MM-DD`, a real calendar date, in the past, age ≤ 120. */
+/**
+ * Date of birth EXACTLY as precise as the caller gave it: `YYYY-MM-DD`,
+ * `YYYY-MM`, or `YYYY`. A full date was required before, so a caller who said
+ * only "1955" got stored as 01/01/1955 — the model invented the rest (live test
+ * 2026-11-04). Partial is honest; the agent confirms the rest in person.
+ */
 const DateOfBirth = z
   .string()
   .trim()
-  .regex(/^\d{4}-\d{2}-\d{2}$/, 'Expected date of birth as YYYY-MM-DD')
+  .regex(/^\d{4}(-\d{2}(-\d{2})?)?$/, 'Expected YYYY-MM-DD, YYYY-MM or YYYY — only what the caller said')
   .refine((s) => {
-    const d = new Date(`${s}T00:00:00Z`);
-    if (Number.isNaN(d.getTime()) || d.toISOString().slice(0, 10) !== s) return false;
-    const now = Date.now();
-    return d.getTime() < now && now - d.getTime() < 120 * 365.25 * 86_400_000;
+    const [y, m, d] = s.split('-');
+    const year = Number(y);
+    const thisYear = new Date().getUTCFullYear();
+    if (year > thisYear || year < thisYear - 120) return false;
+    if (m === undefined) return true;
+    const month = Number(m);
+    if (month < 1 || month > 12) return false;
+    if (d === undefined) return true;
+    const date = new Date(`${s}T00:00:00Z`);
+    return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === s && date.getTime() < Date.now();
   }, 'Not a valid past date of birth');
 
+/**
+ * Every field except the first name is optional: record only what the caller
+ * actually said. Requiring all of them made the model fill gaps with guesses
+ * (an invented last name / birthday / "Diabetes medication").
+ */
 export const SaveIntakeAnswersArgs = z.object({
   first_name: text(60),
-  last_name: text(60),
-  date_of_birth: DateOfBirth,
-  /** Current doctor or office; "None" if they have none, "Declined" if they'd rather not say. */
-  doctor: text(200),
-  /** Each prescription as the caller said it (name + strength if given). Empty = none / declined. */
+  last_name: text(60).optional(),
+  date_of_birth: DateOfBirth.optional(),
+  /** True when the caller chose not to give their date of birth. */
+  date_of_birth_declined: z.boolean().optional(),
+  /** Current doctor or office; "None" if they have none. Omit if not given. */
+  doctor: text(200).optional(),
+  /** True when the caller chose not to name their doctor. */
+  doctor_declined: z.boolean().optional(),
+  /** Each prescription (or what it's for) as the caller said it. Empty = none / declined / not asked yet. */
   prescriptions: z.array(text(120)).max(40).default([]),
   /** True when the caller chose not to share their prescriptions. */
   prescriptions_declined: z.boolean().optional(),
@@ -47,9 +67,11 @@ export type SaveIntakeAnswersArgs = z.infer<typeof SaveIntakeAnswersArgs>;
 /** The stored shape (what gets encrypted). */
 export interface IntakeAnswers {
   readonly first_name: string;
-  readonly last_name: string;
-  readonly date_of_birth: string;
-  readonly doctor: string;
+  readonly last_name?: string | undefined;
+  readonly date_of_birth?: string | undefined;
+  readonly date_of_birth_declined?: boolean | undefined;
+  readonly doctor?: string | undefined;
+  readonly doctor_declined?: boolean | undefined;
   readonly prescriptions: ReadonlyArray<string>;
   readonly prescriptions_declined?: boolean | undefined;
 }
@@ -60,9 +82,43 @@ export function parseIntakeAnswers(raw: unknown): IntakeAnswers | null {
   return r.success ? r.data : null;
 }
 
-function formatDob(iso: string): string {
-  const [y, m, d] = iso.split('-');
-  return `${m}/${d}/${y}`;
+/**
+ * A correction call ("actually 1955") usually sends only what changed. Overlay
+ * the new answers on the stored ones so earlier answers aren't wiped. An
+ * explicit "declined" clears the matching value and vice versa.
+ */
+export function mergeIntakeAnswers(prev: IntakeAnswers | null, next: IntakeAnswers): IntakeAnswers {
+  if (!prev) return next;
+  const pick = <K extends keyof IntakeAnswers>(k: K): IntakeAnswers[K] =>
+    next[k] !== undefined ? next[k] : prev[k];
+  const prescriptions =
+    next.prescriptions.length > 0 || next.prescriptions_declined ? next.prescriptions : prev.prescriptions;
+  return {
+    first_name: next.first_name,
+    last_name: pick('last_name'),
+    date_of_birth: next.date_of_birth_declined ? undefined : pick('date_of_birth'),
+    date_of_birth_declined: next.date_of_birth ? false : pick('date_of_birth_declined'),
+    doctor: next.doctor_declined ? undefined : pick('doctor'),
+    doctor_declined: next.doctor ? false : pick('doctor_declined'),
+    prescriptions,
+    prescriptions_declined: next.prescriptions.length > 0 ? false : pick('prescriptions_declined'),
+  };
+}
+
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/** `1958-04-12` → `04/12/1958`; `1958-04` → `Apr 1958 (day not given)`; `1958` → `1958 (year only)`. */
+function formatDob(a: IntakeAnswers): string {
+  if (!a.date_of_birth) return a.date_of_birth_declined ? 'Caller preferred not to share' : 'Not given';
+  const [y, m, d] = a.date_of_birth.split('-');
+  if (d) return `${m}/${d}/${y}`;
+  if (m) return `${MONTHS[Number(m) - 1]} ${y} (day not given)`;
+  return `${y} (year only)`;
+}
+
+function doctorLine(a: IntakeAnswers): string {
+  if (a.doctor) return a.doctor;
+  return a.doctor_declined ? 'Caller preferred not to share' : 'Not given';
 }
 
 function prescriptionsLine(a: IntakeAnswers): string {
@@ -73,9 +129,9 @@ function prescriptionsLine(a: IntakeAnswers): string {
 /** Label/value rows, in the order the agent reads them. */
 export function intakeAnswerRows(a: IntakeAnswers): ReadonlyArray<{ label: string; value: string }> {
   return [
-    { label: 'Name', value: `${a.first_name} ${a.last_name}` },
-    { label: 'Date of birth', value: formatDob(a.date_of_birth) },
-    { label: 'Doctor / office', value: a.doctor },
+    { label: 'Name', value: a.last_name ? `${a.first_name} ${a.last_name}` : `${a.first_name} (last name not given)` },
+    { label: 'Date of birth', value: formatDob(a) },
+    { label: 'Doctor / office', value: doctorLine(a) },
     { label: 'Prescriptions', value: prescriptionsLine(a) },
   ];
 }

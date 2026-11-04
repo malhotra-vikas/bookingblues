@@ -3,7 +3,7 @@ import { PinoLogger } from 'nestjs-pino';
 
 import { EncryptionService } from '../../common/crypto/encryption.service';
 import { SupabaseService } from '../../common/supabase/supabase.service';
-import { type IntakeAnswers, parseIntakeAnswers } from './intake-answers';
+import { type IntakeAnswers, mergeIntakeAnswers, parseIntakeAnswers } from './intake-answers';
 
 /**
  * Encrypted storage for intake answers (insurance category). The bot saves them
@@ -21,11 +21,21 @@ export class IntakeAnswersService {
     this.logger.setContext(IntakeAnswersService.name);
   }
 
+  /** Saves the answers, merged over any already stored (a correction sends only what changed). */
   async saveForConversation(conversationId: string, answers: IntakeAnswers): Promise<void> {
+    const { data, error: readErr } = await this.supabase
+      .db()
+      .from('conversations')
+      .select('intake_answers_enc')
+      .eq('id', conversationId)
+      .maybeSingle();
+    if (readErr) throw readErr;
+    const prev = data?.intake_answers_enc ? this.decrypt(data.intake_answers_enc, { conversationId }) : null;
+    const merged = mergeIntakeAnswers(prev, answers);
     const { error } = await this.supabase
       .db()
       .from('conversations')
-      .update({ intake_answers_enc: this.encryption.encrypt(JSON.stringify(answers)) })
+      .update({ intake_answers_enc: this.encryption.encrypt(JSON.stringify(merged)) })
       .eq('id', conversationId);
     if (error) throw error;
   }
