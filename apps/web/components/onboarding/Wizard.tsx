@@ -6,6 +6,7 @@ import { useEffect, useState } from 'react';
 import { ConfirmModal } from '../ConfirmModal';
 import { getSupabaseBrowserClient } from '../../lib/supabase/browser';
 import { PLANS, depositLabel, type PlanSlug } from '../../lib/brand';
+import { isOfficeCategory } from '../../lib/category-profile';
 import { publicEnv } from '../../lib/env';
 import type { Promo } from '../../lib/plans';
 import {
@@ -57,12 +58,6 @@ const ALL_CATEGORIES: Category[] = [
   { slug: 'garage_door', display_name: 'Garage Door' },
   { slug: 'insurance', display_name: 'Insurance Agencies' },
 ];
-
-/**
- * Office-appointment categories (mirrors apps/api/src/modules/ai/category-profile.ts):
- * clients meet the operator, so there's no service area, trucks or booking fee.
- */
-const OFFICE_CATEGORIES: ReadonlySet<string> = new Set(['insurance']);
 
 // Category filtering moved to props from the Server Component parent
 // (apps/web/app/(dashboard)/onboarding/page.tsx). The page reads
@@ -424,7 +419,7 @@ export function Wizard({
       ? `7-day free trial. We need a card up front, but you won't be charged until day 8 — and Founding Members pay just $${promo.firstMonthUsd} for the first month on monthly plans.`
       : "7-day free trial. We need a card up front, but you won't be charged until day 8.";
   const categoryDone = !!op?.category;
-  const office = OFFICE_CATEGORIES.has(op?.category ?? '');
+  const office = isOfficeCategory(op?.category);
   const twilioDone = !!op?.twilio_number_e164;
   const googleDone = !!op?.google_calendar_id;
   const stripeConnectDone =

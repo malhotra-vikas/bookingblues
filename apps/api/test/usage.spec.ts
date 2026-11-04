@@ -30,7 +30,18 @@ describeIfSupabase('Usage metering, limits, alerts and overage billing', () => {
   let usage: UsageService;
   let billing: UsageBillingService;
   let sent: Array<{ kind: string; operatorId: string; subject: string }>;
-  let stripeCalls: { invoiceItems: unknown[]; invoices: unknown[] };
+  let stripeCalls: { invoiceItems: unknown[]; invoices: unknown[]; paid: string[] };
+  /** What the fake Stripe "has": invoice items, and live statuses for invoices we didn't create. */
+  let stripeState: {
+    items: Array<{ id: string; customer: string; invoice: string | null; metadata: Record<string, string> }>;
+    invoices: Map<string, { id: string; status: string; metadata: Record<string, string> }>;
+  };
+
+  const asyncList = <T>(rows: T[]): AsyncIterable<T> => ({
+    async *[Symbol.asyncIterator]() {
+      yield* rows;
+    },
+  });
 
   const operatorRow = async (id: string): Promise<UsageOperator & { overage_unpaid_invoice_id: string | null }> => {
     const { data, error } = await db
@@ -54,7 +65,7 @@ describeIfSupabase('Usage metering, limits, alerts and overage billing', () => {
     const env = readTestEnv();
     if (!env) throw new Error('no test env');
     db = makeServiceClient(env);
-    tenants = await setupTenants(3);
+    tenants = await setupTenants(6);
     app = await buildTestApp();
     usage = app.get(UsageService);
     billing = app.get(UsageBillingService);
@@ -64,20 +75,50 @@ describeIfSupabase('Usage metering, limits, alerts and overage billing', () => {
       sent.push({ kind, operatorId: target.id, subject: content.operator.subject });
     });
 
+    type ItemParams = { customer: string; invoice?: string; metadata: Record<string, string> };
+    type InvoiceParams = { metadata: Record<string, string> };
     const fakeStripe = {
       invoiceItems: {
-        create: jest.fn(async (params: unknown) => {
+        create: jest.fn(async (params: ItemParams) => {
           stripeCalls.invoiceItems.push(params);
-          return { id: `ii_${stripeCalls.invoiceItems.length}` };
+          const item = {
+            id: `ii_${stripeCalls.invoiceItems.length}`,
+            customer: params.customer,
+            invoice: params.invoice ?? null,
+            metadata: params.metadata,
+          };
+          stripeState.items.push(item);
+          return item;
         }),
+        list: jest.fn((params: { customer: string }) =>
+          asyncList(stripeState.items.filter((i) => i.customer === params.customer)),
+        ),
       },
       invoices: {
-        create: jest.fn(async (params: unknown) => {
+        create: jest.fn(async (params: InvoiceParams) => {
           stripeCalls.invoices.push(params);
-          return { id: 'in_overage_1' };
+          const inv = { id: `in_overage_${stripeCalls.invoices.length}`, status: 'draft', metadata: params.metadata };
+          stripeState.invoices.set(inv.id, inv);
+          return inv;
         }),
-        finalizeInvoice: jest.fn(async () => ({ id: 'in_overage_1' })),
-        pay: jest.fn(async () => ({ id: 'in_overage_1' })),
+        list: jest.fn(() => asyncList([])),
+        // Renewal invoices the tests don't register are still drafts.
+        retrieve: jest.fn(async (id: string) => stripeState.invoices.get(id) ?? { id, status: 'draft', metadata: {} }),
+        finalizeInvoice: jest.fn(async (id: string) => {
+          const inv = stripeState.invoices.get(id)!;
+          inv.status = 'open';
+          return inv;
+        }),
+        pay: jest.fn(async (id: string) => {
+          stripeCalls.paid.push(id);
+          return { id };
+        }),
+      },
+      customers: {
+        retrieve: jest.fn(async (id: string) => ({ id, invoice_settings: { default_payment_method: null } })),
+      },
+      subscriptions: {
+        retrieve: jest.fn(async (id: string) => ({ id, default_payment_method: 'pm_from_subscription' })),
       },
     };
     jest.spyOn(app.get(StripeService), 'client').mockReturnValue(fakeStripe as unknown as Stripe);
@@ -85,8 +126,39 @@ describeIfSupabase('Usage metering, limits, alerts and overage billing', () => {
 
   beforeEach(() => {
     sent = [];
-    stripeCalls = { invoiceItems: [], invoices: [] };
+    stripeCalls = { invoiceItems: [], invoices: [], paid: [] };
+    stripeState = { items: [], invoices: new Map() };
   });
+
+  const seedPeople = async (
+    operatorId: string,
+    count: number,
+    offset: number,
+    extra: { plan?: string; in_trial?: boolean } = {},
+  ): Promise<void> => {
+    const rows = Array.from({ length: count }, (_, i) => ({
+      operator_id: operatorId,
+      window_start: ANCHOR,
+      caller_phone_e164: phone(i + offset),
+      ...extra,
+    }));
+    const { error } = await db.from('usage_callers').insert(rows);
+    if (error) throw error;
+  };
+
+  const chargeRow = async (operatorId: string) => {
+    const { data, error } = await db
+      .from('usage_overage_charges')
+      .select('status, amount_cents, stripe_invoice_id')
+      .eq('operator_id', operatorId)
+      .eq('window_start', ANCHOR)
+      .maybeSingle();
+    if (error) throw error;
+    return data;
+  };
+
+  const forCustomer = (calls: unknown[], customer: string): unknown[] =>
+    calls.filter((p) => (p as { customer?: string }).customer === customer);
 
   afterAll(async () => {
     await app?.close();
@@ -189,27 +261,31 @@ describeIfSupabase('Usage metering, limits, alerts and overage billing', () => {
       plan_cadence: 'annual',
       subscription_status: 'active',
       stripe_customer_id: 'cus_usage_fleet',
+      stripe_subscription_id: 'sub_usage_fleet',
     });
-    const rows = Array.from({ length: 1520 }, (_, i) => ({
-      operator_id: t.operatorId,
-      window_start: ANCHOR,
-      caller_phone_e164: phone(i + 2000),
-    }));
-    const { error } = await db.from('usage_callers').insert(rows);
-    if (error) throw error;
+    await seedPeople(t.operatorId, 1520, 2000);
 
     // Run "today" in the next window, so Oct 5 – Nov 5 is the closed one.
-    const res = await billing.closeAnnualWindows(new Date('2026-11-06T00:00:00Z'));
+    const res = await billing.reconcileOverage(new Date('2026-11-06T00:00:00Z'));
     expect(res.billed).toBeGreaterThanOrEqual(1);
-    expect(stripeCalls.invoiceItems).toContainEqual(expect.objectContaining({ customer: 'cus_usage_fleet', amount: 10_000 }));
-    expect(stripeCalls.invoices).toContainEqual(
-      expect.objectContaining({ customer: 'cus_usage_fleet', pending_invoice_items_behavior: 'include' }),
+    expect(stripeCalls.invoiceItems).toContainEqual(
+      expect.objectContaining({ customer: 'cus_usage_fleet', invoice: 'in_overage_1', amount: 10_000 }),
     );
+    // Its own invoice, charged to the card Checkout saved on the subscription,
+    // and never sweeping up unrelated pending items.
+    expect(stripeCalls.invoices).toContainEqual(
+      expect.objectContaining({
+        customer: 'cus_usage_fleet',
+        pending_invoice_items_behavior: 'exclude',
+        default_payment_method: 'pm_from_subscription',
+      }),
+    );
+    expect(stripeCalls.paid).toContain('in_overage_1');
 
     // Second run the same day is a no-op for this operator.
-    stripeCalls = { invoiceItems: [], invoices: [] };
-    await billing.closeAnnualWindows(new Date('2026-11-06T00:00:00Z'));
-    expect(stripeCalls.invoiceItems.filter((p) => (p as { customer: string }).customer === 'cus_usage_fleet')).toHaveLength(0);
+    stripeCalls = { invoiceItems: [], invoices: [], paid: [] };
+    await billing.reconcileOverage(new Date('2026-11-06T00:00:00Z'));
+    expect(forCustomer(stripeCalls.invoiceItems, 'cus_usage_fleet')).toHaveLength(0);
 
     const overageInvoice = {
       id: 'in_overage_1',
@@ -247,5 +323,98 @@ describeIfSupabase('Usage metering, limits, alerts and overage billing', () => {
     await billing.onSubscriptionStatusChanged(t.operatorId, 'past_due', 'active');
     await billing.onSubscriptionStatusChanged(t.operatorId, 'trialing', 'active');
     expect(sent.filter((s) => s.kind === 'account_resumed')).toHaveLength(1);
+  });
+
+  // ── lost-revenue backstops (reconcileOverage) ───────────────────────────────
+
+  it('Crew monthly, late webhook + cancelled + downgraded: overage still billed at the Crew rate', async () => {
+    const t = tenants[3]!;
+    // Counted 560 people on Crew; since then downgraded to Solo and cancelled.
+    await setPlan(t.operatorId, {
+      plan: 'solo',
+      plan_cadence: 'monthly',
+      subscription_status: 'canceled',
+      stripe_customer_id: 'cus_usage_lost',
+    });
+    await seedPeople(t.operatorId, 560, 4000, { plan: 'crew' });
+
+    // invoice.created delivered late (after Stripe finalized the draft): no line, no claim.
+    stripeState.invoices.set('in_renewal_late', { id: 'in_renewal_late', status: 'open', metadata: {} });
+    await setPlan(t.operatorId, { plan: 'crew' });
+    await billing.onInvoiceCreated({
+      id: 'in_renewal_late',
+      status: 'draft',
+      billing_reason: 'subscription_cycle',
+      customer: 'cus_usage_lost',
+      currency: 'usd',
+      period_start: Date.parse(ANCHOR) / 1000,
+      period_end: Date.parse('2026-11-05T12:00:00Z') / 1000,
+      metadata: {},
+    } as unknown as Stripe.Invoice);
+    expect(stripeCalls.invoiceItems).toHaveLength(0);
+    expect(await chargeRow(t.operatorId)).toBeNull();
+    await setPlan(t.operatorId, { plan: 'solo' });
+
+    // Inside the grace period the renewal invoice still gets first go.
+    await billing.reconcileOverage(new Date('2026-11-07T00:00:00Z'));
+    expect(forCustomer(stripeCalls.invoiceItems, 'cus_usage_lost')).toHaveLength(0);
+
+    // After it: billed on its own invoice — 60 extra → 2 batches = $200.
+    await billing.reconcileOverage(new Date('2026-11-10T00:00:00Z'));
+    expect(forCustomer(stripeCalls.invoiceItems, 'cus_usage_lost')).toEqual([
+      expect.objectContaining({ amount: 20_000 }),
+    ]);
+    expect(await chargeRow(t.operatorId)).toMatchObject({ status: 'invoiced', amount_cents: 20_000 });
+
+    // And never twice.
+    await billing.reconcileOverage(new Date('2026-11-11T00:00:00Z'));
+    expect(forCustomer(stripeCalls.invoiceItems, 'cus_usage_lost')).toHaveLength(1);
+  });
+
+  it('never bills a window counted during the trial, even after trial_ends_at is cleared', async () => {
+    const t = tenants[4]!;
+    await setPlan(t.operatorId, {
+      plan: 'fleet',
+      plan_cadence: 'annual',
+      subscription_status: 'canceled',
+      stripe_customer_id: 'cus_usage_trial',
+    });
+    await seedPeople(t.operatorId, 1600, 6000, { plan: 'fleet', in_trial: true });
+
+    await billing.reconcileOverage(new Date('2026-11-10T00:00:00Z'));
+    expect(forCustomer(stripeCalls.invoiceItems, 'cus_usage_trial')).toHaveLength(0);
+    expect(await chargeRow(t.operatorId)).toMatchObject({ status: 'none', amount_cents: 0 });
+  });
+
+  it('finishes a claim that crashed mid-way without billing it twice', async () => {
+    const t = tenants[5]!;
+    await setPlan(t.operatorId, {
+      plan: 'crew',
+      plan_cadence: 'annual',
+      subscription_status: 'active',
+      stripe_customer_id: 'cus_usage_crash',
+    });
+    // Crashed after Stripe created the invoice + line, before we recorded it.
+    const { error } = await db.from('usage_overage_charges').insert({
+      operator_id: t.operatorId,
+      window_start: ANCHOR,
+      window_end: '2026-11-05T12:00:00.000Z',
+      people_used: 540,
+      people_included: 500,
+      batches: 1,
+      amount_cents: 10_000,
+      status: 'pending',
+      updated_at: '2026-11-05T13:00:00.000Z',
+    });
+    if (error) throw error;
+    const meta = { kind: 'usage_overage', operator_id: t.operatorId, window_start: ANCHOR };
+    stripeState.invoices.set('in_crashed', { id: 'in_crashed', status: 'draft', metadata: meta });
+    stripeState.items.push({ id: 'ii_crashed', customer: 'cus_usage_crash', invoice: 'in_crashed', metadata: meta });
+
+    await billing.reconcileOverage(new Date('2026-11-06T00:00:00Z'));
+    expect(forCustomer(stripeCalls.invoiceItems, 'cus_usage_crash')).toHaveLength(0);
+    expect(forCustomer(stripeCalls.invoices, 'cus_usage_crash')).toHaveLength(0);
+    expect(stripeCalls.paid).toContain('in_crashed'); // finalized + charged
+    expect(await chargeRow(t.operatorId)).toMatchObject({ status: 'invoiced', stripe_invoice_id: 'in_crashed' });
   });
 });

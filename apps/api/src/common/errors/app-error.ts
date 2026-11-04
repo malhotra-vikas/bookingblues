@@ -87,6 +87,21 @@ export class ExternalServiceError extends AppError {
   }
 }
 
+/**
+ * Another worker is processing this webhook event right now. 409 (not 2xx) so
+ * the sender retries — once that worker finishes, the retry is acked or, if it
+ * failed, re-processed.
+ */
+export class WebhookInProgressError extends AppError {
+  constructor(source: string, eventId: string) {
+    super({
+      code: `webhook.${source}.in_progress`,
+      status: 409,
+      detail: `Webhook event ${eventId} is already being processed; retry later`,
+    });
+  }
+}
+
 export class WebhookSignatureError extends AppError {
   constructor(source: string) {
     super({

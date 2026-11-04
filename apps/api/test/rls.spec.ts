@@ -43,6 +43,34 @@ describeIfSupabase('RLS — operator-scoped tables', () => {
     expect(data).toBeNull();
   });
 
+  // AUDIT-2026-11-04 #1: an operator could PATCH their own billing state
+  // (subscription_status, plan, overage pause, …) straight through PostgREST.
+  it('a user CANNOT UPDATE their own operators row (all writes go through the API)', async () => {
+    const [a] = tenants;
+    if (!a) throw new Error('tenants not initialized');
+    const before = await a.authedClient
+      .from('operators')
+      .select('subscription_status, plan')
+      .eq('id', a.operatorId)
+      .single();
+    expect(before.error).toBeNull();
+
+    const { data } = await a.authedClient
+      .from('operators')
+      .update({ subscription_status: 'active', plan: null, overage_unpaid_invoice_id: null })
+      .eq('id', a.operatorId)
+      .select('id');
+    // Denied either outright (no UPDATE grant) or by RLS (zero rows) — never applied.
+    expect(data ?? []).toEqual([]);
+
+    const after = await a.authedClient
+      .from('operators')
+      .select('subscription_status, plan')
+      .eq('id', a.operatorId)
+      .single();
+    expect(after.data).toEqual(before.data);
+  });
+
   it('webhook_events is invisible to authenticated users', async () => {
     const [a] = tenants;
     if (!a) throw new Error('tenants not initialized');

@@ -256,7 +256,7 @@ All variables loaded via `apps/api/src/config/env.ts` using `zod` validation. Th
 | `LOG_LEVEL` | api | `info` in prod, `debug` in dev |
 | `ENABLED_CATEGORIES` | api | Comma-separated category slugs operators may pick. Unset = the 5 trades (`DEFAULT_ENABLED_CATEGORIES`). `insurance` is opt-in: add it here AND in `NEXT_PUBLIC_ENABLED_CATEGORIES`. |
 | `NEXT_PUBLIC_ENABLED_CATEGORIES` | web | Same list for the onboarding wizard's category picker. Keep in sync with the API. |
-| `CRON_SHARED_SECRET` | api | `X-Cron-Secret` header value for `/v1/internal/*` cron endpoints (incl. the daily `usage/close-annual-windows`). Unset = those endpoints refuse every call. |
+| `CRON_SHARED_SECRET` | api | `X-Cron-Secret` header value for `/v1/internal/*` cron endpoints (incl. the daily `usage/reconcile-overage` and the 10-minute `webhooks/replay`). Unset = those endpoints refuse every call. |
 | `SLACK_BOT_TOKEN` | api | `xoxb-…` for the single BookingBlues-team workspace (ADR 0010). Must be redacted in logs. |
 | `SLACK_DEFAULT_CHANNEL_ID` | api | `#hitl` — channel where escalation alarms + control buttons post. |
 | `SLACK_CONVOS_CHANNEL_ID` | api | `#convos` — channel where every conversation gets a monitoring thread (ADR 0010 amendment, Slice 7.5 follow-up). |
@@ -388,7 +388,7 @@ Limits (`billing/plan-limits.ts`): Solo 80 people (blocks new callers at the lim
 
 ### RLS policies (MVP set)
 
-- `operators`: SELECT/UPDATE only where `user_id = auth.uid()`. INSERT only via API service role.
+- `operators`: SELECT only where `user_id = auth.uid()`. INSERT/UPDATE/DELETE only via API service role — never add a client UPDATE policy: the row holds billing state (`subscription_status`, `plan`, `overage_unpaid_invoice_id`, Connect flags), so an operator could un-pause or un-cap themselves (AUDIT-2026-11-04 #1, migration `20261104000001`; pinned by `test/rls.spec.ts`).
 - `appointments`, `conversations`, `messages`, `payments`, `calendar_connections`: SELECT only where `operator_id` belongs to `auth.uid()`. All writes via service role from API.
 - `webhook_events`, `audit_log`, `twilio_numbers`, `categories`: no anon/authenticated access. Service role only.
 
@@ -494,7 +494,7 @@ The Web app uses the anon key and reads via RLS. The API uses the service role a
 - Standard Stripe Subscriptions on the platform account.
 - Checkout Session at signup with 7-day trial (see 9.1).
 - Customer Portal link in dashboard for cancel/upgrade/payment-method updates.
-- Webhook events handled: `checkout.session.completed`, `customer.subscription.created`, `customer.subscription.updated`, `customer.subscription.trial_will_end`, `customer.subscription.deleted`, `invoice.created`, `invoice.payment_failed`, `invoice.payment_succeeded`. **`invoice.created` must be enabled on the live platform endpoint** — it's how monthly-plan overage gets added to the draft renewal invoice (`usage/usage-billing.service.ts`); annual plans are billed per closed month by the daily cron `POST /v1/internal/usage/close-annual-windows`.
+- Webhook events handled: `checkout.session.completed`, `customer.subscription.created`, `customer.subscription.updated`, `customer.subscription.trial_will_end`, `customer.subscription.deleted`, `invoice.created`, `invoice.payment_failed`, `invoice.payment_succeeded`. **`invoice.created` must be enabled on the live platform endpoint** — it's how monthly-plan overage gets added to the draft renewal invoice (`usage/usage-billing.service.ts`). Everything else is billed on its own invoice by the daily backstop cron `POST /v1/internal/usage/reconcile-overage`: annual plans (per closed month), and any monthly window the renewal missed (cancelled/downgraded before renewal, webhook failed until the draft finalized — 4-day grace). Overage is charged at the plan each person was counted under (`usage_callers.plan`); trial-counted windows (`usage_callers.in_trial`) are never billed. Before any standalone charge the line is looked up in Stripe, so crash recovery never double-bills.
 - On `payment_failed`, set `subscription_status='past_due'`. Pause AI conversation handling (calls still get the greeting and a polite "we will follow up" SMS, but no booking, no fee collection).
 
 **Flow B: Per-appointment booking fee** (Caller pays Operator directly, BookingBlues takes a cut).
@@ -614,7 +614,8 @@ POST   /webhooks/slack/interactivity     # block actions (buttons)
 
 ### Internal cron (header `X-Cron-Secret: $CRON_SHARED_SECRET`, no JWT)
 ```
-POST   /v1/internal/usage/close-annual-windows   # daily: bill annual-plan overage per closed month
+POST   /v1/internal/usage/reconcile-overage      # daily: bill every closed, unbilled overage window (alias: close-annual-windows)
+POST   /v1/internal/webhooks/replay              # every 10 min: re-run failed/abandoned Stripe webhook events
 ```
 
 ### Admin (Slice 15 — staff only, `app_metadata.role='admin'`)
@@ -658,7 +659,7 @@ GET    /v1/oauth/google/callback         # Auth-protected, completes calendar co
 ## 11. Security Requirements (non-negotiable)
 
 1. **Webhook signature validation on every webhook**, before any side effect. Twilio (`X-Twilio-Signature`), Stripe (`Stripe-Signature`), Google (verify `state` and OAuth code exchange), Slack (`X-Slack-Signature` v0 HMAC over `v0:<timestamp>:<rawBody>` with a 5-minute replay window). Validators live in `common/webhook-signatures/` and `modules/slack/slack-signature.guard.ts`.
-2. **Idempotency** for all webhooks via the `webhook_events` table.
+2. **Idempotency** for all webhooks via the `webhook_events` table. Idempotent ≠ skip-on-redelivery: an event that failed is **re-claimed** by the next delivery (`claim_webhook_event`, 5-min lease; `markFailed` releases it), and unprocessed Stripe events are replayed every 10 min by `POST /v1/internal/webhooks/replay` with exponential backoff until they succeed. Stripe controllers return 409 (never 2xx) while another worker holds the claim, so Stripe keeps retrying.
 3. **RLS enabled on every operator-scoped table.** Default deny. Service role used only by API, never exposed.
 4. **Encryption at rest for Google refresh tokens** with versioned AES-256-GCM key (`ENCRYPTION_KEY`). No tokens in plaintext, ever, including in logs.
 5. **PII redaction in logs** via Pino redact paths: `req.body.From`, `req.body.To`, `req.body.Body`, `*.phone`, `*.email`, `*.refresh_token`, `*.access_token`, headers `authorization`, `cookie`, `x-twilio-signature`, `stripe-signature`.
@@ -812,7 +813,7 @@ Roadmap order after MVP: dashboard analytics → Operator-editable bot persona �
 - **Race conditions on slot booking**: two simultaneous callers racing for the last open truck. Capacity is enforced in `BookingsService.assertSlotBookable` (≤ `truck_count` concurrent, each appointment padded by a 30-min travel buffer — see `modules/appointments/capacity.ts`). Multi-truck means the old exact-start unique index was dropped (migration `20260710000001`); capacity is checked at the app layer. Known v1 limitation: the read-check-insert isn't fully serialized, so a sub-second race could momentarily exceed capacity by one — acceptable at current volume; add a per-operator advisory lock if it becomes an issue.
 - **24-hour SMS engagement window**: standard SMS works fine for our use case (always Caller-initiated), but we should still track inbound timestamp and stop sending automated messages 24h after last Caller reply.
 - **Phone number normalization**: always store E.164. Use `libphonenumber-js`. Never store user-entered formats.
-- **Webhook retries**: Twilio retries on 5xx. Stripe retries on 5xx and on missing 2xx. Make every handler idempotent through `webhook_events`.
+- **Webhook retries**: Twilio retries on 5xx. Stripe retries on 5xx and on missing 2xx (for ~3 days). Make every handler idempotent through `webhook_events`, and safe to run more than once — a failed event is re-processed, not skipped (§11.2). Retried/replayed Stripe events re-read subscriptions/accounts from Stripe first (`StripeEventProcessor`) so a stale snapshot never rolls state back.
 - **Stripe test mode vs Connect**: Connect onboarding in test mode requires the test SSN `000-00-0000` and other test values. Document in `apps/api/test/SMOKE.md`.
 - **Supabase Auth email links**: redirect URL must be in Supabase allowlist. Update for each environment.
 - **OpenAI cost**: log token usage per conversation. If average conversation exceeds $0.10, optimize the prompt before optimizing the model.

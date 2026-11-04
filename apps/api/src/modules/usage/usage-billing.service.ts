@@ -14,9 +14,9 @@ import {
 import { accountResumedEmail, paymentFailedEmail } from './usage-emails';
 import { UsageNotifierService } from './usage-notifier.service';
 import { UsageService } from './usage.service';
-import { type UsageWindow, previousUsageWindow } from './usage-window';
+import { type UsageWindow, addMonthsClamped, usageWindow } from './usage-window';
 
-/** Marks our standalone overage invoices (annual plans) and overage line items. */
+/** Marks our standalone overage invoices and overage line items. */
 export const OVERAGE_METADATA_KIND = 'usage_overage';
 
 /** Hooks the Stripe platform webhook calls (see stripe-event-handlers.ts). */
@@ -27,16 +27,48 @@ export interface BillingEventHooks {
   onSubscriptionStatusChanged(operatorId: string, from: string | null, to: string): Promise<void>;
 }
 
+export interface ReconcileResult {
+  readonly checked: number;
+  readonly billed: number;
+  readonly failed: number;
+}
+
 const GOOD_STANDING: ReadonlySet<string> = new Set(['trialing', 'active']);
+
+/**
+ * Monthly plans: how long after a window closes the backstop waits before
+ * billing it on its own invoice. Stripe holds a renewal draft for up to 72h
+ * while `invoice.created` keeps failing, so past this the renewal-invoice path
+ * can no longer add the line.
+ */
+const MONTHLY_GRACE_MS = 4 * 24 * 60 * 60_000;
+/** A claim stuck in 'pending' this long crashed mid-way; finish it. */
+const PENDING_STALE_MS = 60 * 60_000;
+/** Shortest possible window (28-day month); only windows older than this can be closed. */
+const MIN_WINDOW_MS = 27 * 24 * 60 * 60_000;
 
 const customerIdOf = (invoice: Stripe.Invoice): string | null =>
   typeof invoice.customer === 'string' ? invoice.customer : (invoice.customer?.id ?? null);
+
+const idOf = (ref: string | { id?: string } | null | undefined): string | null =>
+  typeof ref === 'string' ? ref : (ref?.id ?? null);
 
 const windowLabel = (w: UsageWindow): string => {
   const f = (d: Date): string =>
     d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
   return `${f(w.start)} – ${f(new Date(w.end.getTime() - 1))}`;
 };
+
+const overageDescription = (window: UsageWindow, used: number, limit: number): string => {
+  const overage = overageFor(used, limit);
+  return (
+    `Usage overage ${windowLabel(window)}: ${overage.extraPeople} people over your ${limit} ` +
+    `(${overage.batches} × ${OVERAGE_BATCH_SIZE} at $${OVERAGE_BATCH_CENTS / 100})`
+  );
+};
+
+const idempotencyKeyFor = (operatorId: string, windowStartIso: string): string =>
+  `usage-overage:${operatorId}:${windowStartIso}`;
 
 interface BillableOperator {
   id: string;
@@ -45,26 +77,40 @@ interface BillableOperator {
   trial_ends_at: string | null;
   current_period_start: string | null;
   stripe_customer_id: string | null;
+  stripe_subscription_id: string | null;
   overage_unpaid_invoice_id: string | null;
 }
 const BILLABLE_COLUMNS =
-  'id, plan, plan_cadence, trial_ends_at, current_period_start, stripe_customer_id, overage_unpaid_invoice_id';
+  'id, plan, plan_cadence, trial_ends_at, current_period_start, stripe_customer_id, stripe_subscription_id, overage_unpaid_invoice_id';
+
+type ChargeFn = (
+  amountCents: number,
+  description: string,
+  idempotencyKey: string,
+) => Promise<{ invoiceId: string | null; invoiceItemId: string }>;
 
 /**
  * Overage billing for Crew/Fleet ($100 per started batch of 50 extra people per
  * monthly window — see plan-limits.ts) and the failed-payment pause/resume emails.
  *
- *  - Monthly plans: when Stripe drafts the renewal invoice (`invoice.created`,
- *    billing_reason `subscription_cycle`) we add an overage line for the period
- *    that just ended, so it's charged with the subscription.
- *  - Annual plans: the renewal is a year away, so a daily cron bills each closed
- *    monthly window on its own invoice, charged to the card on file.
+ *  - Monthly plans, primary path: when Stripe drafts the renewal invoice
+ *    (`invoice.created`, billing_reason `subscription_cycle`) we add an overage
+ *    line for the period that just ended, so it's charged with the subscription.
+ *  - Everything else — annual plans, and every monthly window the renewal path
+ *    missed (cancelled before renewal, downgraded, webhook failed until the
+ *    draft finalized, crash mid-way) — is caught by `reconcileOverage`, a daily
+ *    cron that bills each closed, unbilled window on its own invoice.
+ *
+ * `usage_overage_charges` (unique per operator+window) is the claim that keeps a
+ * window from being billed twice; before charging a standalone invoice we also
+ * look the line up in Stripe, so a crash between Stripe and our DB can't
+ * double-bill either.
  *
  * A failed renewal flips the subscription to past_due (existing degraded mode).
  * A failed standalone overage invoice sets `operators.overage_unpaid_invoice_id`,
  * which pauses the AI the same way until it's paid. Both email operator + admins.
  *
- * Windows that ended inside the free trial are never billed.
+ * Windows counted during the free trial are never billed.
  */
 @Injectable()
 export class UsageBillingService implements BillingEventHooks {
@@ -83,9 +129,9 @@ export class UsageBillingService implements BillingEventHooks {
   async onInvoiceCreated(invoice: Stripe.Invoice): Promise<void> {
     if (invoice.status !== 'draft' || invoice.billing_reason !== 'subscription_cycle') return;
     const customerId = customerIdOf(invoice);
-    if (!customerId) return;
+    if (!customerId || !invoice.id) return;
     const operator = await this.operatorByCustomer(customerId);
-    if (!operator || operator.plan_cadence === 'annual') return; // annual → cron
+    if (!operator || operator.plan_cadence === 'annual') return; // annual → reconcileOverage
     const limit = conversationLimitForPlan(operator.plan);
     if (limit == null || overLimitPolicyForPlan(operator.plan) !== 'overage') return;
 
@@ -95,12 +141,28 @@ export class UsageBillingService implements BillingEventHooks {
     };
     if (this.endedInTrial(operator, window)) return;
 
+    // A retried delivery can land after Stripe finalized the draft, when lines
+    // can no longer be added. Leave the window unclaimed: reconcileOverage bills
+    // it on its own invoice once the grace period passes.
+    const live = await this.stripe.client().invoices.retrieve(invoice.id);
+    if (live.status !== 'draft') {
+      this.logger.warn(
+        { operatorId: operator.id, invoiceId: invoice.id, status: live.status },
+        'renewal invoice no longer a draft; overage left to the reconcile cron',
+      );
+      return;
+    }
+
+    const invoiceId = invoice.id;
     const used = await this.usage.countPeopleInRange(operator.id, window.start, window.end);
     await this.bill(operator, window, used, limit, async (amountCents, description, idempotencyKey) => {
+      // A retry after a crash (or after the 24h idempotency key expired) must not add a second line.
+      const existing = await this.findOverageItem(customerId, window.start.toISOString());
+      if (existing) return { invoiceId: idOf(existing.invoice), invoiceItemId: existing.id };
       const item = await this.stripe.client().invoiceItems.create(
         {
           customer: customerId,
-          invoice: invoice.id,
+          invoice: invoiceId,
           amount: amountCents,
           currency: invoice.currency,
           description,
@@ -108,96 +170,223 @@ export class UsageBillingService implements BillingEventHooks {
         },
         { idempotencyKey },
       );
-      return { invoiceId: invoice.id ?? null, invoiceItemId: item.id };
+      return { invoiceId, invoiceItemId: item.id };
     });
   }
 
-  // ── annual plans: daily cron bills each closed monthly window ──────────────
+  // ── backstop: daily cron bills every closed, unbilled window ───────────────
 
-  async closeAnnualWindows(now = new Date()): Promise<{ checked: number; billed: number }> {
-    const { data, error } = await this.supabase
-      .db()
-      .from('operators')
-      .select(BILLABLE_COLUMNS)
-      .in('plan', ['crew', 'fleet'])
-      .eq('plan_cadence', 'annual')
-      .eq('subscription_status', 'active')
-      .not('stripe_customer_id', 'is', null);
-    if (error) throw error;
-
+  /**
+   * Bills every closed usage window that has no overage claim yet (annual plans,
+   * and monthly windows the renewal invoice missed), and finishes claims that
+   * crashed mid-way. Idempotent; run daily. One operator's failure never stops
+   * the rest — it's logged at error level and retried on the next run.
+   */
+  async reconcileOverage(now = new Date()): Promise<ReconcileResult> {
+    const db = this.supabase.db();
     let billed = 0;
-    for (const operator of data ?? []) {
+    let failed = 0;
+
+    // 1. Claims stuck in 'pending' (crashed between claiming and recording the invoice).
+    const { data: stuck, error: stuckErr } = await db
+      .from('usage_overage_charges')
+      .select('operator_id, window_start, window_end, people_used, people_included')
+      .eq('status', 'pending')
+      .lt('updated_at', new Date(now.getTime() - PENDING_STALE_MS).toISOString());
+    if (stuckErr) throw stuckErr;
+
+    // 2. Windows with people in them and no claim at all.
+    const { data: candidates, error: candErr } = await db.rpc('usage_unbilled_windows', {
+      p_started_before: new Date(now.getTime() - MIN_WINDOW_MS).toISOString(),
+    });
+    if (candErr) throw candErr;
+
+    const operatorIds = [
+      ...new Set([...(stuck ?? []).map((r) => r.operator_id), ...(candidates ?? []).map((c) => c.operator_id)]),
+    ];
+    const operators = await this.operatorsById(operatorIds);
+
+    for (const row of stuck ?? []) {
+      const operator = operators.get(row.operator_id);
       try {
-        if (await this.billAnnualWindow(operator, now)) billed += 1;
+        if (!operator) throw new Error('operator not found');
+        const window = { start: new Date(row.window_start), end: new Date(row.window_end) };
+        // A monthly claim may belong to a renewal draft whose webhook is still
+        // being retried; wait until that draft can no longer take the line.
+        if (operator.plan_cadence !== 'annual' && now.getTime() < window.end.getTime() + MONTHLY_GRACE_MS) continue;
+        await this.chargeAndRecord(operator, window, row.people_used, row.people_included, (amount, desc, key) =>
+          this.chargeStandalone(operator, window, amount, desc, key),
+        );
+        billed += 1;
       } catch (err) {
-        // One operator's Stripe error must not stop the rest; the claim stays
-        // 'pending' so tomorrow's run retries it.
+        failed += 1;
         this.logger.error(
-          { operatorId: operator.id, err: (err as Error).message },
-          'annual overage billing failed',
+          { operatorId: row.operator_id, windowStart: row.window_start, err: (err as Error).message },
+          'overage reconcile: finishing a pending charge failed',
         );
       }
     }
-    return { checked: data?.length ?? 0, billed };
+
+    for (const cand of candidates ?? []) {
+      const operator = operators.get(cand.operator_id);
+      try {
+        if (!operator) throw new Error('operator not found');
+        if (await this.reconcileWindow(operator, cand, now)) billed += 1;
+      } catch (err) {
+        failed += 1;
+        this.logger.error(
+          { operatorId: cand.operator_id, windowStart: cand.window_start, err: (err as Error).message },
+          'overage reconcile: billing a closed window failed',
+        );
+      }
+    }
+
+    return { checked: (stuck?.length ?? 0) + (candidates?.length ?? 0), billed, failed };
   }
 
-  private async billAnnualWindow(operator: BillableOperator, now: Date): Promise<boolean> {
-    const limit = conversationLimitForPlan(operator.plan);
-    const customerId = operator.stripe_customer_id;
-    if (limit == null || !customerId) return false;
-    const window = previousUsageWindow(operator.current_period_start, now);
-    if (this.endedInTrial(operator, window)) return false;
+  private async reconcileWindow(
+    operator: BillableOperator,
+    cand: { window_start: string; people: number; plan: string | null; in_trial: boolean },
+    now: Date,
+  ): Promise<boolean> {
+    const start = new Date(cand.window_start);
+    const current = usageWindow(operator.current_period_start, now);
+    if (start.getTime() >= current.start.getTime()) return false; // still open
+    const window: UsageWindow = { start, end: this.closedWindowEnd(operator, start, current.start) };
+    // Monthly plans: the renewal invoice gets first go at it.
+    if (operator.plan_cadence !== 'annual' && now.getTime() < window.end.getTime() + MONTHLY_GRACE_MS) return false;
 
-    const used = await this.usage.countPeople(operator.id, window.start);
-    return this.bill(operator, window, used, limit, async (amountCents, description, idempotencyKey) => {
-      const stripe = this.stripe.client();
-      const meta = { kind: OVERAGE_METADATA_KIND, operator_id: operator.id, window_start: window.start.toISOString() };
-      const item = await stripe.invoiceItems.create(
-        { customer: customerId, amount: amountCents, currency: 'usd', description, metadata: meta },
-        { idempotencyKey: `${idempotencyKey}:item` },
-      );
-      const created = await stripe.invoices.create(
+    // Bill at the plan the people were counted under, not today's plan.
+    const plan = cand.plan ?? operator.plan;
+    const limit = conversationLimitForPlan(plan);
+    if (limit == null) return false; // no plan → no limit (comped/legacy); nothing to bill
+    const inTrial = cand.in_trial || this.startedInTrial(operator, start);
+    if (inTrial || overLimitPolicyForPlan(plan) !== 'overage') {
+      await this.recordNone(operator, window, cand.people, limit);
+      return false;
+    }
+    if (!operator.stripe_customer_id) {
+      throw new Error('overage owed but operator has no Stripe customer');
+    }
+    return this.bill(operator, window, cand.people, limit, (amount, desc, key) =>
+      this.chargeStandalone(operator, window, amount, desc, key),
+    );
+  }
+
+  /**
+   * Bill a closed window on its own invoice, charged to the card on file.
+   * Looks in Stripe first so a retry after a crash reuses what's already there
+   * (on a renewal invoice or a standalone one) instead of billing twice.
+   */
+  private async chargeStandalone(
+    operator: BillableOperator,
+    window: UsageWindow,
+    amountCents: number,
+    description: string,
+    idempotencyKey: string,
+  ): Promise<{ invoiceId: string | null; invoiceItemId: string }> {
+    const stripe = this.stripe.client();
+    const customerId = operator.stripe_customer_id;
+    if (!customerId) throw new Error('operator has no Stripe customer');
+    const windowStart = window.start.toISOString();
+    const meta = { kind: OVERAGE_METADATA_KIND, operator_id: operator.id, window_start: windowStart };
+
+    const existingItem = await this.findOverageItem(customerId, windowStart);
+    const existingInvoiceId = idOf(existingItem?.invoice);
+    if (existingItem && existingInvoiceId) {
+      await this.settleOverageInvoice(operator.id, existingInvoiceId);
+      return { invoiceId: existingInvoiceId, invoiceItemId: existingItem.id };
+    }
+
+    // Invoice first, then the line attached to it — so unrelated pending items
+    // (prorations) are never swept onto an overage invoice.
+    let invoice = await this.findOverageDraft(customerId, windowStart);
+    if (!invoice) {
+      const paymentMethod = await this.defaultPaymentMethod(operator);
+      invoice = await stripe.invoices.create(
         {
           customer: customerId,
           collection_method: 'charge_automatically',
           auto_advance: true,
-          pending_invoice_items_behavior: 'include',
+          pending_invoice_items_behavior: 'exclude',
           description: 'KeeprSteady usage overage',
           metadata: meta,
+          ...(paymentMethod ? { default_payment_method: paymentMethod } : {}),
         },
         { idempotencyKey: `${idempotencyKey}:invoice` },
       );
-      const finalized = await stripe.invoices.finalizeInvoice(created.id ?? '');
-      try {
-        await stripe.invoices.pay(finalized.id ?? '');
-      } catch (err) {
-        // A declined card lands here AND as invoice.payment_failed — the webhook
-        // owns the pause + emails, so just note it.
-        this.logger.warn(
-          { operatorId: operator.id, invoiceId: finalized.id, err: (err as Error).message },
-          'overage invoice payment attempt failed',
-        );
+    }
+    const invoiceId = invoice.id ?? '';
+    const item =
+      existingItem ??
+      (await stripe.invoiceItems.create(
+        { customer: customerId, invoice: invoiceId, amount: amountCents, currency: 'usd', description, metadata: meta },
+        { idempotencyKey: `${idempotencyKey}:item` },
+      ));
+    await this.settleOverageInvoice(operator.id, invoiceId);
+    return { invoiceId, invoiceItemId: item.id };
+  }
+
+  /** Finalize + attempt payment on one of our overage invoices, whatever state a crash left it in. */
+  private async settleOverageInvoice(operatorId: string, invoiceId: string): Promise<void> {
+    const stripe = this.stripe.client();
+    let invoice = await stripe.invoices.retrieve(invoiceId);
+    // A line on a subscription renewal invoice: Stripe collects that itself.
+    if (invoice.metadata?.['kind'] !== OVERAGE_METADATA_KIND) return;
+    if (invoice.status === 'draft') invoice = await stripe.invoices.finalizeInvoice(invoiceId);
+    if (invoice.status !== 'open') return;
+    try {
+      await stripe.invoices.pay(invoiceId);
+    } catch (err) {
+      // A declined card lands here AND as invoice.payment_failed — the webhook
+      // owns the pause + emails, so just note it.
+      this.logger.warn({ operatorId, invoiceId, err: (err as Error).message }, 'overage invoice payment attempt failed');
+    }
+  }
+
+  private async findOverageItem(customerId: string, windowStart: string): Promise<Stripe.InvoiceItem | null> {
+    for await (const item of this.stripe.client().invoiceItems.list({ customer: customerId, limit: 100 })) {
+      if (item.metadata?.['kind'] === OVERAGE_METADATA_KIND && item.metadata['window_start'] === windowStart) {
+        return item;
       }
-      return { invoiceId: finalized.id ?? null, invoiceItemId: item.id };
-    });
+    }
+    return null;
+  }
+
+  private async findOverageDraft(customerId: string, windowStart: string): Promise<Stripe.Invoice | null> {
+    for await (const inv of this.stripe.client().invoices.list({ customer: customerId, status: 'draft', limit: 100 })) {
+      if (inv.metadata?.['kind'] === OVERAGE_METADATA_KIND && inv.metadata['window_start'] === windowStart) return inv;
+    }
+    return null;
+  }
+
+  /**
+   * Checkout saves the card on the subscription, not as the customer's invoice
+   * default — so a one-off invoice must be pointed at it explicitly or it can't
+   * be charged.
+   */
+  private async defaultPaymentMethod(operator: BillableOperator): Promise<string | null> {
+    const stripe = this.stripe.client();
+    if (!operator.stripe_customer_id) return null;
+    const customer = await stripe.customers.retrieve(operator.stripe_customer_id);
+    if (customer.deleted) throw new Error('Stripe customer is deleted');
+    if (customer.invoice_settings?.default_payment_method) return null; // Stripe uses it already
+    if (!operator.stripe_subscription_id) return null;
+    const sub = await stripe.subscriptions.retrieve(operator.stripe_subscription_id);
+    return idOf(sub.default_payment_method);
   }
 
   /**
    * Claim the window, then charge via `charge` if there's overage. Returns true
    * when something was billed. Idempotent: a window already 'none' / 'invoiced'
-   * / 'paid' / 'failed' is skipped; a 'pending' one (crashed mid-way) is retried
-   * with the same Stripe idempotency key.
+   * / 'paid' / 'failed' is skipped; a 'pending' one (crashed mid-way) is retried.
    */
   private async bill(
     operator: BillableOperator,
     window: UsageWindow,
     used: number,
     limit: number,
-    charge: (
-      amountCents: number,
-      description: string,
-      idempotencyKey: string,
-    ) => Promise<{ invoiceId: string | null; invoiceItemId: string }>,
+    charge: ChargeFn,
   ): Promise<boolean> {
     const overage = overageFor(used, limit);
     const windowStart = window.start.toISOString();
@@ -225,13 +414,28 @@ export class UsageBillingService implements BillingEventHooks {
       if (prior?.status !== 'pending') return false;
     }
     if (overage.amountCents === 0) return false;
+    await this.chargeAndRecord(operator, window, used, limit, charge);
+    return true;
+  }
 
-    const description =
-      `Usage overage ${windowLabel(window)}: ${overage.extraPeople} people over your ${limit} ` +
-      `(${overage.batches} × ${OVERAGE_BATCH_SIZE} at $${OVERAGE_BATCH_CENTS / 100})`;
-    const result = await charge(overage.amountCents, description, `usage-overage:${operator.id}:${windowStart}`);
+  /** Charge an already-claimed window and mark the claim 'invoiced'. */
+  private async chargeAndRecord(
+    operator: BillableOperator,
+    window: UsageWindow,
+    used: number,
+    limit: number,
+    charge: ChargeFn,
+  ): Promise<void> {
+    const windowStart = window.start.toISOString();
+    const { amountCents } = overageFor(used, limit);
+    const result = await charge(
+      amountCents,
+      overageDescription(window, used, limit),
+      idempotencyKeyFor(operator.id, windowStart),
+    );
 
-    const { error: updErr } = await db
+    const { error: updErr } = await this.supabase
+      .db()
       .from('usage_overage_charges')
       .update({
         status: 'invoiced',
@@ -241,11 +445,22 @@ export class UsageBillingService implements BillingEventHooks {
       .eq('operator_id', operator.id)
       .eq('window_start', windowStart);
     if (updErr) throw updErr;
-    this.logger.info(
-      { operatorId: operator.id, windowStart, used, limit, amountCents: overage.amountCents },
-      'usage overage billed',
-    );
-    return true;
+    this.logger.info({ operatorId: operator.id, windowStart, used, limit, amountCents }, 'usage overage billed');
+  }
+
+  /** Record a closed window that owes nothing, so the backstop stops re-checking it. */
+  private async recordNone(operator: BillableOperator, window: UsageWindow, used: number, limit: number): Promise<void> {
+    const { error } = await this.supabase.db().from('usage_overage_charges').insert({
+      operator_id: operator.id,
+      window_start: window.start.toISOString(),
+      window_end: window.end.toISOString(),
+      people_used: used,
+      people_included: limit,
+      batches: 0,
+      amount_cents: 0,
+      status: 'none',
+    });
+    if (error && error.code !== '23505') throw error;
   }
 
   // ── failed payment → pause + email; recovery → resume + email ──────────────
@@ -323,6 +538,24 @@ export class UsageBillingService implements BillingEventHooks {
     return new Date(operator.trial_ends_at).getTime() >= window.end.getTime() - 60_000;
   }
 
+  /** The trial window starts before the trial ends (the anchor moves at conversion). */
+  private startedInTrial(operator: BillableOperator, windowStart: Date): boolean {
+    if (!operator.trial_ends_at) return false;
+    return windowStart.getTime() < new Date(operator.trial_ends_at).getTime() - 60_000;
+  }
+
+  /**
+   * End of a closed window. Normally it's on the operator's current anchor
+   * grid; if the anchor has moved since (trial → paid, plan change), it ended
+   * no later than a month on and no later than the current window's start.
+   */
+  private closedWindowEnd(operator: BillableOperator, start: Date, currentStart: Date): Date {
+    const onGrid = usageWindow(operator.current_period_start, start);
+    if (onGrid.start.getTime() === start.getTime()) return onGrid.end;
+    const monthOn = addMonthsClamped(start, 1);
+    return monthOn.getTime() < currentStart.getTime() ? monthOn : currentStart;
+  }
+
   private async operatorByCustomer(customerId: string): Promise<BillableOperator | null> {
     const { data, error } = await this.supabase
       .db()
@@ -332,6 +565,13 @@ export class UsageBillingService implements BillingEventHooks {
       .maybeSingle();
     if (error) throw error;
     return data;
+  }
+
+  private async operatorsById(ids: readonly string[]): Promise<Map<string, BillableOperator>> {
+    if (ids.length === 0) return new Map();
+    const { data, error } = await this.supabase.db().from('operators').select(BILLABLE_COLUMNS).in('id', [...ids]);
+    if (error) throw error;
+    return new Map((data ?? []).map((o) => [o.id, o]));
   }
 
   private async markOverageCharge(invoiceId: string, status: 'paid' | 'failed'): Promise<void> {

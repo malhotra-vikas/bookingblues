@@ -6,21 +6,18 @@ import { PinoLogger } from 'nestjs-pino';
 import type Stripe from 'stripe';
 import type { Json } from '@bookingblues/db-types';
 
-import { AppError, WebhookSignatureError } from '../../common/errors/app-error';
+import { AppError, WebhookInProgressError, WebhookSignatureError } from '../../common/errors/app-error';
 import { StripeService } from '../../common/stripe/stripe.service';
-import { SupabaseService } from '../../common/supabase/supabase.service';
 import { WebhookIdempotencyService } from '../../common/webhooks/webhook-idempotency.service';
-import { BookingsService } from '../appointments/bookings.service';
-import { dispatchConnectEvent } from './stripe-connect-event-handlers';
+import { StripeEventProcessor } from './stripe-event-processor.service';
 
 @Controller('webhooks/stripe/connect')
 @SkipThrottle()
 export class StripeConnectController {
   constructor(
     private readonly stripe: StripeService,
-    private readonly supabase: SupabaseService,
     private readonly idempotency: WebhookIdempotencyService,
-    private readonly bookings: BookingsService,
+    private readonly processor: StripeEventProcessor,
     private readonly logger: PinoLogger,
   ) {
     this.logger.setContext(StripeConnectController.name);
@@ -59,13 +56,10 @@ export class StripeConnectController {
       signatureVerified: true,
     });
     if (recorded.status === 'duplicate') return { received: true };
+    if (recorded.status === 'in_progress') throw new WebhookInProgressError('stripe_connect', event.id);
 
     try {
-      await dispatchConnectEvent(event, event.account, {
-        db: this.supabase.db(),
-        logger: this.logger,
-        confirmPaidBooking: (appointmentId) => this.bookings.confirmPaidBooking(appointmentId),
-      });
+      await this.processor.processConnect(event, event.account, recorded.attempt);
       await this.idempotency.markProcessed(recorded.id);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);

@@ -11,10 +11,13 @@ import { SlackModule } from '../slack/slack.module';
 import { UsageModule } from '../usage/usage.module';
 
 import { StripeConnectController } from './stripe-connect.controller';
+import { StripeEventProcessor } from './stripe-event-processor.service';
 import { StripePlatformController } from './stripe-platform.controller';
 import { TwilioSmsController } from './twilio-sms.controller';
 import { TwilioStatusController } from './twilio-status.controller';
 import { TwilioVoiceController } from './twilio-voice.controller';
+import { WebhookReplayController } from './webhook-replay.controller';
+import { WebhookReplayService } from './webhook-replay.service';
 
 @Module({
   imports: [
@@ -34,6 +37,8 @@ import { TwilioVoiceController } from './twilio-voice.controller';
     TwilioVoiceController,
     TwilioSmsController,
     TwilioStatusController,
+    WebhookReplayController,
   ],
+  providers: [StripeEventProcessor, WebhookReplayService],
 })
 export class WebhooksModule {}

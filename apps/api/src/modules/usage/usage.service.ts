@@ -19,6 +19,8 @@ export interface UsageOperator {
   readonly business_name: string;
   readonly plan: string | null;
   readonly current_period_start: string | null;
+  /** Stamped on each counted person: trial windows are never billed for overage. */
+  readonly subscription_status?: string | null;
 }
 
 export interface UsageSummary {
@@ -70,6 +72,10 @@ export class UsageService {
           operator_id: operator.id,
           window_start: check.window.start.toISOString(),
           caller_phone_e164: callerPhoneE164,
+          // Overage is billed at the plan this person was counted under, even
+          // after a downgrade/cancel (usage-billing.service reconcileOverage).
+          plan: operator.plan,
+          in_trial: operator.subscription_status === 'trialing',
         },
         { onConflict: 'operator_id,window_start,caller_phone_e164', ignoreDuplicates: true },
       );

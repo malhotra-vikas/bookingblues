@@ -848,7 +848,9 @@ export type Database = {
           caller_phone_e164: string;
           created_at: string;
           id: string;
+          in_trial: boolean;
           operator_id: string;
+          plan: string | null;
           updated_at: string;
           window_start: string;
         };
@@ -856,7 +858,9 @@ export type Database = {
           caller_phone_e164: string;
           created_at?: string;
           id?: string;
+          in_trial?: boolean;
           operator_id: string;
+          plan?: string | null;
           updated_at?: string;
           window_start: string;
         };
@@ -864,7 +868,9 @@ export type Database = {
           caller_phone_e164?: string;
           created_at?: string;
           id?: string;
+          in_trial?: boolean;
           operator_id?: string;
+          plan?: string | null;
           updated_at?: string;
           window_start?: string;
         };
@@ -936,6 +942,8 @@ export type Database = {
       };
       webhook_events: {
         Row: {
+          attempts: number;
+          claimed_at: string;
           created_at: string;
           error: string | null;
           event_id: string;
@@ -947,6 +955,8 @@ export type Database = {
           updated_at: string;
         };
         Insert: {
+          attempts?: number;
+          claimed_at?: string;
           created_at?: string;
           error?: string | null;
           event_id: string;
@@ -958,6 +968,8 @@ export type Database = {
           updated_at?: string;
         };
         Update: {
+          attempts?: number;
+          claimed_at?: string;
           created_at?: string;
           error?: string | null;
           event_id?: string;
@@ -978,6 +990,28 @@ export type Database = {
       admin_demote: { Args: { p_user_email: string }; Returns: string };
       admin_promote: { Args: { p_user_email: string }; Returns: string };
       auth_operator_id: { Args: never; Returns: string };
+      claim_webhook_event: {
+        Args: {
+          p_event_id: string;
+          p_lease_seconds: number;
+          p_source: Database["public"]["Enums"]["webhook_source"];
+        };
+        Returns: {
+          attempts: number;
+          id: string;
+          outcome: string;
+        }[];
+      };
+      usage_unbilled_windows: {
+        Args: { p_started_before: string };
+        Returns: {
+          in_trial: boolean;
+          operator_id: string;
+          people: number;
+          plan: string | null;
+          window_start: string;
+        }[];
+      };
     };
     Enums: {
       appointment_fee_status:

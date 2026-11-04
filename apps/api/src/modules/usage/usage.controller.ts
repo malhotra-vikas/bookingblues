@@ -5,11 +5,12 @@ import type { Request } from 'express';
 import { ENV_TOKEN } from '../../config/config.module';
 import type { Env } from '../../config/env';
 
-import { UsageBillingService } from './usage-billing.service';
+import { type ReconcileResult, UsageBillingService } from './usage-billing.service';
 
 /**
- * Internal cron: bills annual Crew/Fleet overage for each closed monthly window.
- * Same auth as the other crons (`X-Cron-Secret`). Idempotent — run daily.
+ * Internal cron: bills every closed, unbilled Crew/Fleet usage window (annual
+ * plans, plus any monthly window the renewal invoice missed). Same auth as the
+ * other crons (`X-Cron-Secret`). Idempotent — run daily.
  */
 @Controller('internal/usage')
 @SkipThrottle()
@@ -19,12 +20,13 @@ export class UsageController {
     @Inject(ENV_TOKEN) private readonly env: Env,
   ) {}
 
-  @Post('close-annual-windows')
+  // `close-annual-windows` is the original name, kept so an existing cron keeps working.
+  @Post(['reconcile-overage', 'close-annual-windows'])
   @HttpCode(200)
-  async closeAnnualWindows(@Req() req: Request): Promise<{ checked: number; billed: number }> {
+  async reconcileOverage(@Req() req: Request): Promise<ReconcileResult> {
     const expected = this.env.CRON_SHARED_SECRET;
     if (!expected) throw new ForbiddenException('CRON_SHARED_SECRET not configured');
     if ((req.header('x-cron-secret') ?? '') !== expected) throw new ForbiddenException('bad cron secret');
-    return this.billing.closeAnnualWindows();
+    return this.billing.reconcileOverage();
   }
 }

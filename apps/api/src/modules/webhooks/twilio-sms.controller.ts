@@ -85,7 +85,7 @@ export class TwilioSmsController {
       payload: form as unknown as Json,
       signatureVerified: true,
     });
-    if (recorded.status === 'duplicate') return this.emptyResponse();
+    if (recorded.status !== 'new') return this.emptyResponse();
 
     let convoId: string | null = null;
     try {

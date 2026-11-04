@@ -7,6 +7,7 @@ import { useState } from 'react';
 import { getSupabaseBrowserClient } from '../lib/supabase/browser';
 import { publicEnv } from '../lib/env';
 import { PLANS, depositLabel } from '../lib/brand';
+import { isOfficeCategory } from '../lib/category-profile';
 import {
   regularPriceLabel,
   specialPriceLabel,
@@ -96,12 +97,17 @@ export function SettingsPanel({ operator }: { operator: Operator }): JSX.Element
   const [info, setInfo] = useState<string | null>(null);
   const [testBooking, setTestBooking] = useState<{ when: string; link: string | null } | null>(null);
 
+  const office = isOfficeCategory(operator.category);
   const [businessName, setBusinessName] = useState(operator.business_name);
   const [timezone, setTimezone] = useState(operator.timezone);
+  // Office categories never take a deposit, even on Fleet (where it's
+  // otherwise mandatory) — saving the profile must not switch one on.
   const [feeEnabled, setFeeEnabled] = useState(
-    PLANS.find((p) => p.slug === operator.plan)?.depositMode === 'mandatory'
-      ? true
-      : operator.booking_fee_enabled,
+    office
+      ? false
+      : PLANS.find((p) => p.slug === operator.plan)?.depositMode === 'mandatory'
+        ? true
+        : operator.booking_fee_enabled,
   );
   const [feeDollars, setFeeDollars] = useState(
     operator.booking_fee_cents != null ? (operator.booking_fee_cents / 100).toFixed(2) : '',
@@ -377,6 +383,7 @@ export function SettingsPanel({ operator }: { operator: Operator }): JSX.Element
             <span className="ml-2 text-xs text-red-600">must be a whole number 15–480</span>
           ) : null}
         </Field>
+        {office ? null : (
         <Field
           label="Trucks / crews"
           hint="How many jobs you can run at once. With more than one, the AI books multiple appointments at the same time — keeping a 30-minute travel buffer between jobs on the same truck. 1–50."
@@ -393,6 +400,7 @@ export function SettingsPanel({ operator }: { operator: Operator }): JSX.Element
             <span className="ml-2 text-xs text-red-600">must be a whole number 1–50</span>
           ) : null}
         </Field>
+        )}
         <SaveButton busy={busy === 'save'} onClick={saveProfile} disabled={durationInvalid || trucksInvalid} />
       </Card>
 
@@ -444,6 +452,10 @@ export function SettingsPanel({ operator }: { operator: Operator }): JSX.Element
         <SaveButton busy={busy === 'save-hours'} onClick={saveHours} disabled={hoursInvalid} />
       </Card>
 
+      {/* Office categories (insurance): clients come to the office, so no
+          service area, booking fee or payouts — same as the onboarding wizard. */}
+      {office ? null : (
+      <>
       {/* ── Service area ─────────────────────────────────────────────── */}
       <Card
         title="Service area"
@@ -663,6 +675,8 @@ export function SettingsPanel({ operator }: { operator: Operator }): JSX.Element
           </button>
         )}
       </Card>
+      </>
+      )}
 
       {/* ── Integrations ─────────────────────────────────────────────── */}
       <Card title="Integrations">

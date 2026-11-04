@@ -135,7 +135,7 @@ export class SlackWebhooksController {
       payload: body as unknown as Json,
       signatureVerified: true,
     });
-    if (recorded.status === 'duplicate') return { ok: true };
+    if (recorded.status !== 'new') return { ok: true };
 
     try {
       // We care about thread replies that sit on top of an open escalation.

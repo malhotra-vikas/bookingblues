@@ -139,7 +139,7 @@ export class TwilioVoiceController {
         payload: form as unknown as Json,
         signatureVerified: true,
       });
-      if (recorded.status === 'duplicate') {
+      if (recorded.status !== 'new') {
         return this.confirmTwiml();
       }
       try {

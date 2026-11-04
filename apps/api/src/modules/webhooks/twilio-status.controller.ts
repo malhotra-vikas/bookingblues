@@ -80,7 +80,7 @@ export class TwilioStatusController {
       payload: form as unknown as Json,
       signatureVerified: true,
     });
-    if (recorded.status === 'duplicate') return this.ack();
+    if (recorded.status !== 'new') return this.ack();
 
     try {
       await this.applyStatus({

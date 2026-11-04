@@ -5,6 +5,8 @@ import type { Database } from '@bookingblues/db-types';
 import Stripe from 'stripe';
 import request from 'supertest';
 
+import { UsageBillingService } from '../src/modules/usage/usage-billing.service';
+import { WebhookReplayService } from '../src/modules/webhooks/webhook-replay.service';
 import { buildTestApp } from './helpers/app';
 import {
   describeIfSupabase,
@@ -181,6 +183,66 @@ describeIfSupabase('Stripe platform webhook', () => {
     // The first delivery's values must be preserved.
     expect(opA?.stripe_subscription_id).toBe('sub_test_DUP1');
     expect(opA?.subscription_status).toBe('trialing');
+  });
+
+  it('re-processes a delivery that failed (Stripe retry), then acks further duplicates', async () => {
+    const billing = app.get(UsageBillingService);
+    const spy = jest
+      .spyOn(billing, 'onInvoiceCreated')
+      .mockRejectedValueOnce(new Error('transient Stripe outage'))
+      .mockResolvedValue(undefined);
+    const event = {
+      id: `evt_retry_${Date.now()}`,
+      object: 'event',
+      type: 'invoice.created',
+      created: Math.floor(Date.now() / 1000),
+      data: { object: { id: 'in_retry', object: 'invoice', status: 'draft', metadata: {} } },
+    };
+
+    expect((await signedRequest(app, event)).status).toBeGreaterThanOrEqual(500);
+    expect((await signedRequest(app, event)).status).toBe(200); // retry actually runs
+    expect((await signedRequest(app, event)).status).toBe(200); // now a true duplicate
+    expect(spy).toHaveBeenCalledTimes(2);
+
+    const { data: row } = await serviceClient
+      .from('webhook_events')
+      .select('processed_at, attempts')
+      .eq('source', 'stripe')
+      .eq('event_id', event.id)
+      .single();
+    expect(row?.processed_at).not.toBeNull();
+    expect(row?.attempts).toBe(2);
+    spy.mockRestore();
+  });
+
+  it('the replay sweeper re-runs a failed event after Stripe has given up', async () => {
+    const billing = app.get(UsageBillingService);
+    const spy = jest
+      .spyOn(billing, 'onInvoiceCreated')
+      .mockRejectedValueOnce(new Error('bug, fixed by a later deploy'))
+      .mockResolvedValue(undefined);
+    const event = {
+      id: `evt_replay_${Date.now()}`,
+      object: 'event',
+      type: 'invoice.created',
+      created: Math.floor(Date.now() / 1000),
+      data: { object: { id: 'in_replay', object: 'invoice', status: 'draft', metadata: {} } },
+    };
+    expect((await signedRequest(app, event)).status).toBeGreaterThanOrEqual(500);
+
+    const later = new Date(Date.now() + 10 * 60_000);
+    const res = await app.get(WebhookReplayService).replayUnprocessed(later);
+    expect(res.replayed).toBeGreaterThanOrEqual(1);
+    expect(spy).toHaveBeenCalledTimes(2);
+
+    const { data: row } = await serviceClient
+      .from('webhook_events')
+      .select('processed_at')
+      .eq('source', 'stripe')
+      .eq('event_id', event.id)
+      .single();
+    expect(row?.processed_at).not.toBeNull();
+    spy.mockRestore();
   });
 
   it('does not touch unrelated tenants', async () => {
