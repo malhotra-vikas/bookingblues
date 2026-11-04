@@ -2,7 +2,9 @@ import type { PinoLogger } from 'nestjs-pino';
 import type { Tables } from '@bookingblues/db-types';
 
 import type { BookingsService } from '../appointments/bookings.service';
+import type { IntakeAnswersService } from '../appointments/intake-answers.service';
 import type { CalendarService } from '../calendar/calendar.service';
+import { collectsIntakeAnswers, isOfficeAppointmentCategory } from './category-profile';
 import { isBookingFeeCollectible } from './prompts';
 import {
   addressConfirmedSms,
@@ -30,9 +32,10 @@ import type {
   MarkSpamArgs,
   ProposeSlotsArgs,
   RequestPaymentLinkArgs,
+  SaveIntakeAnswersArgs,
 } from './tool-definitions';
 import { describeServiceArea, isZipInServiceArea, parseRadiusZones } from './service-area';
-import { fullyBookedIntervals, TRAVEL_BUFFER_MIN } from '../appointments/capacity';
+import { fullyBookedIntervals, travelBufferMinFor } from '../appointments/capacity';
 import { localWallTimeToUtcIso, utcToLocalWallTime } from '../calendar/zoned-time';
 
 type OperatorRow = Tables<'operators'>;
@@ -49,6 +52,7 @@ export interface ToolContext {
   readonly payments: PaymentsService;
   readonly escalations: EscalationsService;
   readonly bookings: BookingsService;
+  readonly intakeAnswers: IntakeAnswersService;
   readonly logger: PinoLogger;
 }
 
@@ -104,7 +108,8 @@ export async function checkAvailability(
   const tz = ctx.operator.timezone;
   const windowStartMs = new Date(localWallTimeToUtcIso(args.window_start, tz)).getTime();
   const windowEndMs = new Date(localWallTimeToUtcIso(args.window_end, tz)).getTime();
-  const bufferMs = TRAVEL_BUFFER_MIN * 60_000;
+  const bufferMin = travelBufferMinFor(isOfficeAppointmentCategory(ctx.operator.category));
+  const bufferMs = bufferMin * 60_000;
 
   const { data: rows, error } = await ctx.supabase
     .db()
@@ -125,6 +130,7 @@ export async function checkAvailability(
     truckCount,
     windowStart: windowStartMs,
     windowEnd: windowEndMs,
+    bufferMin,
   }).map((iv) => ({
     start: utcToLocalWallTime(new Date(iv.start).toISOString(), tz),
     end: utcToLocalWallTime(new Date(iv.end).toISOString(), tz),
@@ -162,10 +168,78 @@ export function proposeSlots(args: ProposeSlotsArgs): ToolResult {
   return { content: { slots: args.slots } };
 }
 
+/**
+ * Insurance intake (category-profile.ts): validate + store the caller's answers,
+ * encrypted, on the conversation. Booking copies them onto the appointment.
+ * The tool response never echoes the answers back.
+ */
+export async function saveIntakeAnswers(
+  args: SaveIntakeAnswersArgs,
+  ctx: ToolContext,
+): Promise<ToolResult> {
+  if (!collectsIntakeAnswers(ctx.operator.category)) {
+    return { content: { error: 'not_available', message: 'This business does not collect intake answers.' } };
+  }
+  await ctx.intakeAnswers.saveForConversation(ctx.conversation.id, args);
+  return { content: { saved: true } };
+}
+
+async function intakeAnswersSaved(ctx: ToolContext): Promise<boolean> {
+  // Read fresh: save_intake_answers may have run earlier in this same advance turn.
+  const { data, error } = await ctx.supabase
+    .db()
+    .from('conversations')
+    .select('intake_answers_enc')
+    .eq('id', ctx.conversation.id)
+    .maybeSingle();
+  if (error) throw error;
+  return Boolean(data?.intake_answers_enc);
+}
+
+/**
+ * Office-appointment booking (Insurance Agencies): no deposit, no address step,
+ * no emergency handling. Confirms and completes the conversation in one go.
+ */
+async function bookOfficeAppointment(args: BookAppointmentArgs, ctx: ToolContext): Promise<ToolResult> {
+  if (collectsIntakeAnswers(ctx.operator.category) && !(await intakeAnswersSaved(ctx))) {
+    return {
+      content: {
+        error: 'intake_missing',
+        message: 'Collect the intake answers and call save_intake_answers before booking.',
+      },
+    };
+  }
+  try {
+    const result = await ctx.bookings.book({
+      operator: ctx.operator,
+      conversationId: ctx.conversation.id,
+      callerPhoneE164: ctx.callerPhoneE164,
+      callerName: args.caller_name,
+      ...(args.caller_email ? { callerEmail: args.caller_email } : {}),
+      jobSummary: args.job_summary,
+      startIso: localWallTimeToUtcIso(args.start, ctx.operator.timezone),
+      endIso: localWallTimeToUtcIso(args.end, ctx.operator.timezone),
+    });
+    return {
+      content: { appointment_id: result.appointmentId, status: 'confirmed' },
+      // book() already texted the confirmation — finish without another SMS.
+      state: 'completed',
+      outcome: 'booked',
+    };
+  } catch (err) {
+    if (err instanceof ConflictError || err instanceof ValidationError) {
+      return { content: { error: 'slot_unavailable', message: err.message } };
+    }
+    throw err;
+  }
+}
+
 export async function bookAppointment(
   args: BookAppointmentArgs,
   ctx: ToolContext,
 ): Promise<ToolResult> {
+  if (isOfficeAppointmentCategory(ctx.operator.category)) return bookOfficeAppointment(args, ctx);
+
   const common = {
     operator: ctx.operator,
     conversationId: ctx.conversation.id,
@@ -391,6 +465,7 @@ const SERVICES_BY_CATEGORY: Record<string, string> = {
   electrical: 'wiring, panels, outlets, lighting, and troubleshooting',
   roofing: 'leaks, repairs, full replacements, gutters, and inspections',
   garage_door: 'broken springs, openers, door repairs, and new installs',
+  insurance: 'Medicare, health, life, and other personal insurance coverage',
 };
 
 export function markOutOfScope(args: MarkOutOfScopeArgs, ctx: ToolContext): ToolResult {

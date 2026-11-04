@@ -69,6 +69,7 @@ const PLATFORM_EVENTS = [
   'customer.subscription.updated',
   'customer.subscription.deleted',
   'customer.subscription.trial_will_end',
+  'invoice.created', // usage overage is added to the draft renewal invoice (modules/usage)
   'invoice.payment_succeeded',
   'invoice.payment_failed',
 ];

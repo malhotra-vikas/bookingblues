@@ -4,6 +4,7 @@ import type { Database } from '@bookingblues/db-types';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 import { type PlanAndCadence, planCadenceForPrice } from '../billing/plan-pricing';
+import type { BillingEventHooks } from '../usage/usage-billing.service';
 
 type SubscriptionStatus = Database['public']['Enums']['subscription_status'];
 
@@ -68,6 +69,8 @@ export interface HandlerDeps {
    * price rather than the (mutable, sometimes-absent) checkout metadata.
    */
   readonly priceMap?: ReadonlyMap<string, PlanAndCadence>;
+  /** Usage overage + failed-payment pause/resume emails (modules/usage). */
+  readonly billing?: BillingEventHooks;
 }
 
 export async function onCheckoutCompleted(
@@ -119,7 +122,7 @@ export async function onSubscriptionUpserted(
 
   const { data: operator, error: lookupErr } = await deps.db
     .from('operators')
-    .select('id')
+    .select('id, subscription_status')
     .eq('stripe_customer_id', customerId)
     .maybeSingle();
   if (lookupErr) throw lookupErr;
@@ -142,11 +145,12 @@ export async function onSubscriptionUpserted(
   const cadence = fromPrice?.cadence ?? cadenceFromMetadata(sub.metadata);
 
   const period = periodBounds(sub);
+  const nextStatus = mapSubscriptionStatus(sub.status);
   const { error } = await deps.db
     .from('operators')
     .update({
       stripe_subscription_id: sub.id,
-      subscription_status: mapSubscriptionStatus(sub.status),
+      subscription_status: nextStatus,
       trial_ends_at: unixToIso(sub.trial_end),
       // Scheduled cancellation (portal "cancel at period end"); status stays
       // trialing/active until then. Cleared when the customer un-cancels.
@@ -162,6 +166,10 @@ export async function onSubscriptionUpserted(
     })
     .eq('id', operator.id);
   if (error) throw error;
+
+  if (operator.subscription_status !== nextStatus) {
+    await deps.billing?.onSubscriptionStatusChanged(operator.id, operator.subscription_status, nextStatus);
+  }
 }
 
 export async function onSubscriptionDeleted(
@@ -203,10 +211,17 @@ export async function dispatchPlatformEvent(
         'trial_will_end — TODO: send reminder email (Slice 10)',
       );
       return;
+    // Subscription status transitions arrive via customer.subscription.updated.
+    // The invoice events drive usage overage billing and the failed-payment
+    // pause/resume emails (modules/usage/usage-billing.service.ts).
+    case 'invoice.created':
+      await deps.billing?.onInvoiceCreated(event.data.object);
+      return;
     case 'invoice.payment_succeeded':
+      await deps.billing?.onInvoicePaymentSucceeded(event.data.object);
+      return;
     case 'invoice.payment_failed':
-      // Status transitions arrive via customer.subscription.updated; nothing
-      // to do here for now beyond the audit trail in webhook_events.
+      await deps.billing?.onInvoicePaymentFailed(event.data.object);
       return;
     default:
       // Unhandled types are fine — we ack 200 and move on.

@@ -7,6 +7,7 @@ import { ENV_TOKEN } from '../../config/config.module';
 import type { Env } from '../../config/env';
 import { SupabaseService } from '../../common/supabase/supabase.service';
 import { ConflictError, NotFoundError, ValidationError } from '../../common/errors/app-error';
+import { isOfficeAppointmentCategory } from '../ai/category-profile';
 import { depositModeForPlan } from '../billing/plan-policy';
 import type { UpdateOperator } from './operators.dto';
 
@@ -183,7 +184,13 @@ export class OperatorsService {
 
     // Fleet mandates deposit collection (#booking-fee) — block turning it off,
     // matching the UI which locks the toggle on. Mirrors depositModeForPlan.
-    if (depositModeForPlan(existing.plan) === 'mandatory' && willEnable === false) {
+    // Office-appointment categories (Insurance Agencies) never take deposits.
+    const nextCategory = update.category ?? existing.category;
+    if (
+      depositModeForPlan(existing.plan) === 'mandatory' &&
+      willEnable === false &&
+      !isOfficeAppointmentCategory(nextCategory)
+    ) {
       throw new ValidationError(
         'Your plan requires deposit collection and it cannot be disabled.',
         { path: ['booking_fee_enabled'] },
@@ -234,7 +241,10 @@ export class OperatorsService {
       personal_phone: op.personal_phone_e164 != null,
       twilio_number: op.twilio_number_e164 != null,
       calendar: op.google_calendar_id != null,
-      booking_fee_decided: op.booking_fee_enabled === false || op.booking_fee_cents != null,
+      booking_fee_decided:
+        isOfficeAppointmentCategory(op.category) ||
+        op.booking_fee_enabled === false ||
+        op.booking_fee_cents != null,
     };
     const completed =
       op.onboarding_completed_at != null ||

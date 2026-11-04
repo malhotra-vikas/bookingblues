@@ -31,6 +31,7 @@ import { MeModule } from './modules/me/me.module';
 import { OperatorsModule } from './modules/operators/operators.module';
 import { PaymentsModule } from './modules/payments/payments.module';
 import { RemindersModule } from './modules/reminders/reminders.module';
+import { UsageModule } from './modules/usage/usage.module';
 import { SalesModule } from './modules/sales/sales.module';
 import { SlackModule } from './modules/slack/slack.module';
 import { SurveysModule } from './modules/surveys/surveys.module';
@@ -80,6 +81,7 @@ import { WebhooksModule } from './modules/webhooks/webhooks.module';
     SalesModule,
     SummariesModule,
     RemindersModule,
+    UsageModule,
     WebhooksModule,
   ],
   controllers: [HealthController],

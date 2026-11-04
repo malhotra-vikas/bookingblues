@@ -13,6 +13,7 @@ import { WebhookIdempotencyService } from '../../common/webhooks/webhook-idempot
 import { ENV_TOKEN } from '../../config/config.module';
 import type { Env } from '../../config/env';
 import { type PlanAndCadence, buildPricePlanMap } from '../billing/plan-pricing';
+import { UsageBillingService } from '../usage/usage-billing.service';
 import { dispatchPlatformEvent } from './stripe-event-handlers';
 
 @Controller('webhooks/stripe')
@@ -24,6 +25,7 @@ export class StripePlatformController {
     private readonly stripe: StripeService,
     private readonly supabase: SupabaseService,
     private readonly idempotency: WebhookIdempotencyService,
+    private readonly usageBilling: UsageBillingService,
     private readonly logger: PinoLogger,
     @Inject(ENV_TOKEN) env: Env,
   ) {
@@ -67,6 +69,7 @@ export class StripePlatformController {
         db: this.supabase.db(),
         logger: this.logger,
         priceMap: this.priceMap,
+        billing: this.usageBilling,
       });
       await this.idempotency.markProcessed(recordResult.id);
     } catch (err) {

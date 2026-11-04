@@ -34,6 +34,7 @@ const baseOperator: Tables<'operators'> = {
   terms_accepted_at: null,
   terms_version: null,
   subscription_status: 'active',
+  overage_unpaid_invoice_id: null,
   trial_ends_at: null,
   current_period_start: null,
   current_period_end: null,

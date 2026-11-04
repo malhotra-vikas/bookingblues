@@ -357,7 +357,7 @@ export class AdminReadService {
   }
 
   async listOperatorConversations(operatorId: string, args: { limit: number; cursor?: string }): Promise<{
-    items: Array<Tables<'conversations'>>;
+    items: Array<Omit<Tables<'conversations'>, 'intake_answers_enc'>>;
     next_cursor: string | null;
   }> {
     let qb = this.supabase
@@ -379,11 +379,12 @@ export class AdminReadService {
     const next_cursor = next && next.last_message_at
       ? encodeCursor(next.last_message_at, next.id)
       : null;
-    return { items, next_cursor };
+    // Insurance intake answers are encrypted at rest; the ciphertext never goes to a browser.
+    return { items: items.map(({ intake_answers_enc: _enc, ...rest }) => rest), next_cursor };
   }
 
   async listOperatorAppointments(operatorId: string, args: { limit: number; cursor?: string }): Promise<{
-    items: Array<Tables<'appointments'>>;
+    items: Array<Omit<Tables<'appointments'>, 'intake_answers_enc'>>;
     next_cursor: string | null;
   }> {
     let qb = this.supabase
@@ -405,7 +406,7 @@ export class AdminReadService {
     const next_cursor = next
       ? encodeCursor(next.scheduled_for_start, next.id)
       : null;
-    return { items, next_cursor };
+    return { items: items.map(({ intake_answers_enc: _enc, ...rest }) => rest), next_cursor };
   }
 
   async listOperatorPayments(operatorId: string, args: { limit: number; cursor?: string }): Promise<{

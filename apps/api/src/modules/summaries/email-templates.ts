@@ -1,5 +1,7 @@
 import type { Tables } from '@bookingblues/db-types';
 
+import { type IntakeAnswers, intakeAnswerRows } from '../appointments/intake-answers';
+
 type OperatorRow = Tables<'operators'>;
 type MessageRow = Tables<'messages'>;
 
@@ -19,6 +21,8 @@ export interface BookingSummaryArgs {
   readonly transcript: ReadonlyArray<Pick<MessageRow, 'role' | 'body' | 'created_at'>>;
   readonly googleEventUrl: string | null;
   readonly platformAppUrl: string;
+  /** Intake answers (insurance category), decrypted for the operator. */
+  readonly intake?: IntakeAnswers | null;
 }
 
 export interface DailySummaryArgs {
@@ -84,6 +88,21 @@ export function renderBookingSummary(args: BookingSummaryArgs): { subject: strin
       ? `${dollars(a.fee_cents)} (${a.fee_status})`
       : 'No fee';
 
+  const intakeRows = args.intake ? intakeAnswerRows(args.intake) : [];
+  const intakeHtml =
+    intakeRows.length > 0
+      ? `
+    <h3 style="margin:0 0 8px 0; font-size:14px;">Intake answers</h3>
+    <table cellpadding="0" cellspacing="0" style="width:100%; border-collapse:collapse; margin-bottom:18px;">
+      ${intakeRows
+        .map(
+          (r) =>
+            `<tr><td style="padding:6px 0; color:#64748b; width:140px; vertical-align:top;">${escapeHtml(r.label)}</td><td style="padding:6px 0;">${escapeHtml(r.value)}</td></tr>`,
+        )
+        .join('')}
+    </table>`
+      : '';
+
   const transcriptRows = args.transcript
     .filter((m) => m.role === 'caller' || m.role === 'bot')
     .map((m) => {
@@ -115,6 +134,7 @@ export function renderBookingSummary(args: BookingSummaryArgs): { subject: strin
       <tr><td style="padding:6px 0; color:#64748b;">Job</td><td style="padding:6px 0;">${escapeHtml(a.job_summary)}</td></tr>
       <tr><td style="padding:6px 0; color:#64748b;">Fee</td><td style="padding:6px 0;">${feeLine}</td></tr>
     </table>
+${intakeHtml}
 
     ${args.googleEventUrl ? `<p><a href="${escapeHtml(args.googleEventUrl)}" style="display:inline-block; padding:8px 14px; background:#0b5cd6; color:#fff; text-decoration:none; border-radius:6px; font-weight:600;">Open in Google Calendar</a></p>` : ''}
 
@@ -136,6 +156,9 @@ export function renderBookingSummary(args: BookingSummaryArgs): { subject: strin
     `Caller: ${callerLine}\n` +
     `Job: ${a.job_summary}\n` +
     `Fee: ${feeLine}\n` +
+    (intakeRows.length > 0
+      ? `\nIntake answers:\n${intakeRows.map((r) => `${r.label}: ${r.value}`).join('\n')}\n`
+      : '') +
     (args.googleEventUrl ? `\nGoogle Calendar: ${args.googleEventUrl}\n` : '') +
     `\nDashboard: ${args.platformAppUrl}/dashboard\n`;
 

@@ -117,6 +117,7 @@ export type Database = {
           fee_status: Database["public"]["Enums"]["appointment_fee_status"];
           google_event_id: string | null;
           id: string;
+          intake_answers_enc: string | null;
           job_summary: string;
           operator_id: string;
           reminder_sent_at: string | null;
@@ -139,6 +140,7 @@ export type Database = {
           fee_status?: Database["public"]["Enums"]["appointment_fee_status"];
           google_event_id?: string | null;
           id?: string;
+          intake_answers_enc?: string | null;
           job_summary: string;
           operator_id: string;
           reminder_sent_at?: string | null;
@@ -161,6 +163,7 @@ export type Database = {
           fee_status?: Database["public"]["Enums"]["appointment_fee_status"];
           google_event_id?: string | null;
           id?: string;
+          intake_answers_enc?: string | null;
           job_summary?: string;
           operator_id?: string;
           reminder_sent_at?: string | null;
@@ -318,6 +321,7 @@ export type Database = {
           completed_at: string | null;
           created_at: string;
           id: string;
+          intake_answers_enc: string | null;
           last_message_at: string | null;
           operator_id: string;
           outcome: Database["public"]["Enums"]["conversation_outcome"] | null;
@@ -331,6 +335,7 @@ export type Database = {
           completed_at?: string | null;
           created_at?: string;
           id?: string;
+          intake_answers_enc?: string | null;
           last_message_at?: string | null;
           operator_id: string;
           outcome?: Database["public"]["Enums"]["conversation_outcome"] | null;
@@ -344,6 +349,7 @@ export type Database = {
           completed_at?: string | null;
           created_at?: string;
           id?: string;
+          intake_answers_enc?: string | null;
           last_message_at?: string | null;
           operator_id?: string;
           outcome?: Database["public"]["Enums"]["conversation_outcome"] | null;
@@ -491,6 +497,7 @@ export type Database = {
           google_calendar_id: string | null;
           id: string;
           onboarding_completed_at: string | null;
+          overage_unpaid_invoice_id: string | null;
           personal_phone_e164: string | null;
           plan: string | null;
           plan_cadence: string | null;
@@ -539,6 +546,7 @@ export type Database = {
           google_calendar_id?: string | null;
           id?: string;
           onboarding_completed_at?: string | null;
+          overage_unpaid_invoice_id?: string | null;
           personal_phone_e164?: string | null;
           plan?: string | null;
           plan_cadence?: string | null;
@@ -587,6 +595,7 @@ export type Database = {
           google_calendar_id?: string | null;
           id?: string;
           onboarding_completed_at?: string | null;
+          overage_unpaid_invoice_id?: string | null;
           personal_phone_e164?: string | null;
           plan?: string | null;
           plan_cadence?: string | null;
@@ -794,6 +803,132 @@ export type Database = {
             foreignKeyName: "twilio_numbers_operator_id_fkey";
             columns: ["operator_id"];
             isOneToOne: true;
+            referencedRelation: "operators";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      usage_alerts: {
+        Row: {
+          created_at: string;
+          id: string;
+          operator_id: string;
+          threshold_pct: number;
+          updated_at: string;
+          window_start: string;
+        };
+        Insert: {
+          created_at?: string;
+          id?: string;
+          operator_id: string;
+          threshold_pct: number;
+          updated_at?: string;
+          window_start: string;
+        };
+        Update: {
+          created_at?: string;
+          id?: string;
+          operator_id?: string;
+          threshold_pct?: number;
+          updated_at?: string;
+          window_start?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "usage_alerts_operator_id_fkey";
+            columns: ["operator_id"];
+            isOneToOne: false;
+            referencedRelation: "operators";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      usage_callers: {
+        Row: {
+          caller_phone_e164: string;
+          created_at: string;
+          id: string;
+          operator_id: string;
+          updated_at: string;
+          window_start: string;
+        };
+        Insert: {
+          caller_phone_e164: string;
+          created_at?: string;
+          id?: string;
+          operator_id: string;
+          updated_at?: string;
+          window_start: string;
+        };
+        Update: {
+          caller_phone_e164?: string;
+          created_at?: string;
+          id?: string;
+          operator_id?: string;
+          updated_at?: string;
+          window_start?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "usage_callers_operator_id_fkey";
+            columns: ["operator_id"];
+            isOneToOne: false;
+            referencedRelation: "operators";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      usage_overage_charges: {
+        Row: {
+          amount_cents: number;
+          batches: number;
+          created_at: string;
+          id: string;
+          operator_id: string;
+          people_included: number;
+          people_used: number;
+          status: string;
+          stripe_invoice_id: string | null;
+          stripe_invoice_item_id: string | null;
+          updated_at: string;
+          window_end: string;
+          window_start: string;
+        };
+        Insert: {
+          amount_cents: number;
+          batches: number;
+          created_at?: string;
+          id?: string;
+          operator_id: string;
+          people_included: number;
+          people_used: number;
+          status: string;
+          stripe_invoice_id?: string | null;
+          stripe_invoice_item_id?: string | null;
+          updated_at?: string;
+          window_end: string;
+          window_start: string;
+        };
+        Update: {
+          amount_cents?: number;
+          batches?: number;
+          created_at?: string;
+          id?: string;
+          operator_id?: string;
+          people_included?: number;
+          people_used?: number;
+          status?: string;
+          stripe_invoice_id?: string | null;
+          stripe_invoice_item_id?: string | null;
+          updated_at?: string;
+          window_end?: string;
+          window_start?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "usage_overage_charges_operator_id_fkey";
+            columns: ["operator_id"];
+            isOneToOne: false;
             referencedRelation: "operators";
             referencedColumns: ["id"];
           },

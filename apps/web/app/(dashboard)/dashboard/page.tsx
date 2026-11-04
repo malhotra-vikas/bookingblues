@@ -15,12 +15,16 @@ interface Metrics {
   subscription_cancel_at: string | null;
   timezone: string;
   month_start_iso: string;
-  usage: {
-    conversations_used: number;
-    conversations_limit: number | null;
-    period_start: string;
-    period_end: string | null;
-  };
+  usage: Usage;
+}
+/** Plan usage: UNIQUE PEOPLE the AI talked to this monthly window (API field names kept). */
+interface Usage {
+  conversations_used: number;
+  conversations_limit: number | null;
+  /** 'block' = Solo stops new people at the limit; 'overage' = Crew/Fleet billed for extras. */
+  policy?: 'block' | 'overage' | null;
+  period_start: string;
+  period_end: string | null;
 }
 interface Conversation {
   id: string;
@@ -42,6 +46,8 @@ interface Appointment {
   fee_status: string;
   fee_cents: number | null;
   collect_payment_on_site: boolean;
+  /** Intake answers (Insurance Agencies), decrypted by the API. Null for trades. */
+  intake_answers?: ReadonlyArray<{ label: string; value: string }> | null;
 }
 
 function formatDollars(cents: number): string {
@@ -350,6 +356,21 @@ function AppointmentsTable({
                   </td>
                   <td className="px-3 py-2 max-w-md">
                     <div className="truncate">{a.job_summary}</div>
+                    {a.intake_answers && a.intake_answers.length > 0 ? (
+                      <details className="mt-1 text-xs">
+                        <summary className="cursor-pointer text-accent dark:text-accent-light">
+                          Intake answers
+                        </summary>
+                        <dl className="mt-1 grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-muted dark:text-slate-400">
+                          {a.intake_answers.map((r) => (
+                            <div key={r.label} className="contents">
+                              <dt className="font-medium text-ink dark:text-slate-200">{r.label}</dt>
+                              <dd className="whitespace-normal break-words">{r.value}</dd>
+                            </div>
+                          ))}
+                        </dl>
+                      </details>
+                    ) : null}
                   </td>
                   <td className="px-3 py-2"><StatusBadge status={a.status} /></td>
                   <td className="px-3 py-2 whitespace-nowrap">
@@ -384,40 +405,59 @@ function AppointmentsTable({
 function UsageMeter({
   usage,
 }: {
-  usage: {
-    conversations_used: number;
-    conversations_limit: number | null;
-    period_start: string;
-    period_end: string | null;
-  };
+  usage: Usage;
 }): JSX.Element {
-  const { conversations_used: used, conversations_limit: limit, period_end } = usage;
+  const { conversations_used: used, conversations_limit: limit, period_end, policy } = usage;
   const pct = limit && limit > 0 ? Math.min(100, Math.round((used / limit) * 100)) : null;
+  const atLimit = limit != null && used >= limit;
   const over = limit != null && used > limit;
+  const warn = pct != null && pct >= 80 && !atLimit;
   const renews = period_end ? new Date(period_end).toLocaleDateString() : null;
+  const blocked = atLimit && policy === 'block';
+
+  let note: string;
+  if (limit == null) note = 'People the AI talked to this period.';
+  else if (blocked)
+    note = 'Limit reached — new callers get a “we’ll call you back” text instead of the AI. Upgrade to keep every caller covered.';
+  else if (over && policy === 'overage')
+    note = `${used - limit} over your plan — extra people are billed on your next invoice.`;
+  else if (atLimit) note = 'You’ve used all the people included in your plan.';
+  else note = `${pct}% of your plan used.`;
+
+  const valueClass = atLimit
+    ? 'text-red-600 dark:text-red-400'
+    : warn
+      ? 'text-amber-600 dark:text-amber-400'
+      : 'text-ink dark:text-slate-100';
+  const barClass = atLimit ? 'bg-red-500' : warn ? 'bg-amber-500' : 'bg-accent';
 
   return (
     <section className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-4">
       <div className="flex items-baseline justify-between">
         <span className="text-sm font-medium text-ink dark:text-slate-100">
-          Conversations this billing period
+          People the AI talked to this month
         </span>
-        <span className={`text-sm font-semibold ${over ? 'text-red-600 dark:text-red-400' : 'text-ink dark:text-slate-100'}`}>
+        <span className={`text-sm font-semibold ${valueClass}`}>
           {used}
           {limit != null ? ` / ${limit}` : ''}
         </span>
       </div>
       {pct != null ? (
         <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
-          <span
-            className={`block h-full rounded-full ${over ? 'bg-red-500' : 'bg-accent'}`}
-            style={{ width: `${pct}%` }}
-          />
+          <span className={`block h-full rounded-full ${barClass}`} style={{ width: `${pct}%` }} />
         </div>
       ) : null}
       <p className="mt-2 text-[11px] text-muted dark:text-slate-400">
-        {limit == null ? 'Usage this period.' : over ? 'Over your plan’s included conversations.' : `${pct}% of your plan used.`}
+        {note}
         {renews ? ` Resets ${renews}.` : ''}
+        {blocked ? (
+          <>
+            {' '}
+            <Link href="/settings" className="underline text-accent">
+              Upgrade
+            </Link>
+          </>
+        ) : null}
       </p>
     </section>
   );

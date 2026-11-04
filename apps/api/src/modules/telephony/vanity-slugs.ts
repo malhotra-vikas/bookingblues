@@ -29,6 +29,7 @@ const CATEGORY_FALLBACKS: Record<string, ReadonlyArray<string>> = {
   electrical: ['ELEC', 'AMP', 'FIX', 'FAST'],
   roofing: ['ROOF', 'TOP', 'FIX', 'FAST'],
   garage_door: ['DOOR', 'GATE', 'FIX', 'FAST'],
+  insurance: ['COVER', 'PLAN', 'CARE', 'HELP'],
 };
 
 const MIN_LEN = 3;

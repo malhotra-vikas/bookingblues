@@ -16,6 +16,14 @@ coverage
 .supabase
 apps/web/.next/
 
+# Security audit reports contain exploit detail — local only, never commit.
+docs/AUDIT-*.md
+
+# E2E run artefacts (logs, captured test emails, run state)
+scripts/e2e/.logs/
+scripts/e2e/.state.json
+scripts/e2e-release/.logs/
+
 # Stray TypeScript output in test/ if anyone accidentally runs `tsc` w/o --noEmit
 apps/api/test/**/*.js
 apps/api/test/**/*.d.ts

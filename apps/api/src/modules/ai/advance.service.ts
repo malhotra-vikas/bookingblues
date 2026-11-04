@@ -16,12 +16,15 @@ import {
   degradedHandoffSms,
 } from '../conversations/templates/sms-templates';
 import { BookingsService } from '../appointments/bookings.service';
+import { IntakeAnswersService } from '../appointments/intake-answers.service';
 import { PaymentsService } from '../payments/payments.service';
 import { EscalationsService } from '../slack/escalations.service';
+import { UsageService } from '../usage/usage.service';
 import {
   fetchCallerJobs,
   formatCallerJobsForPrompt,
 } from '../appointments/caller-history';
+import { isOfficeAppointmentCategory } from './category-profile';
 import { assembleSystemPrompt, wrapCallerMessage } from './prompts';
 import {
   bookAppointment,
@@ -33,6 +36,7 @@ import {
   markSpam,
   proposeSlots,
   requestPaymentLink,
+  saveIntakeAnswers,
 } from './tool-handlers';
 import type { ToolContext, ToolResult } from './tool-handlers';
 import {
@@ -45,7 +49,8 @@ import {
   MarkSpamArgs,
   ProposeSlotsArgs,
   RequestPaymentLinkArgs,
-  TOOL_DEFINITIONS,
+  SaveIntakeAnswersArgs,
+  toolDefinitionsFor,
 } from './tool-definitions';
 
 type ConversationRow = Tables<'conversations'>;
@@ -73,6 +78,8 @@ export class AdvanceService {
     private readonly payments: PaymentsService,
     private readonly escalations: EscalationsService,
     private readonly bookings: BookingsService,
+    private readonly intakeAnswers: IntakeAnswersService,
+    private readonly usage: UsageService,
     private readonly logger: PinoLogger,
   ) {
     this.logger.setContext(AdvanceService.name);
@@ -186,10 +193,12 @@ export class AdvanceService {
     // not in good standing (past_due / canceled / incomplete / none), we do NOT
     // run the AI booking loop and do NOT collect fees. The caller already got the
     // voice greeting + opening SMS; send one polite handoff and stop. Repeat
-    // caller turns aren't re-notified (dedupe on the marker).
+    // caller turns aren't re-notified (dedupe on the marker). An unpaid annual
+    // usage-overage invoice pauses the AI the same way (modules/usage).
     if (
       !operator.subscription_status ||
-      !GOOD_STANDING_STATUSES.has(operator.subscription_status)
+      !GOOD_STANDING_STATUSES.has(operator.subscription_status) ||
+      operator.overage_unpaid_invoice_id
     ) {
       if (!(await this.degradedNoticeAlreadySent(conversation.id))) {
         await this.sendBotSms(
@@ -206,6 +215,31 @@ export class AdvanceService {
           subscriptionStatus: operator.subscription_status,
         },
         'advance degraded: operator not in good standing — skipped AI booking loop',
+      );
+      return;
+    }
+
+    // Plan usage (#usage-metering): count this person against the monthly
+    // window. On Solo at its limit a NEW person doesn't get the AI — they get
+    // the same polite "we'll follow up" text instead (deduped on its marker).
+    const admission = await this.usage.admitCaller(operator, callerPhoneE164);
+    if (!admission.allowed) {
+      if (!(await this.degradedNoticeAlreadySent(conversation.id))) {
+        await this.sendBotSms(
+          operator.twilio_number_e164,
+          callerPhoneE164,
+          conversation.id,
+          degradedHandoffSms(operator.business_name),
+        );
+      }
+      this.logger.warn(
+        {
+          operatorId: operator.id,
+          conversationId: conversation.id,
+          used: admission.used,
+          limit: admission.limit,
+        },
+        'advance skipped: plan usage limit reached for a new caller',
       );
       return;
     }
@@ -268,7 +302,7 @@ export class AdvanceService {
       const completion = await this.openai.client_().chat.completions.create({
         model: BOOKING_MODEL,
         messages,
-        tools: [...TOOL_DEFINITIONS] as OpenAI.Chat.Completions.ChatCompletionTool[],
+        tools: [...toolDefinitionsFor(operator.category)] as OpenAI.Chat.Completions.ChatCompletionTool[],
         tool_choice: 'auto',
       });
       const choice = completion.choices[0];
@@ -470,6 +504,7 @@ export class AdvanceService {
       payments: this.payments,
       escalations: this.escalations,
       bookings: this.bookings,
+      intakeAnswers: this.intakeAnswers,
       logger: this.logger,
     };
   }
@@ -503,12 +538,20 @@ export class AdvanceService {
       nowIso: new Date().toISOString(),
       callerHistory,
     });
+    // 'system' rows are texts the caller DID receive but the model didn't write
+    // (booking confirmation, reminders, human-agent replies). Office appointments
+    // (insurance) complete in one step with that confirmation, so the model must see
+    // it — otherwise a follow-up text looks like the booking never happened and the
+    // model offers slots again (found in E2E 2026-11-04). Trades unchanged.
+    const historyRoles = isOfficeAppointmentCategory(operator.category)
+      ? ['caller', 'bot', 'system']
+      : ['caller', 'bot'];
     const { data: history, error } = await this.supabase
       .db()
       .from('messages')
       .select('role, body, created_at')
       .eq('conversation_id', conversationId)
-      .in('role', ['caller', 'bot'])
+      .in('role', historyRoles)
       .order('created_at', { ascending: true });
     if (error) throw error;
 
@@ -544,8 +587,20 @@ export class AdvanceService {
     // logs 2026-05-13 book_appointment caller_name min(1)). Now we feed the
     // error back to the model as a tool response so it can correct itself
     // (e.g. re-ask the caller for their name) within the same advance turn.
+    // Office-appointment categories only get their own tool list; refuse a
+    // hallucinated call to anything else (e.g. collect_service_address).
+    if (isOfficeAppointmentCategory(ctx.operator.category)) {
+      const allowed = toolDefinitionsFor(ctx.operator.category).some(
+        (t) => t.type === 'function' && t.function.name === name,
+      );
+      if (!allowed) {
+        return { content: { error: 'unknown_tool', message: `Tool ${name} is not available here.` } };
+      }
+    }
     try {
       switch (name) {
+        case 'save_intake_answers':
+          return await saveIntakeAnswers(SaveIntakeAnswersArgs.parse(parsed), ctx);
         case 'check_service_area':
           return checkServiceArea(CheckServiceAreaArgs.parse(parsed), ctx);
         case 'check_availability':

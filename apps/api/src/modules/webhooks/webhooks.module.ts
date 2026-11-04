@@ -8,6 +8,7 @@ import { AiModule } from '../ai/ai.module';
 import { AppointmentsModule } from '../appointments/appointments.module';
 import { ConversationsModule } from '../conversations/conversations.module';
 import { SlackModule } from '../slack/slack.module';
+import { UsageModule } from '../usage/usage.module';
 
 import { StripeConnectController } from './stripe-connect.controller';
 import { StripePlatformController } from './stripe-platform.controller';
@@ -25,6 +26,7 @@ import { TwilioVoiceController } from './twilio-voice.controller';
     AiModule,
     AppointmentsModule,
     SlackModule,
+    UsageModule,
   ],
   controllers: [
     StripePlatformController,

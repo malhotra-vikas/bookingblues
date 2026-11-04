@@ -7,10 +7,26 @@ import type { AuthenticatedUser } from '../../common/auth/jwt-verifier.service';
 import { NotFoundError } from '../../common/errors/app-error';
 import { SupabaseService } from '../../common/supabase/supabase.service';
 import { BookingsService } from '../appointments/bookings.service';
+import { type IntakeAnswers, intakeAnswerRows } from '../appointments/intake-answers';
+import { IntakeAnswersService } from '../appointments/intake-answers.service';
 import type { DashboardMetrics, StatsPeriod } from './dashboard.service';
 import { DashboardService, computeStatsRange } from './dashboard.service';
 
 const PAGE_LIMIT = 50;
+
+type ConversationOut = Omit<Tables<'conversations'>, 'intake_answers_enc'>;
+type AppointmentOut = Omit<Tables<'appointments'>, 'intake_answers_enc'> & {
+  /** Decrypted intake answers (insurance category) as label/value rows, or null. */
+  intake_answers: ReadonlyArray<{ label: string; value: string }> | null;
+};
+
+/** Never ship ciphertext to the browser. */
+function withoutIntakeCiphertext<T extends { intake_answers_enc?: string | null }>(
+  row: T,
+): Omit<T, 'intake_answers_enc'> {
+  const { intake_answers_enc: _enc, ...rest } = row;
+  return rest;
+}
 
 @Controller()
 @UseGuards(AuthGuard)
@@ -19,6 +35,7 @@ export class DashboardController {
     private readonly service: DashboardService,
     private readonly supabase: SupabaseService,
     private readonly bookings: BookingsService,
+    private readonly intakeAnswers: IntakeAnswersService,
   ) {}
 
   @Get('dashboard/metrics')
@@ -37,7 +54,7 @@ export class DashboardController {
   async listConversations(
     @CurrentUser() user: AuthenticatedUser,
     @Query('status') status?: string,
-  ): Promise<{ data: Tables<'conversations'>[] }> {
+  ): Promise<{ data: ConversationOut[] }> {
     const operatorId = await this.requireOperatorId(user.userId);
     let q = this.supabase
       .db()
@@ -49,7 +66,7 @@ export class DashboardController {
     if (status) q = q.eq('status', status);
     const { data, error } = await q;
     if (error) throw error;
-    return { data: data ?? [] };
+    return { data: (data ?? []).map(withoutIntakeCiphertext) };
   }
 
   @Get('conversations/:id/messages')
@@ -57,7 +74,7 @@ export class DashboardController {
     @CurrentUser() user: AuthenticatedUser,
     @Param('id') conversationId: string,
   ): Promise<{
-    conversation: Tables<'conversations'>;
+    conversation: ConversationOut;
     messages: Pick<Tables<'messages'>, 'id' | 'role' | 'body' | 'created_at'>[];
   }> {
     const operatorId = await this.requireOperatorId(user.userId);
@@ -78,7 +95,7 @@ export class DashboardController {
       .eq('conversation_id', conversationId)
       .order('created_at', { ascending: true });
     if (msgErr) throw msgErr;
-    return { conversation: convo, messages: messages ?? [] };
+    return { conversation: withoutIntakeCiphertext(convo), messages: messages ?? [] };
   }
 
   @Post('conversations/:id/resolve')
@@ -135,7 +152,7 @@ export class DashboardController {
     @Query('status') status?: string,
     @Query('from') from?: string,
     @Query('to') to?: string,
-  ): Promise<{ data: Tables<'appointments'>[] }> {
+  ): Promise<{ data: AppointmentOut[] }> {
     const operatorId = await this.requireOperatorId(user.userId);
     let q = this.supabase
       .db()
@@ -149,7 +166,17 @@ export class DashboardController {
     if (to) q = q.lte('scheduled_for_start', to);
     const { data, error } = await q;
     if (error) throw error;
-    return { data: data ?? [] };
+    return {
+      data: (data ?? []).map((row) => {
+        const answers: IntakeAnswers | null = row.intake_answers_enc
+          ? this.intakeAnswers.decrypt(row.intake_answers_enc, { appointmentId: row.id })
+          : null;
+        return {
+          ...withoutIntakeCiphertext(row),
+          intake_answers: answers ? intakeAnswerRows(answers) : null,
+        };
+      }),
+    };
   }
 
   private async requireOperatorId(userId: string): Promise<string> {

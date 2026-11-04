@@ -103,6 +103,16 @@ export function degradedHandoffSms(businessName: string): string {
 }
 
 /**
+ * Plan usage limit reached (Solo) for a NEW caller: replaces the opening SMS
+ * after the voice greeting. First message in the conversation, so it carries
+ * the opt-out disclosure; contains the degraded marker so the advance loop
+ * doesn't send a second handoff if they reply.
+ */
+export function usageLimitOpeningSms(businessName: string): string {
+  return `${degradedHandoffSms(businessName)} ${STOP_DISCLOSURE}`;
+}
+
+/**
  * Stable substring in the AI-unavailable fallback, used to dedupe re-sends so a
  * caller texting repeatedly during an OpenAI outage gets ONE fallback, not many.
  * Keep in sync with `aiUnavailableFallbackSms`.

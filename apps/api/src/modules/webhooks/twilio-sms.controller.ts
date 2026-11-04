@@ -20,6 +20,7 @@ import { WebhookIdempotencyService } from '../../common/webhooks/webhook-idempot
 import { ENV_TOKEN } from '../../config/config.module';
 import type { Env } from '../../config/env';
 import { AdvanceSchedulerService } from '../ai/advance-scheduler.service';
+import { isOfficeAppointmentCategory } from '../ai/category-profile';
 import { AdvanceService } from '../ai/advance.service';
 import { ConversationsService } from '../conversations/conversations.service';
 import { detectEmergencyKeyword } from '../conversations/emergency-detection';
@@ -158,8 +159,13 @@ export class TwilioSmsController {
           //      keyword path already triggered (no point paying twice).
           // Both paths fire-and-forget — the AI advance loop continues in
           // parallel, so neither path delays the caller's reply. V1 has no
-          // in-conversation dedup; rare in practice.
-          if (operatorRow.personal_phone_e164 && operatorRow.twilio_number_e164) {
+          // in-conversation dedup; rare in practice. Office-appointment
+          // categories (Insurance Agencies) have no emergency concept.
+          if (
+            operatorRow.personal_phone_e164 &&
+            operatorRow.twilio_number_e164 &&
+            !isOfficeAppointmentCategory(operatorRow.category)
+          ) {
             const operatorPhone = operatorRow.personal_phone_e164;
             const twilioFrom = operatorRow.twilio_number_e164;
             const callerLast4 = form.From.slice(-4);

@@ -1,6 +1,10 @@
 import type OpenAI from 'openai';
 import { z } from 'zod';
 
+import { collectsIntakeAnswers, isOfficeAppointmentCategory } from './category-profile';
+
+export { SaveIntakeAnswersArgs } from '../appointments/intake-answers';
+
 /**
  * Operator-local wall-clock datetime, `YYYY-MM-DDTHH:MM[:SS]`, no zone. The
  * server converts to UTC in the operator's timezone (calendar/zoned-time.ts)
@@ -216,3 +220,69 @@ export const TOOL_DEFINITIONS: ReadonlyArray<OpenAI.Chat.Completions.ChatComplet
     },
   },
 ];
+
+const SAVE_INTAKE_ANSWERS_TOOL: OpenAI.Chat.Completions.ChatCompletionTool = {
+  type: 'function',
+  function: {
+    name: 'save_intake_answers',
+    description:
+      "Save the caller's intake answers so they're attached to their appointment for the agent. Call once you have them (and again if the caller corrects something), BEFORE booking. Never include a Medicare number (MBI), SSN, or payment details.",
+    parameters: {
+      type: 'object',
+      properties: {
+        first_name: { type: 'string' },
+        last_name: { type: 'string' },
+        date_of_birth: { type: 'string', description: 'YYYY-MM-DD' },
+        doctor: {
+          type: 'string',
+          description: 'Current doctor or doctor\'s office. "None" if they have none; "Declined" if they prefer not to say.',
+        },
+        prescriptions: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Each prescription as the caller said it (name, and strength if given). Empty if none or declined.',
+        },
+        prescriptions_declined: {
+          type: 'boolean',
+          description: 'True if the caller preferred not to share their prescriptions.',
+        },
+      },
+      required: ['first_name', 'last_name', 'date_of_birth', 'doctor', 'prescriptions'],
+      additionalProperties: false,
+    },
+  },
+};
+
+/** Field-visit-only tools that office-appointment categories never get. */
+const FIELD_ONLY_TOOLS: ReadonlySet<string> = new Set(['check_service_area', 'collect_service_address']);
+
+/**
+ * The tool list for an operator's category. Trades get TOOL_DEFINITIONS
+ * unchanged. Office-appointment categories (Insurance Agencies) drop the
+ * address/service-area tools and the emergency fields on book_appointment, and
+ * intake categories add `save_intake_answers`.
+ */
+export function toolDefinitionsFor(
+  category: string | null | undefined,
+): ReadonlyArray<OpenAI.Chat.Completions.ChatCompletionTool> {
+  if (!isOfficeAppointmentCategory(category)) return TOOL_DEFINITIONS;
+  const tools = TOOL_DEFINITIONS.filter(
+    (t) => t.type !== 'function' || !FIELD_ONLY_TOOLS.has(t.function.name),
+  ).map((t) => {
+    if (t.type !== 'function' || t.function.name !== 'book_appointment') return t;
+    const params = t.function.parameters as { properties: Record<string, unknown> };
+    const properties = Object.fromEntries(
+      Object.entries(params.properties).filter(([k]) => k !== 'urgency' && k !== 'immediate_danger'),
+    );
+    return {
+      ...t,
+      function: {
+        ...t.function,
+        description:
+          "Book the appointment for an agreed slot. `start`/`end` are LOCAL wall-clock time in the operator's timezone, `YYYY-MM-DDTHH:MM`, no offset, within business hours. Confirms immediately, adds it to the operator's calendar, texts the caller a confirmation and ends the conversation. job_summary must be short and generic (topic only). On error \"slot_unavailable\", propose other open slots instead of retrying.",
+        parameters: { ...params, properties },
+      },
+    };
+  });
+  return collectsIntakeAnswers(category) ? [SAVE_INTAKE_ANSWERS_TOOL, ...tools] : tools;
+}

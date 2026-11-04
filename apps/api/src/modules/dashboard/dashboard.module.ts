@@ -2,12 +2,13 @@ import { Module } from '@nestjs/common';
 
 import { SupabaseModule } from '../../common/supabase/supabase.module';
 import { AppointmentsModule } from '../appointments/appointments.module';
+import { UsageModule } from '../usage/usage.module';
 
 import { DashboardController } from './dashboard.controller';
 import { DashboardService } from './dashboard.service';
 
 @Module({
-  imports: [SupabaseModule, AppointmentsModule],
+  imports: [SupabaseModule, AppointmentsModule, UsageModule],
   controllers: [DashboardController],
   providers: [DashboardService],
   exports: [DashboardService],

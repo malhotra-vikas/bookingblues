@@ -146,6 +146,7 @@ bookingblues/
 │   │   │   │   ├── appointments/
 │   │   │   │   ├── payments/        # Stripe Connect, booking fees
 │   │   │   │   ├── operators/       # Operator profile, category, settings
+│   │   │   │   ├── usage/           # plan usage metering, limits, overage billing, usage emails
 │   │   │   │   └── webhooks/        # Twilio, Stripe, Google webhook entrypoints
 │   │   │   ├── common/              # guards, interceptors, filters, decorators
 │   │   │   ├── config/              # env loading, validation
@@ -253,6 +254,9 @@ All variables loaded via `apps/api/src/config/env.ts` using `zod` validation. Th
 | `NEXT_PUBLIC_SENTRY_DSN_WEB` | web | Sentry DSN for the Web browser bundle (must be public to reach the client). No-op when unset. |
 | `SENTRY_ORG` / `SENTRY_PROJECT` / `SENTRY_AUTH_TOKEN` | web (build) | Optional. Only for source-map upload during the web build; the Sentry build plugin no-ops without them. |
 | `LOG_LEVEL` | api | `info` in prod, `debug` in dev |
+| `ENABLED_CATEGORIES` | api | Comma-separated category slugs operators may pick. Unset = the 5 trades (`DEFAULT_ENABLED_CATEGORIES`). `insurance` is opt-in: add it here AND in `NEXT_PUBLIC_ENABLED_CATEGORIES`. |
+| `NEXT_PUBLIC_ENABLED_CATEGORIES` | web | Same list for the onboarding wizard's category picker. Keep in sync with the API. |
+| `CRON_SHARED_SECRET` | api | `X-Cron-Secret` header value for `/v1/internal/*` cron endpoints (incl. the daily `usage/close-annual-windows`). Unset = those endpoints refuse every call. |
 | `SLACK_BOT_TOKEN` | api | `xoxb-…` for the single BookingBlues-team workspace (ADR 0010). Must be redacted in logs. |
 | `SLACK_DEFAULT_CHANNEL_ID` | api | `#hitl` — channel where escalation alarms + control buttons post. |
 | `SLACK_CONVOS_CHANNEL_ID` | api | `#convos` — channel where every conversation gets a monitoring thread (ADR 0010 amendment, Slice 7.5 follow-up). |
@@ -272,7 +276,7 @@ All tables live in the `public` schema. Every table has `id uuid primary key def
 
 ```
 operators
-  id, user_id (FK auth.users), business_name, category (enum),
+  id, user_id (FK auth.users), business_name, category (text FK → categories.slug),
   trade_metadata jsonb,            -- e.g. license number, service area zip codes
   personal_phone_e164, twilio_number_e164 (nullable until provisioned),
   twilio_number_sid (nullable),
@@ -320,6 +324,7 @@ conversations
   last_message_at, started_at, completed_at,
   outcome ('booked','no_show_intent','out_of_scope','spam','rejected','timeout'),
   summary text                       -- written at end-of-conversation
+  intake_answers_enc text (nullable) -- insurance intake answers, AES-256-GCM (EncryptionService)
   unique (operator_id, caller_phone_e164, started_at)
 
 messages
@@ -339,6 +344,8 @@ appointments
   fee_cents (nullable), fee_status ('none','pending','paid','refunded','expired'),
   fee_payment_intent_id (nullable),
   fee_checkout_session_id (nullable)
+  intake_answers_enc text (nullable) -- copied from the conversation at booking; decrypted
+                                     -- server-side for the operator, never sent as ciphertext
 
 payments
   id, operator_id, appointment_id, type ('booking_fee'),
@@ -362,7 +369,22 @@ webhook_events
 audit_log
   id, actor_user_id (nullable), operator_id (nullable),
   action, resource_type, resource_id, metadata jsonb, ip_address, user_agent
+
+usage_callers                        -- plan usage: one row per unique person per monthly window
+  operator_id, window_start, caller_phone_e164
+  unique (operator_id, window_start, caller_phone_e164)
+usage_alerts                         -- 80% / 100% emails, one per threshold per window
+  operator_id, window_start, threshold_pct (80|100), unique (operator_id, window_start, threshold_pct)
+usage_overage_charges                -- one claim per billed window (idempotency for overage billing)
+  operator_id, window_start, window_end, people_used, people_included, batches, amount_cents,
+  status ('none','pending','invoiced','paid','failed'), stripe_invoice_id, stripe_invoice_item_id
+  unique (operator_id, window_start)
+operators.overage_unpaid_invoice_id  -- set while a standalone (annual-plan) overage invoice is unpaid → AI paused
 ```
+
+Usage windows are monthly, anchored on `operators.current_period_start` (`modules/usage/usage-window.ts`).
+Limits (`billing/plan-limits.ts`): Solo 80 people (blocks new callers at the limit), Crew 500 / Fleet 1500
+(overage $100 per started batch of 50). New usage tables are read-own-only under RLS; writes via service role.
 
 ### RLS policies (MVP set)
 
@@ -472,7 +494,7 @@ The Web app uses the anon key and reads via RLS. The API uses the service role a
 - Standard Stripe Subscriptions on the platform account.
 - Checkout Session at signup with 7-day trial (see 9.1).
 - Customer Portal link in dashboard for cancel/upgrade/payment-method updates.
-- Webhook events handled: `checkout.session.completed`, `customer.subscription.created`, `customer.subscription.updated`, `customer.subscription.trial_will_end`, `customer.subscription.deleted`, `invoice.payment_failed`, `invoice.payment_succeeded`.
+- Webhook events handled: `checkout.session.completed`, `customer.subscription.created`, `customer.subscription.updated`, `customer.subscription.trial_will_end`, `customer.subscription.deleted`, `invoice.created`, `invoice.payment_failed`, `invoice.payment_succeeded`. **`invoice.created` must be enabled on the live platform endpoint** — it's how monthly-plan overage gets added to the draft renewal invoice (`usage/usage-billing.service.ts`); annual plans are billed per closed month by the daily cron `POST /v1/internal/usage/close-annual-windows`.
 - On `payment_failed`, set `subscription_status='past_due'`. Pause AI conversation handling (calls still get the greeting and a polite "we will follow up" SMS, but no booking, no fee collection).
 
 **Flow B: Per-appointment booking fee** (Caller pays Operator directly, BookingBlues takes a cut).
@@ -588,6 +610,11 @@ GET    /webhooks/google/oauth/callback   # OAuth redirect target
 POST   /webhooks/slack/events            # Events API (HMAC X-Slack-Signature)
 POST   /webhooks/slack/commands          # /bb slash commands
 POST   /webhooks/slack/interactivity     # block actions (buttons)
+```
+
+### Internal cron (header `X-Cron-Secret: $CRON_SHARED_SECRET`, no JWT)
+```
+POST   /v1/internal/usage/close-annual-windows   # daily: bill annual-plan overage per closed month
 ```
 
 ### Admin (Slice 15 — staff only, `app_metadata.role='admin'`)
@@ -752,7 +779,7 @@ Rollbacks: keep last 3 successful deploys pinned. Migrations forward-only, so da
 
 In:
 - Operator signup, subscription, login.
-- Onboarding wizard (5 categories at launch: Plumbing, HVAC, Electrical, Roofing, Garage Door).
+- Onboarding wizard (5 categories at launch: Plumbing, HVAC, Electrical, Roofing, Garage Door). A 6th, **Insurance Agencies** (`insurance`), is opt-in via `ENABLED_CATEGORIES`: office appointments, no deposit/address/emergency steps, encrypted intake answers (name, DOB, doctor, prescriptions — never MBI/SSN), no Slack `#convos` thread. Behaviour switches live in `ai/category-profile.ts`.
 - Twilio number provisioning, voice greeting, SMS conversation.
 - AI bot booking against Google Calendar.
 - Optional booking fee via Stripe Connect Express.

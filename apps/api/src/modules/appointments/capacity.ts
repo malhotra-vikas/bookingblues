@@ -14,6 +14,14 @@
 
 export const TRAVEL_BUFFER_MIN = 30;
 
+/**
+ * Travel buffer for an operator's category: trades drive between jobs; office
+ * appointments (Insurance Agencies, see ai/category-profile.ts) don't.
+ */
+export function travelBufferMinFor(officeAppointment: boolean): number {
+  return officeAppointment ? 0 : TRAVEL_BUFFER_MIN;
+}
+
 export interface Interval {
   /** epoch ms */
   start: number;

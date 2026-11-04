@@ -60,13 +60,13 @@ export default async function TermsPage(): Promise<JSX.Element> {
             <strong>Crew — {usd(prices.crew.monthlyUsd)}/month:</strong> Up to 500 AI conversations/mo. Deposit collection
             on by default, disableable in onboarding. Subscriber sets deposit amount and receives
             100% of it; {BRAND.name} adds 15% on top charged to the End User via Stripe Connect
-            application fee. Overages billed at $15 per 50 additional conversations.
+            application fee. Overages billed at $100 per 50 additional conversations.
           </li>
           <li>
             <strong>Fleet — {usd(prices.fleet.monthlyUsd)}/month:</strong> Up to 1,500 AI conversations/mo. Deposit
             collection is mandatory and cannot be disabled. Subscriber sets deposit amount and
             receives 100% of it; {BRAND.name} adds 20% on top charged to the End User via Stripe
-            Connect application fee. Overages billed at $15 per 50 additional conversations.
+            Connect application fee. Overages billed at $100 per 50 additional conversations.
           </li>
         </ul>
         <h3>3b. Free Trial</h3>
@@ -125,10 +125,21 @@ export default async function TermsPage(): Promise<JSX.Element> {
         </p>
         <h3>3e. Overages</h3>
         <p>
+          A &ldquo;conversation&rdquo; is one unique person (phone number) the AI exchanges
+          messages with during a monthly usage period; further messages from the same person in
+          that period count once. Usage periods start on the Subscriber&apos;s billing date and
+          reset monthly, including on annual plans.
+        </p>
+        <p>
           On Crew and Fleet plans, conversations exceeding the monthly limit are billed in
-          batches of 50 conversations at $15 per batch. Overage charges are added to the
-          following month&apos;s invoice. {BRAND.name} will notify Subscribers by email when they
-          reach 80% of their monthly conversation limit.
+          batches of 50 conversations at $100 per batch (any part of a batch is billed as a full
+          batch). On monthly plans, overage charges are added to the following month&apos;s
+          invoice; on annual plans they are charged at the end of each monthly usage period.
+          On the Solo plan there are no overages: once the limit is reached, new people are not
+          engaged by the AI until the Subscriber upgrades or the usage period resets.{' '}
+          {BRAND.name} will notify Subscribers by email when they reach 80% and 100% of their
+          monthly conversation limit. If an overage or subscription payment fails, AI booking
+          is paused until the payment succeeds.
         </p>
         <h3>3f. Price Changes</h3>
         <p>

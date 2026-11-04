@@ -8,6 +8,7 @@ import { CalendarModule } from '../calendar/calendar.module';
 import { ConversationsModule } from '../conversations/conversations.module';
 import { PaymentsModule } from '../payments/payments.module';
 import { SlackModule } from '../slack/slack.module';
+import { UsageModule } from '../usage/usage.module';
 
 import { AdvanceSchedulerService } from './advance-scheduler.service';
 import { AdvanceService } from './advance.service';
@@ -22,6 +23,7 @@ import { AdvanceService } from './advance.service';
     PaymentsModule,
     SlackModule,
     AppointmentsModule,
+    UsageModule,
   ],
   providers: [AdvanceService, AdvanceSchedulerService],
   exports: [AdvanceService, AdvanceSchedulerService],

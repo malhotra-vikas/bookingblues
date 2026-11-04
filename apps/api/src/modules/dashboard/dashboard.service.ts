@@ -2,7 +2,8 @@ import { Injectable } from '@nestjs/common';
 
 import { NotFoundError } from '../../common/errors/app-error';
 import { SupabaseService } from '../../common/supabase/supabase.service';
-import { conversationLimitForPlan } from '../billing/plan-limits';
+import { type OverLimitPolicy } from '../billing/plan-limits';
+import { UsageService } from '../usage/usage.service';
 
 export interface DashboardMetrics {
   readonly month_start_iso: string;
@@ -10,13 +11,16 @@ export interface DashboardMetrics {
   readonly range_start_iso: string;
   readonly range_end_iso: string | null;
   /**
-   * Conversation usage for the operator's current billing cycle (#usage). For
-   * trials the window spans the trial; for paid it's the Stripe billing period.
-   * Falls back to the calendar month if the period isn't synced yet.
+   * Plan usage for the current monthly window (#usage-metering): UNIQUE PEOPLE
+   * the AI talked to (field names kept for API compatibility). The window is
+   * anchored on the billing period start — see modules/usage/usage-window.ts.
+   * `policy`: 'block' (Solo stops new people at the limit) | 'overage'
+   * (Crew/Fleet billed per batch of extra people) | null (no plan).
    */
   readonly usage: {
     readonly conversations_used: number;
     readonly conversations_limit: number | null;
+    readonly policy: OverLimitPolicy | null;
     readonly period_start: string;
     readonly period_end: string | null;
   };
@@ -43,7 +47,10 @@ export interface DashboardMetrics {
 
 @Injectable()
 export class DashboardService {
-  constructor(private readonly supabase: SupabaseService) {}
+  constructor(
+    private readonly supabase: SupabaseService,
+    private readonly usageService: UsageService,
+  ) {}
 
   async metrics(
     userId: string,
@@ -53,7 +60,7 @@ export class DashboardService {
       .db()
       .from('operators')
       .select(
-        'id, subscription_status, trial_ends_at, subscription_cancel_at, plan, current_period_start, current_period_end, timezone',
+        'id, user_id, business_name, subscription_status, trial_ends_at, subscription_cancel_at, plan, current_period_start, current_period_end, timezone',
       )
       .eq('user_id', userId)
       .maybeSingle();
@@ -66,17 +73,7 @@ export class DashboardService {
     const statsStartIso = range?.startIso ?? monthStartIso;
     const statsEndIso = range?.endIso;
 
-    // Usage window: the operator's current billing cycle (covers trials too).
-    // Fall back to the calendar month if the subscription period isn't synced.
-    const periodStartIso = operator.current_period_start ?? monthStartIso;
-    const periodEndIso = operator.current_period_end ?? null;
-    const conversationsUsed = await this.count(
-      'conversations',
-      operator.id,
-      periodStartIso,
-      undefined,
-      periodEndIso ?? undefined,
-    );
+    const usage = await this.usageService.summary(operator);
 
     const [convoTotal, convoOutOfScope, convoEscalated, convoActive] = await Promise.all([
       this.count('conversations', operator.id, statsStartIso, undefined, statsEndIso),
@@ -121,10 +118,11 @@ export class DashboardService {
       range_start_iso: statsStartIso,
       range_end_iso: statsEndIso ?? null,
       usage: {
-        conversations_used: conversationsUsed,
-        conversations_limit: conversationLimitForPlan(operator.plan),
-        period_start: periodStartIso,
-        period_end: periodEndIso,
+        conversations_used: usage.used,
+        conversations_limit: usage.limit,
+        policy: usage.policy,
+        period_start: usage.window.start.toISOString(),
+        period_end: usage.window.end.toISOString(),
       },
       conversations: {
         total: convoTotal,

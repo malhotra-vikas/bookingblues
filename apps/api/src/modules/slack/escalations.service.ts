@@ -6,6 +6,7 @@ import { AuditLogService } from '../../common/audit/audit-log.service';
 import { AppError, NotFoundError } from '../../common/errors/app-error';
 import { SupabaseService } from '../../common/supabase/supabase.service';
 import { TwilioService } from '../../common/twilio/twilio.service';
+import { collectsIntakeAnswers } from '../ai/category-profile';
 import { fetchCallerJobs, formatCallerJobsForSlack } from '../appointments/caller-history';
 import { ConversationsService } from '../conversations/conversations.service';
 import { type FeeCharge, paymentLinkSms } from '../conversations/templates/sms-templates';
@@ -187,6 +188,12 @@ export class EscalationsService {
         channelId: cv.slack_channel_id,
         threadTs: cv.slack_thread_ts,
       };
+    }
+    // Insurance Agencies: no #convos monitoring thread — callers text their date
+    // of birth and prescriptions, which must not be mirrored into Slack.
+    // Escalations to #hitl still work (product decision 2026-11-03).
+    if (collectsIntakeAnswers(args.operator.category)) {
+      return { channelId: null, threadTs: null };
     }
     const convosChannel = this.slackApi.convosChannelId();
     if (!this.slackApi.isConfigured() || !convosChannel) {

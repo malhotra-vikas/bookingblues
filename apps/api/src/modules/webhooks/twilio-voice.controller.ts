@@ -21,7 +21,8 @@ import {
   VOICE_CONSENT_TEXT,
   VOICE_CONSENT_VERSION,
 } from '../consent/sms-consent.dto';
-import { openingSms } from '../conversations/templates/sms-templates';
+import { openingSms, usageLimitOpeningSms } from '../conversations/templates/sms-templates';
+import { UsageService } from '../usage/usage.service';
 import { WebhookIdempotencyService } from '../../common/webhooks/webhook-idempotency.service';
 import { ENV_TOKEN } from '../../config/config.module';
 import type { Env } from '../../config/env';
@@ -55,6 +56,7 @@ export class TwilioVoiceController {
     private readonly twilio: TwilioService,
     private readonly conversations: ConversationsService,
     private readonly idempotency: WebhookIdempotencyService,
+    private readonly usage: UsageService,
     private readonly logger: PinoLogger,
     @Inject(ENV_TOKEN) private readonly env: Env,
   ) {
@@ -266,7 +268,12 @@ export class TwilioVoiceController {
     // enforces STOP/UNSTOP automatically once a recipient sends those words;
     // we just need the human-readable disclosure on the first turn.
     // PROGRESS.md Slice 16(15). Template carries the disclosure.
-    const opening = openingSms(operator.business_name);
+    // Plan usage (#usage-metering): a NEW caller on a Solo plan that's at its
+    // limit gets a polite "we'll follow up" text instead of the AI invite.
+    const admitted = await this.usage.wouldAdmit(operator.id, callerPhone);
+    const opening = admitted
+      ? openingSms(operator.business_name)
+      : usageLimitOpeningSms(operator.business_name);
 
     const send = await this.twilio.sendSms({
       from: operator.twilio_number_e164,

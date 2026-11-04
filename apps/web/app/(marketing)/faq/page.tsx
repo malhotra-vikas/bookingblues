@@ -48,11 +48,11 @@ export default async function FaqPage(): Promise<JSX.Element> {
     },
     {
       q: 'How do plans and pricing work?',
-      a: `Solo ${usd(prices.solo.monthlyUsd)}/mo includes 80 AI conversations/mo; deposit collection is off by default and you can enable it anytime (KeeprSteady adds 10% on top, charged to the customer). Crew ${usd(prices.crew.monthlyUsd)}/mo includes 500 conversations; deposit is on by default and can be disabled in onboarding (we add 15% on top); overages are billed at $15 per 50 additional conversations. Fleet ${usd(prices.fleet.monthlyUsd)}/mo includes 1,500 conversations; deposit collection is mandatory at this tier (we add 20% on top); overages same as Crew. Annual billing saves you 2 months on every plan.`,
+      a: `Solo ${usd(prices.solo.monthlyUsd)}/mo includes 80 AI conversations/mo; deposit collection is off by default and you can enable it anytime (KeeprSteady adds 10% on top, charged to the customer). Crew ${usd(prices.crew.monthlyUsd)}/mo includes 500 conversations; deposit is on by default and can be disabled in onboarding (we add 15% on top); overages are billed at $100 per 50 additional conversations. Fleet ${usd(prices.fleet.monthlyUsd)}/mo includes 1,500 conversations; deposit collection is mandatory at this tier (we add 20% on top); overages same as Crew. Annual billing saves you 2 months on every plan.`,
     },
     {
       q: 'How do overages work on Crew and Fleet?',
-      a: 'Once you exceed your monthly conversation limit, overages are billed in batches of 50 conversations at $15 per batch. You will get an email alert at 80% of your limit. Overages appear on your next monthly invoice.',
+      a: 'A conversation is one person the AI talks with in a month — the same caller texting again that month counts once. Once you exceed your monthly limit, overages are billed in batches of 50 conversations at $100 per batch. You get an email alert at 80% and 100% of your limit. Overages appear on your next monthly invoice (annual plans are billed for overage at the end of each month). Solo has no overages: at the limit, new callers get a text saying you’ll call them back until you upgrade or the month resets.',
     },
     {
       q: 'Is the booking deposit required?',

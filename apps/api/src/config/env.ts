@@ -144,9 +144,9 @@ const baseSchema = z.object({
   SLACK_SIGNING_SECRET: z.string().optional(),
 
   // Comma-separated category slugs allowed to be picked at signup / shown in
-  // UI. Unset = all 5 seeded home-services trades enabled (plumbing, hvac,
-  // electrical, roofing, garage_door) — the default for the multi-trade
-  // product. Set explicitly only to constrain a launch to a subset; no DB
+  // UI. Unset = the 5 home-services trades (plumbing, hvac, electrical,
+  // roofing, garage_door) — the default for the multi-trade product.
+  // `insurance` is opt-in: list it explicitly to enable it. Set explicitly only to constrain a launch to a subset; no DB
   // change needed either way. Operators already on a now-disabled category
   // are NOT migrated — they keep their existing category and prompt.
   ENABLED_CATEGORIES: z.string().optional(),
@@ -159,17 +159,27 @@ const baseSchema = z.object({
 });
 
 /**
- * The full list of seeded category slugs (categories DB table). Mirrors the
- * 5 trades in `supabase/migrations/20260505000003_seed_categories.sql`.
+ * The 5 home-services trades (`supabase/migrations/20260505000003_seed_categories.sql`).
  * When `ENABLED_CATEGORIES` env is unset we fall back to this set so existing
  * deployments don't quietly disable everything (the multi-trade default).
  */
-export const ALL_SEEDED_CATEGORIES = [
+export const DEFAULT_ENABLED_CATEGORIES = [
   'plumbing',
   'hvac',
   'electrical',
   'roofing',
   'garage_door',
+] as const satisfies ReadonlyArray<string>;
+
+/**
+ * Every seeded category slug (categories DB table) — the valid values for
+ * `ENABLED_CATEGORIES`. `insurance` (migration 20261103200002) is opt-in only:
+ * it is NOT in the unset default, because insurance texting needs its own A2P
+ * campaign before it can go live.
+ */
+export const ALL_SEEDED_CATEGORIES = [
+  ...DEFAULT_ENABLED_CATEGORIES,
+  'insurance',
 ] as const satisfies ReadonlyArray<string>;
 
 export type Env = Readonly<
@@ -253,13 +263,14 @@ export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
     throw new Error('ENCRYPTION_KEY is required in production.');
   }
 
-  // Parse ENABLED_CATEGORIES into a Set. Default to all 5 if unset (legacy
-  // deployments). Unknown slugs are silently dropped — if someone fat-fingers
-  // `pluming` we don't want to enable everything by accident.
+  // Parse ENABLED_CATEGORIES into a Set. Default to the 5 trades if unset
+  // (legacy deployments; insurance is opt-in). Unknown slugs are silently
+  // dropped — if someone fat-fingers `pluming` we don't want to enable
+  // everything by accident.
   const rawCategories = (env.ENABLED_CATEGORIES ?? '').trim();
   const enabledList =
     rawCategories === ''
-      ? [...ALL_SEEDED_CATEGORIES]
+      ? [...DEFAULT_ENABLED_CATEGORIES]
       : rawCategories
           .split(',')
           .map((s) => s.trim().toLowerCase())

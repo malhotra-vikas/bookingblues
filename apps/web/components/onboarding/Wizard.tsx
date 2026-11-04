@@ -55,7 +55,14 @@ const ALL_CATEGORIES: Category[] = [
   { slug: 'electrical', display_name: 'Electrical' },
   { slug: 'roofing', display_name: 'Roofing' },
   { slug: 'garage_door', display_name: 'Garage Door' },
+  { slug: 'insurance', display_name: 'Insurance Agencies' },
 ];
+
+/**
+ * Office-appointment categories (mirrors apps/api/src/modules/ai/category-profile.ts):
+ * clients meet the operator, so there's no service area, trucks or booking fee.
+ */
+const OFFICE_CATEGORIES: ReadonlySet<string> = new Set(['insurance']);
 
 // Category filtering moved to props from the Server Component parent
 // (apps/web/app/(dashboard)/onboarding/page.tsx). The page reads
@@ -417,6 +424,7 @@ export function Wizard({
       ? `7-day free trial. We need a card up front, but you won't be charged until day 8 — and Founding Members pay just $${promo.firstMonthUsd} for the first month on monthly plans.`
       : "7-day free trial. We need a card up front, but you won't be charged until day 8.";
   const categoryDone = !!op?.category;
+  const office = OFFICE_CATEGORIES.has(op?.category ?? '');
   const twilioDone = !!op?.twilio_number_e164;
   const googleDone = !!op?.google_calendar_id;
   const stripeConnectDone =
@@ -653,8 +661,8 @@ export function Wizard({
 
       <StepCard
         number={2}
-        title="Pick your trade"
-        description="The AI only handles calls about this trade. Calls outside it get a polite handoff."
+        title="Pick your business type"
+        description="The AI only handles calls about this kind of business. Calls outside it get a polite handoff."
         done={categoryDone}
       >
         <div className="flex gap-2">
@@ -684,9 +692,14 @@ export function Wizard({
       <StepCard
         number={3}
         title="Service area"
-        description="The ZIP codes you cover. The AI books only jobs inside this area and sends out-of-area callers a polite handoff. Leave blank to accept any address."
-        done={serviceAreaSet || pendingZones.length > 0}
+        description={
+          office
+            ? 'Not needed for your business — clients meet you at your office or by phone.'
+            : 'The ZIP codes you cover. The AI books only jobs inside this area and sends out-of-area callers a polite handoff. Leave blank to accept any address.'
+        }
+        done={office || serviceAreaSet || pendingZones.length > 0}
       >
+        {office ? null : (
         <div className="space-y-4">
           {/* Explicit ZIP list */}
           <div>
@@ -793,6 +806,7 @@ export function Wizard({
             </span>
           </div>
         </div>
+        )}
       </StepCard>
 
       <StepCard
@@ -913,10 +927,14 @@ export function Wizard({
       <StepCard
         number={6}
         title="Set up payouts (only if you charge a booking fee)"
-        description="Lets us send the booking-fee money straight to your bank. Skip this step if you don't take deposits."
-        done={stripeConnectDone}
+        description={
+          office
+            ? 'Not needed for your business — insurance appointments don’t take a booking fee.'
+            : "Lets us send the booking-fee money straight to your bank. Skip this step if you don't take deposits."
+        }
+        done={office || stripeConnectDone}
       >
-        {stripeConnectDone ? (
+        {office ? null : stripeConnectDone ? (
           <p className="text-sm text-emerald-700">
             ✓ Payouts ready — money goes straight to your bank.
           </p>
@@ -958,9 +976,14 @@ export function Wizard({
       <StepCard
         number={7}
         title="Booking fee"
-        description="Charge a non-refundable deposit before confirming the slot. Cuts down on no-shows."
-        done={feeDecided}
+        description={
+          office
+            ? 'Not needed for your business — appointments are booked without a deposit.'
+            : 'Charge a non-refundable deposit before confirming the slot. Cuts down on no-shows.'
+        }
+        done={office || feeDecided}
       >
+        {office ? null : (
         <div className="space-y-3">
           {currentPlan ? (
             <p className="text-xs text-muted dark:text-slate-400">
@@ -1010,6 +1033,7 @@ export function Wizard({
             />
           ) : null}
         </div>
+        )}
       </StepCard>
 
       <StepCard

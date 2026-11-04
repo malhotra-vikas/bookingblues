@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 
 import { AuditModule } from '../../common/audit/audit.module';
+import { EncryptionModule } from '../../common/crypto/encryption.module';
 import { EmailModule } from '../../common/email/email.module';
 import { SupabaseModule } from '../../common/supabase/supabase.module';
 import { TwilioModule } from '../../common/twilio/twilio.module';
@@ -12,6 +13,7 @@ import { BookingHoldsController } from './booking-holds.controller';
 import { BookingsService } from './bookings.service';
 import { CalShortLinkController } from './cal-shortlink.controller';
 import { IcsController } from './ics.controller';
+import { IntakeAnswersService } from './intake-answers.service';
 
 @Module({
   imports: [
@@ -22,9 +24,10 @@ import { IcsController } from './ics.controller';
     AuditModule,
     PaymentsModule,
     EmailModule,
+    EncryptionModule,
   ],
   controllers: [IcsController, BookingHoldsController, CalShortLinkController],
-  providers: [BookingsService],
-  exports: [BookingsService],
+  providers: [BookingsService, IntakeAnswersService],
+  exports: [BookingsService, IntakeAnswersService],
 })
 export class AppointmentsModule {}

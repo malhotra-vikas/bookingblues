@@ -12,7 +12,10 @@ import { ENV_TOKEN } from '../../config/config.module';
 import type { Env } from '../../config/env';
 import { CalendarService } from '../calendar/calendar.service';
 import { asBusinessHours, slotWithinBusinessHours } from '../calendar/business-hours';
-import { hasCapacity, TRAVEL_BUFFER_MIN } from './capacity';
+import { isOfficeAppointmentCategory } from '../ai/category-profile';
+import { hasCapacity, travelBufferMinFor } from './capacity';
+import { type IntakeAnswers, intakeAnswersText } from './intake-answers';
+import { IntakeAnswersService } from './intake-answers.service';
 import { ConversationsService } from '../conversations/conversations.service';
 import {
   bookingConfirmationSms,
@@ -55,6 +58,7 @@ export class BookingsService {
     private readonly audit: AuditLogService,
     private readonly payments: PaymentsService,
     private readonly email: EmailService,
+    private readonly intakeAnswers: IntakeAnswersService,
     private readonly logger: PinoLogger,
     @Inject(ENV_TOKEN) private readonly env: Env,
   ) {
@@ -118,6 +122,15 @@ export class BookingsService {
       throw insertErr;
     }
     const appointmentId = appt.id;
+    const office = isOfficeAppointmentCategory(args.operator.category);
+
+    // 1b. Intake answers (insurance): copy the encrypted answers from the
+    //     conversation onto the appointment, and show them to the operator on
+    //     their calendar event. Never in the summary/title or the public ICS.
+    let intake: IntakeAnswers | null = null;
+    if (office) {
+      intake = await this.intakeAnswers.attachToAppointment(appointmentId, args.conversationId);
+    }
 
     // 2. Google Calendar event — roll back the appointment if Google rejects
     //    so we never leave a phantom booking the operator can't see.
@@ -128,6 +141,8 @@ export class BookingsService {
         summary: `${args.operator.business_name}: ${args.jobSummary.slice(0, 80)}`,
         description: this.eventDescription({
           ...args,
+          ...(office ? { office: true } : {}),
+          ...(intake ? { intakeText: intakeAnswersText(intake) } : {}),
           ...(args.collectPaymentOnSite && args.feeCents != null
             ? { payoutLine: `⚠ COLLECT ${this.dollars(args.feeCents)} ON SITE — emergency booking, not prepaid.` }
             : {}),
@@ -198,8 +213,8 @@ export class BookingsService {
         callerName: args.callerName,
         // Ask for the address only on the AI conversational path (which can
         // handle the reply); manual/Slack-button books pass chargeFeeIfEligible
-        // and aren't an interactive SMS thread.
-        askAddress: !args.chargeFeeIfEligible,
+        // and aren't an interactive SMS thread. Office appointments never ask.
+        askAddress: !args.chargeFeeIfEligible && !office,
       }).catch((err) => {
         this.logger.warn(
           { appointmentId, err: (err as Error).message },
@@ -241,6 +256,7 @@ export class BookingsService {
       startIso: args.startIso,
       endIso: args.endIso,
       operatorEventUrl,
+      intake,
     }).catch((err) => {
       this.logger.warn(
         { appointmentId, err: (err as Error).message },
@@ -279,10 +295,12 @@ export class BookingsService {
     }
 
     // Multi-truck capacity: allow up to `truck_count` concurrent appointments,
-    // with a travel buffer between same-truck jobs. Load the operator's active
-    // appointments that could overlap the candidate's padded window and check.
+    // with a travel buffer between same-truck jobs (none for office
+    // appointments). Load the operator's active appointments that could
+    // overlap the candidate's padded window and check.
     const truckCount = operator.truck_count ?? 1;
-    const bufferMs = TRAVEL_BUFFER_MIN * 60_000;
+    const bufferMin = travelBufferMinFor(isOfficeAppointmentCategory(operator.category));
+    const bufferMs = bufferMin * 60_000;
     const overlapFrom = new Date(startMs - bufferMs - 12 * 3_600_000).toISOString();
     const overlapTo = new Date(endMs + bufferMs).toISOString();
     const { data: rows, error } = await this.supabase
@@ -302,7 +320,7 @@ export class BookingsService {
       candidate: { start: startMs, end: endMs },
       existing,
       truckCount,
-      bufferMin: TRAVEL_BUFFER_MIN,
+      bufferMin,
     });
     if (!ok) {
       throw new ConflictError('That slot was just taken — pick another time.');
@@ -616,6 +634,8 @@ export class BookingsService {
     startIso: string;
     endIso: string;
     operatorEventUrl: string | null;
+    /** Decrypted intake answers (insurance) to show the operator. */
+    intake?: IntakeAnswers | null;
   }): Promise<void> {
     if (!this.email.isConfigured()) return;
 
@@ -657,6 +677,7 @@ export class BookingsService {
       transcript,
       googleEventUrl: args.operatorEventUrl,
       platformAppUrl: this.env.APP_URL,
+      intake: args.intake ?? null,
     });
 
     await this.email.send({
@@ -725,13 +746,18 @@ export class BookingsService {
     jobSummary: string;
     /** Optional "you made $X on this booking" line (after fees), shown to the operator. */
     payoutLine?: string;
+    /** Office appointment (insurance): no urgency line. */
+    office?: boolean;
+    /** Intake answers block (insurance), shown on the operator's own calendar. */
+    intakeText?: string;
   }): string {
     const urgency = args.urgency ?? 'normal';
     return (
       `Caller: ${args.callerName} ${args.callerPhoneE164}\n` +
-      `Urgency: ${urgency}\n` +
+      (args.office ? '' : `Urgency: ${urgency}\n`) +
       (args.payoutLine ? `${args.payoutLine}\n` : '') +
-      `\n${args.jobSummary}`
+      `\n${args.jobSummary}` +
+      (args.intakeText ? `\n\n${args.intakeText}` : '')
     );
   }
 
