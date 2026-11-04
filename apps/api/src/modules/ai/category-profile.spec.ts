@@ -19,9 +19,12 @@ describe('category profile', () => {
 });
 
 describe('toolDefinitionsFor', () => {
-  it('leaves the trades tool list untouched', () => {
-    expect(toolDefinitionsFor('plumbing')).toBe(TOOL_DEFINITIONS);
-    expect(toolDefinitionsFor(null)).toBe(TOOL_DEFINITIONS);
+  it('gives trades the full tool list plus reschedule_appointment', () => {
+    for (const category of ['plumbing', null]) {
+      const tools = toolDefinitionsFor(category);
+      expect(tools.slice(0, TOOL_DEFINITIONS.length)).toEqual(TOOL_DEFINITIONS);
+      expect(tools.map((t) => (t.type === 'function' ? t.function.name : ''))).toContain('reschedule_appointment');
+    }
   });
 
   it('gives insurance intake + booking tools, without address/service-area tools', () => {

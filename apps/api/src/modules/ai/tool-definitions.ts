@@ -308,7 +308,7 @@ const FIELD_ONLY_TOOLS: ReadonlySet<string> = new Set(['check_service_area', 'co
 export function toolDefinitionsFor(
   category: string | null | undefined,
 ): ReadonlyArray<OpenAI.Chat.Completions.ChatCompletionTool> {
-  if (!isOfficeAppointmentCategory(category)) return TOOL_DEFINITIONS;
+  if (!isOfficeAppointmentCategory(category)) return [...TOOL_DEFINITIONS, RESCHEDULE_APPOINTMENT_TOOL];
   const tools = TOOL_DEFINITIONS.filter(
     (t) => t.type !== 'function' || !FIELD_ONLY_TOOLS.has(t.function.name),
   ).map((t) => {

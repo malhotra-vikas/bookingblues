@@ -24,6 +24,7 @@ import {
   fetchCallerJobs,
   formatCallerJobsForPrompt,
   formatUpcomingAppointmentsForPrompt,
+  isUpcomingConfirmed,
 } from '../appointments/caller-history';
 import { isOfficeAppointmentCategory } from './category-profile';
 import { assembleSystemPrompt, wrapCallerMessage } from './prompts';
@@ -524,18 +525,21 @@ export class AdvanceService {
     let callerHistory: string | null = null;
     try {
       const jobs = await fetchCallerJobs(this.supabase.db(), operator.id, callerPhoneE164);
-      if (isOfficeAppointmentCategory(operator.category)) {
-        // Office categories have no address step, and CAN move an appointment —
-        // so list every upcoming one, this conversation's included, with ids
-        // for reschedule_appointment.
-        callerHistory = formatUpcomingAppointmentsForPrompt(jobs, operator.timezone);
-      } else {
-        // Exclude THIS conversation's own booking — otherwise the post-booking
-        // address-collection turn would see the job it just made as an "existing
-        // job" and escalate instead of saving the address.
-        const priorJobs = jobs.filter((j) => j.conversationId !== conversationId);
-        callerHistory = formatCallerJobsForPrompt(priorJobs, operator.timezone);
-      }
+      // (1) Every UPCOMING confirmed appointment — this conversation's included —
+      //     with ids, so "can we move it to Saturday?" calls reschedule_appointment
+      //     instead of booking a duplicate (prod 2026-11-04). The block tells the
+      //     model to continue a pending step (address/deposit), so the trades'
+      //     post-booking address turn still works.
+      // (2) Other jobs (past / unconfirmed) from EARLIER conversations — the
+      //     existing escalate-to-discuss rule. This conversation's own are
+      //     excluded, as before, so its pending hold isn't treated as "existing".
+      const now = Date.now();
+      const upcoming = formatUpcomingAppointmentsForPrompt(jobs, operator.timezone, now, {
+        office: isOfficeAppointmentCategory(operator.category),
+      });
+      const otherJobs = jobs.filter((j) => !isUpcomingConfirmed(j, now) && j.conversationId !== conversationId);
+      const other = formatCallerJobsForPrompt(otherJobs, operator.timezone);
+      callerHistory = [upcoming, other].filter(Boolean).join('\n\n') || null;
     } catch (err) {
       this.logger.warn(
         { conversationId, err: (err as Error).message },

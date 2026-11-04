@@ -302,6 +302,12 @@ export class BookingsService {
     ) {
       throw new ValidationError('No upcoming confirmed appointment with that id for this caller.');
     }
+    // A "move" to the time it already has would text a confusing "has been moved".
+    if (new Date(appt.scheduled_for_start).getTime() === new Date(args.startIso).getTime()) {
+      throw new ValidationError(
+        'That is already the appointment\'s current time — ask which new day/time they want and offer other open slots.',
+      );
+    }
 
     await this.assertSlotBookable(args.operator, args.startIso, args.endIso, appt.id);
 

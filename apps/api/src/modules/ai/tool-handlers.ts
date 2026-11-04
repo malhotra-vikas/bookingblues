@@ -198,11 +198,13 @@ async function intakeAnswersSaved(ctx: ToolContext): Promise<boolean> {
 }
 
 /** The caller's upcoming confirmed appointments with this operator (any conversation). */
-async function upcomingAppointments(ctx: ToolContext): Promise<Array<{ id: string; scheduled_for_start: string }>> {
+async function upcomingAppointments(
+  ctx: ToolContext,
+): Promise<Array<{ id: string; scheduled_for_start: string; conversation_id: string | null }>> {
   const { data, error } = await ctx.supabase
     .db()
     .from('appointments')
-    .select('id, scheduled_for_start')
+    .select('id, scheduled_for_start, conversation_id')
     .eq('operator_id', ctx.operator.id)
     .eq('caller_phone_e164', ctx.callerPhoneE164)
     .eq('status', 'confirmed')
@@ -213,17 +215,13 @@ async function upcomingAppointments(ctx: ToolContext): Promise<Array<{ id: strin
 }
 
 /**
- * Office categories: move the caller's existing appointment (same row, same
- * calendar event). Never creates a second appointment.
+ * Move the caller's existing appointment (same row, same calendar event, same
+ * deposit/payment). Never creates a second appointment. All categories.
  */
 export async function rescheduleAppointment(
   args: RescheduleAppointmentArgs,
   ctx: ToolContext,
 ): Promise<ToolResult> {
-  // Trades keep the existing rule (changes to an existing job → escalate_to_human).
-  if (!isOfficeAppointmentCategory(ctx.operator.category)) {
-    return { content: { error: 'not_available', message: 'Rescheduling is not available here. Use escalate_to_human.' } };
-  }
   try {
     await ctx.bookings.reschedule({
       operator: ctx.operator,
@@ -255,20 +253,6 @@ export async function rescheduleAppointment(
  * no emergency handling. Confirms and completes the conversation in one go.
  */
 async function bookOfficeAppointment(args: BookAppointmentArgs, ctx: ToolContext): Promise<ToolResult> {
-  // A caller who already has an upcoming appointment is changing it, not booking
-  // a second one — "reschedule to Saturday" used to leave Sunday AND add Saturday.
-  const upcoming = await upcomingAppointments(ctx);
-  if (upcoming.length > 0) {
-    return {
-      content: {
-        error: 'already_booked',
-        message:
-          `This caller already has an upcoming appointment (id ${upcoming[0]!.id}). To change its day or time, ` +
-          'call reschedule_appointment with that id — never book a second one. If they clearly want an ' +
-          'ADDITIONAL, separate appointment, call escalate_to_human so the agency can arrange it.',
-      },
-    };
-  }
   if (collectsIntakeAnswers(ctx.operator.category) && !(await intakeAnswersSaved(ctx))) {
     return {
       content: {
@@ -306,7 +290,27 @@ export async function bookAppointment(
   args: BookAppointmentArgs,
   ctx: ToolContext,
 ): Promise<ToolResult> {
-  if (isOfficeAppointmentCategory(ctx.operator.category)) return bookOfficeAppointment(args, ctx);
+  // A caller changing the time of an appointment they already have must be MOVED,
+  // not booked twice ("reschedule to Saturday" left Sunday AND added Saturday,
+  // prod 2026-11-04). Office categories: any upcoming appointment blocks a new
+  // one. Trades: a separate second job is legitimate, so only the appointment
+  // booked earlier in THIS conversation blocks (the duplicate case).
+  const office = isOfficeAppointmentCategory(ctx.operator.category);
+  const upcoming = (await upcomingAppointments(ctx)).filter(
+    (a) => office || a.conversation_id === ctx.conversation.id,
+  );
+  if (upcoming.length > 0) {
+    return {
+      content: {
+        error: 'already_booked',
+        message:
+          `This caller already has an upcoming appointment (id ${upcoming[0]!.id}). To change its day or time, ` +
+          'call reschedule_appointment with that id — never book a second one. If they clearly want an ' +
+          'ADDITIONAL, separate appointment, call escalate_to_human so the team can arrange it.',
+      },
+    };
+  }
+  if (office) return bookOfficeAppointment(args, ctx);
 
   const common = {
     operator: ctx.operator,

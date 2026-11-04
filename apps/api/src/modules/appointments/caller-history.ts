@@ -92,12 +92,13 @@ export function formatCallerJobsForPrompt(jobs: CallerJob[], timezone: string): 
       `- ${formatWhen(j.scheduledForStart, timezone)} — "${j.jobSummary ?? 'job'}" — ${j.status}${feeNote(j)}`,
   );
   return [
-    'CALLER HISTORY — this caller already has job(s) on file with this operator:',
+    'CALLER HISTORY — this caller has other job(s) on file with this operator:',
     ...lines,
     '',
-    'You can ONLY book brand-new jobs. You cannot reschedule, cancel, look up, or',
-    'modify any existing job. If the caller wants to discuss, change, confirm, or',
-    'ask about one of the jobs listed above (rather than book a genuinely new,',
+    'These are past or not-yet-confirmed jobs (any UPCOMING confirmed appointment is',
+    'listed separately and can be moved with reschedule_appointment). You cannot',
+    'cancel, look up, or modify the jobs listed here. If the caller wants to discuss,',
+    'change, confirm, or ask about one of them (rather than book a genuinely new,',
     'separate job), call escalate_to_human with a reason that says they want to',
     'talk about an existing job — the team will take it from there. When unsure',
     'whether it is a new job or an existing one, ask one clarifying question; if',
@@ -111,26 +112,44 @@ export function formatCallerJobsForPrompt(jobs: CallerJob[], timezone: string): 
  * "can we move it to Saturday?" moves it (reschedule_appointment) instead of
  * booking a duplicate. Null when there are none.
  */
+export function isUpcomingConfirmed(j: CallerJob, nowMs: number = Date.now()): boolean {
+  return j.status === 'confirmed' && !!j.scheduledForStart && new Date(j.scheduledForStart).getTime() > nowMs;
+}
+
 export function formatUpcomingAppointmentsForPrompt(
   jobs: CallerJob[],
   timezone: string,
   nowMs: number = Date.now(),
+  opts: { office?: boolean } = {},
 ): string | null {
   const upcoming = jobs
-    .filter((j) => j.status === 'confirmed' && j.scheduledForStart && new Date(j.scheduledForStart).getTime() > nowMs)
+    .filter((j) => isUpcomingConfirmed(j, nowMs))
     .sort((a, b) => (a.scheduledForStart! < b.scheduledForStart! ? -1 : 1));
   if (upcoming.length === 0) return null;
+  // Trades: the booking confirmation SMS asks for the property address, but the
+  // trades model never sees that system message — so flag the pending step on
+  // the job itself, or the caller's address reply reads as small talk about an
+  // existing booking and is never saved (release E2E 2026-11-04).
+  const pendingAddress = (j: CallerJob): string =>
+    !opts.office && !j.serviceAddress
+      ? ' — ADDRESS NOT YET COLLECTED: the booking confirmation asked the caller for the full property address. When they send an address, call collect_service_address with it.'
+      : '';
   return [
     'UPCOMING APPOINTMENTS — this caller is already booked:',
-    ...upcoming.map((j) => `- id ${j.id}: ${formatWhen(j.scheduledForStart, timezone)} — "${j.jobSummary ?? 'appointment'}"`),
+    ...upcoming.map(
+      (j) => `- id ${j.id}: ${formatWhen(j.scheduledForStart, timezone)} — "${j.jobSummary ?? 'appointment'}"${pendingAddress(j)}`,
+    ),
     '',
-    'The caller already has this appointment — do NOT book another one.',
+    'Never book a second appointment to change the time of one listed above.',
     '- If they want a different day or time: ask when, check availability, offer open',
     '  slots, and once they pick one call reschedule_appointment with the id above.',
-    '  The same appointment is moved; their old time is released.',
-    '- If they want to cancel, or want an additional separate appointment, call',
-    '  escalate_to_human with the reason — the agency will handle it.',
-    '- Otherwise just answer their question about the appointment.',
+    '  The same appointment is moved (any deposit stays with it); their old time is released.',
+    '- If they want to cancel, call escalate_to_human with the reason — the team handles it.',
+    opts.office
+      ? '- If they want an additional, separate appointment, call escalate_to_human.'
+      : '- If they clearly want a separate, additional job (a different problem), you may book it as a new job.',
+    '- If a step for a listed appointment is still pending (e.g. collecting the service',
+    '  address or the deposit), continue it. Otherwise just answer their question.',
   ].join('\n');
 }
 

@@ -80,7 +80,7 @@ export default async function FaqPage(): Promise<JSX.Element> {
     },
     {
       q: 'Can callers reschedule by text?',
-      a: `For insurance agencies, yes: a client who texts to change their appointment is offered open times, and the AI moves the existing appointment — your calendar updates, the old time is released, and the client gets a text with the new time. It never books a second appointment for the same client; cancellations and requests for an additional appointment go to our team. For home-service trades, the reminder text asks customers to call you directly to reschedule or cancel, and any change to an existing job is handed to our team rather than handled by the AI.`,
+      a: `Yes. A customer who texts to change the day or time of an upcoming appointment is offered open times within your business hours, and the AI moves the existing appointment — your calendar updates, the old time is released, any deposit and address stay with it, and the customer gets a text with the new time. It never books a second appointment just to change the time. Cancellations are handed to our team, and customers can always call you directly.`,
     },
     {
       q: 'Can I cancel?',

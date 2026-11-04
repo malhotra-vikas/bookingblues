@@ -18,17 +18,37 @@ const NOW = Date.parse('2026-11-04T21:00:00Z');
 const names = (category: string) =>
   toolDefinitionsFor(category).map((t) => (t.type === 'function' ? t.function.name : ''));
 
-describe('rescheduling (office categories)', () => {
-  it('insurance gets reschedule_appointment; trades do not', () => {
-    expect(names('insurance')).toContain('reschedule_appointment');
-    expect(names('plumbing')).not.toContain('reschedule_appointment');
+describe('rescheduling (all categories)', () => {
+  it('every category gets reschedule_appointment', () => {
+    for (const c of ['insurance', 'plumbing', 'hvac', 'electrical', 'roofing', 'garage_door']) {
+      expect(names(c)).toContain('reschedule_appointment');
+    }
   });
 
   it('lists the upcoming appointment with its id and forbids a second booking', () => {
     const block = formatUpcomingAppointmentsForPrompt([job({})], 'America/New_York', NOW)!;
     expect(block).toContain('id appt-1: Sun, Nov 8, 10:00 AM');
-    expect(block).toContain('do NOT book another one');
+    expect(block).toContain('Never book a second appointment to change the time');
     expect(block).toContain('reschedule_appointment');
+    // Trades: pending address/deposit steps for the listed appointment continue.
+    expect(block).toContain('continue it');
+  });
+
+  it('trades: a job still missing its address tells the bot to save the address reply', () => {
+    const trade = formatUpcomingAppointmentsForPrompt([job({})], 'America/New_York', NOW, { office: false })!;
+    expect(trade).toContain('ADDRESS NOT YET COLLECTED');
+    expect(trade).toContain('collect_service_address');
+    const done = formatUpcomingAppointmentsForPrompt([job({ serviceAddress: '42 Oak St' })], 'America/New_York', NOW)!;
+    expect(done).not.toContain('ADDRESS NOT YET COLLECTED');
+    const office = formatUpcomingAppointmentsForPrompt([job({})], 'America/New_York', NOW, { office: true })!;
+    expect(office).not.toContain('ADDRESS NOT YET COLLECTED');
+  });
+
+  it('office: an extra appointment is escalated; trades: a separate job may be booked', () => {
+    const office = formatUpcomingAppointmentsForPrompt([job({})], 'America/New_York', NOW, { office: true })!;
+    expect(office).toContain('additional, separate appointment, call escalate_to_human');
+    const trade = formatUpcomingAppointmentsForPrompt([job({})], 'America/New_York', NOW, { office: false })!;
+    expect(trade).toContain('separate, additional job');
   });
 
   it('ignores past, cancelled and unconfirmed appointments', () => {

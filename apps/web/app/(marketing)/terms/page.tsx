@@ -42,10 +42,15 @@ export default async function TermsPage(): Promise<JSX.Element> {
           <li>A dedicated Twilio phone number that receives calls forwarded by the Subscriber</li>
           <li>An AI assistant that texts back missed callers and books appointments</li>
           <li>
+            Moving an End User&apos;s existing upcoming appointment to a newly agreed time within the
+            Subscriber&apos;s business hours when they ask to reschedule by text (the calendar event
+            is updated and any deposit stays with the appointment); cancellations are passed to
+            our team
+          </li>
+          <li>
             For insurance agencies: collection of appointment intake details (name, date of birth,
-            current doctor and prescriptions), a &ldquo;what to bring&rdquo; list in confirmation
-            and reminder texts, and moving a client&apos;s existing appointment when they ask to
-            reschedule by text (see Section 5a)
+            current doctor and prescriptions) and a &ldquo;what to bring&rdquo; list in
+            confirmation and reminder texts (see Section 5a)
           </li>
           <li>Google Calendar integration for appointment scheduling</li>
           <li>Optional non-refundable booking deposit collection via Stripe</li>
@@ -252,10 +257,8 @@ export default async function TermsPage(): Promise<JSX.Element> {
           encrypted and shown to you on your dashboard, booking email and calendar event.
         </p>
         <p>
-          When an End User texts to change an existing appointment, the AI may move that
-          appointment to a newly agreed time within your business hours; your calendar is updated
-          and the End User is texted the new time. Cancellations and requests for additional
-          appointments are passed to our team.
+          Requests for an additional, separate appointment are passed to our team; rescheduling
+          works as described in Section 2.
         </p>
         <p>
           You are solely responsible for holding the licenses your business requires and for

@@ -710,6 +710,81 @@ await stage('15. tenant isolation', async () => {
   check(cron.status === 401 || cron.status === 403, `usage cron rejects a wrong secret (${cron.status})`);
 });
 
+await stage('15b. trades (plumbing): book a job → caller reschedules → the SAME job moves', async () => {
+  // Rescheduling works for every category, not just insurance.
+  const PLUMB_NUMBER = `+1555${String(crypto.randomInt(1_000_000, 9_999_999))}`;
+  const hours = Object.fromEntries(['mon', 'tue', 'wed', 'thu', 'fri', 'sat'].map((d) => [d, [{ start: '08:00', end: '17:00' }]]));
+  await db.from('operators').update({
+    business_hours: hours, personal_phone_e164: '+17325550188', twilio_number_e164: PLUMB_NUMBER, twilio_number_sid: `PN_e2e_p_${run}`,
+    google_calendar_id: 'primary', google_calendar_connected_at: new Date().toISOString(), booking_fee_enabled: false,
+  }).eq('id', S.otherId);
+  await db.from('calendar_connections').upsert({
+    operator_id: S.otherId, provider: 'google', encrypted_refresh_token: 'v1:e2e:not:used', access_token_cache: 'e2e_google_access',
+    access_token_expires_at: new Date(Date.now() + 7 * 86_400_000).toISOString(), scopes: ['calendar.events', 'calendar.freebusy'],
+    connected_email: 'e2e-plumber@e2e.test', status: 'active',
+  }, { onConflict: 'operator_id' });
+
+  const joe = phone();
+  const findJob = async () =>
+    (await db.from('appointments').select('*').eq('operator_id', S.otherId).eq('caller_phone_e164', joe).neq('status', 'cancelled')).data ?? [];
+  const tx = async (body) => {
+    const since = new Date().toISOString();
+    await sleep(50);
+    await twilio(`/webhooks/twilio/sms/${S.otherId}`, { From: joe, To: PLUMB_NUMBER, Body: body, MessageSid: `SM_e2e_p_${crypto.randomUUID().slice(0, 8)}` });
+    const replies = await eventually(async () => {
+      const { data: c } = await db.from('conversations').select('id').eq('operator_id', S.otherId).eq('caller_phone_e164', joe);
+      const ids = (c ?? []).map((x) => x.id);
+      if (!ids.length) return null;
+      const { data: m } = await db.from('messages').select('role, body, created_at').in('conversation_id', ids).in('role', ['bot', 'system']).gt('created_at', since).order('created_at');
+      return m?.length ? m : null;
+    }, { timeout: 90_000 });
+    return (replies ?? []).map((m) => m.body).join(' ');
+  };
+  const answer = (q) => {
+    const t = q.toLowerCase();
+    if (/address|street/.test(t)) return '42 Oak Street, Edison NJ 08817';
+    if (/zip/.test(t)) return '08817';
+    if (/name/.test(t)) return 'Joe Rivera';
+    if (/email/.test(t)) return 'No email, thanks';
+    if (/emergenc|urgent|flood|active(ly)? leak/.test(t)) return 'Not an emergency, it just drips';
+    if (/\b(am|pm)\b|slot|which (time|one)|available|work for you/.test(t)) return 'The first time you offered works for me';
+    if (/how long|when did|where|which|what kind|describe|more detail|tell me/.test(t)) return 'Kitchen faucet, dripping for a week, standard single-handle faucet';
+    return 'Yes please';
+  };
+
+  const transcript = [];
+  let say = 'Hi, my kitchen faucet is dripping and I need a plumber to fix it.';
+  for (let turn = 0; turn < 12; turn += 1) {
+    transcript.push(`CALLER: ${say}`);
+    const last = await tx(say);
+    transcript.push(`BOT:    ${last}`);
+    const jobs = await findJob();
+    if (jobs[0]?.service_address) break;
+    say = answer(last);
+  }
+  let jobs = await findJob();
+  check(jobs.length === 1 && jobs[0].status === 'confirmed', `plumbing job booked (${jobs.length})`, transcript.slice(-2).join(' | '));
+  check(jobs[0]?.service_address, 'service address collected after booking (address step still works)', jobs[0]?.service_address);
+  const original = jobs[0];
+
+  say = 'Actually something came up — can we move that appointment to a later day this week?';
+  let moved = false;
+  for (let turn = 0; turn < 6 && !moved && original; turn += 1) {
+    transcript.push(`CALLER: ${say}`);
+    const last = await tx(say);
+    transcript.push(`BOT:    ${last}`);
+    const { data: row } = await db.from('appointments').select('scheduled_for_start').eq('id', original.id).maybeSingle();
+    moved = row && row.scheduled_for_start !== original.scheduled_for_start;
+    say = answer(last);
+  }
+  writeFileSync(resolve(LOGS, 'plumbing-transcript.txt'), transcript.join('\n'));
+  console.log(transcript.map((l) => `      ${l}`).join('\n'));
+  jobs = await findJob();
+  check(moved, 'the plumbing job now has the new time');
+  check(jobs.length === 1 && jobs[0].id === original?.id, `still exactly ONE job for the caller (${jobs.length})`, JSON.stringify(jobs.map((j) => [j.id, j.scheduled_for_start])));
+  check(!!original?.service_address && jobs[0]?.service_address === original.service_address, 'the moved job keeps its service address', jobs[0]?.service_address);
+});
+
 await stage('16. captured emails → gallery', async () => {
   const dir = resolve(LOGS, 'emails');
   mkdirSync(dir, { recursive: true });
