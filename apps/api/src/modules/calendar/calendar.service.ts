@@ -323,11 +323,24 @@ export class CalendarService {
     eventId: string;
     location?: string;
     description?: string;
+    /** Move the event (reschedule). Both required together, with the operator's timezone. */
+    startIso?: string;
+    endIso?: string;
+    timeZone?: string;
   }): Promise<void> {
     const accessToken = await this.getFreshAccessToken(args.operatorId);
-    const body: { location?: string; description?: string } = {};
+    const body: {
+      location?: string;
+      description?: string;
+      start?: { dateTime: string; timeZone?: string };
+      end?: { dateTime: string; timeZone?: string };
+    } = {};
     if (args.location !== undefined) body.location = args.location;
     if (args.description !== undefined) body.description = args.description;
+    if (args.startIso !== undefined && args.endIso !== undefined) {
+      body.start = { dateTime: args.startIso, ...(args.timeZone ? { timeZone: args.timeZone } : {}) };
+      body.end = { dateTime: args.endIso, ...(args.timeZone ? { timeZone: args.timeZone } : {}) };
+    }
 
     const url = `https://www.googleapis.com/calendar/v3/calendars/primary/events/${encodeURIComponent(
       args.eventId,

@@ -23,6 +23,7 @@ import { UsageService } from '../usage/usage.service';
 import {
   fetchCallerJobs,
   formatCallerJobsForPrompt,
+  formatUpcomingAppointmentsForPrompt,
 } from '../appointments/caller-history';
 import { isOfficeAppointmentCategory } from './category-profile';
 import { assembleSystemPrompt, wrapCallerMessage } from './prompts';
@@ -36,6 +37,7 @@ import {
   markSpam,
   proposeSlots,
   requestPaymentLink,
+  rescheduleAppointment,
   saveIntakeAnswers,
 } from './tool-handlers';
 import type { ToolContext, ToolResult } from './tool-handlers';
@@ -49,6 +51,7 @@ import {
   MarkSpamArgs,
   ProposeSlotsArgs,
   RequestPaymentLinkArgs,
+  RescheduleAppointmentArgs,
   SaveIntakeAnswersArgs,
   toolDefinitionsFor,
 } from './tool-definitions';
@@ -521,11 +524,18 @@ export class AdvanceService {
     let callerHistory: string | null = null;
     try {
       const jobs = await fetchCallerJobs(this.supabase.db(), operator.id, callerPhoneE164);
-      // Exclude THIS conversation's own booking — otherwise the post-booking
-      // address-collection turn would see the job it just made as an "existing
-      // job" and escalate instead of saving the address.
-      const priorJobs = jobs.filter((j) => j.conversationId !== conversationId);
-      callerHistory = formatCallerJobsForPrompt(priorJobs, operator.timezone);
+      if (isOfficeAppointmentCategory(operator.category)) {
+        // Office categories have no address step, and CAN move an appointment —
+        // so list every upcoming one, this conversation's included, with ids
+        // for reschedule_appointment.
+        callerHistory = formatUpcomingAppointmentsForPrompt(jobs, operator.timezone);
+      } else {
+        // Exclude THIS conversation's own booking — otherwise the post-booking
+        // address-collection turn would see the job it just made as an "existing
+        // job" and escalate instead of saving the address.
+        const priorJobs = jobs.filter((j) => j.conversationId !== conversationId);
+        callerHistory = formatCallerJobsForPrompt(priorJobs, operator.timezone);
+      }
     } catch (err) {
       this.logger.warn(
         { conversationId, err: (err as Error).message },
@@ -611,6 +621,9 @@ export class AdvanceService {
           return await bookAppointment(BookAppointmentArgs.parse(parsed), ctx);
         case 'request_payment_link':
           return await requestPaymentLink(RequestPaymentLinkArgs.parse(parsed), ctx);
+        case 'reschedule_appointment':
+          // Office categories only (toolDefinitionsFor); the handler refuses trades.
+          return await rescheduleAppointment(RescheduleAppointmentArgs.parse(parsed), ctx);
         case 'collect_service_address':
           return await collectServiceAddress(CollectServiceAddressArgs.parse(parsed), ctx);
         case 'mark_out_of_scope':

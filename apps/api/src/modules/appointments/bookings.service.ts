@@ -22,6 +22,7 @@ import {
   bookingFeeLine,
   type FeeCharge,
   holdExpiredSms,
+  rescheduleConfirmationSms,
 } from '../conversations/templates/sms-templates';
 import { isBookingFeeCollectible } from '../ai/prompts';
 import { PaymentsService } from '../payments/payments.service';
@@ -268,6 +269,116 @@ export class BookingsService {
   }
 
   /**
+   * Move a caller's upcoming confirmed appointment to a new slot — the SAME
+   * appointment row and calendar event, never a second booking (live test
+   * 2026-11-04: "reschedule to Saturday" created a duplicate and left Sunday
+   * standing). Same capacity/business-hours checks as booking (the moved
+   * appointment doesn't block itself). The calendar event is moved FIRST, so a
+   * Google failure leaves the DB unchanged. Texts the caller the new time and
+   * re-arms the 24h reminder.
+   */
+  async reschedule(args: {
+    operator: OperatorRow;
+    appointmentId: string;
+    callerPhoneE164: string;
+    conversationId: string | null;
+    startIso: string;
+    endIso: string;
+  }): Promise<{ appointmentId: string; previousStartIso: string }> {
+    const { data: appt, error } = await this.supabase
+      .db()
+      .from('appointments')
+      .select('id, operator_id, caller_phone_e164, caller_name, status, scheduled_for_start, google_event_id')
+      .eq('id', args.appointmentId)
+      .maybeSingle();
+    if (error) throw error;
+    // Only the caller's own, still-upcoming, confirmed appointment with THIS operator.
+    if (
+      !appt ||
+      appt.operator_id !== args.operator.id ||
+      appt.caller_phone_e164 !== args.callerPhoneE164 ||
+      appt.status !== 'confirmed' ||
+      new Date(appt.scheduled_for_start).getTime() <= Date.now()
+    ) {
+      throw new ValidationError('No upcoming confirmed appointment with that id for this caller.');
+    }
+
+    await this.assertSlotBookable(args.operator, args.startIso, args.endIso, appt.id);
+
+    if (appt.google_event_id) {
+      await this.calendar.patchEvent({
+        operatorId: args.operator.id,
+        eventId: appt.google_event_id,
+        startIso: args.startIso,
+        endIso: args.endIso,
+        timeZone: args.operator.timezone,
+      });
+    }
+
+    const { error: updErr } = await this.supabase
+      .db()
+      .from('appointments')
+      .update({
+        scheduled_for_start: args.startIso,
+        scheduled_for_end: args.endIso,
+        // The new time needs its own 24h reminder.
+        reminder_sent_at: null,
+      })
+      .eq('id', appt.id);
+    if (updErr) throw updErr;
+
+    await this.audit.write({
+      actorUserId: null,
+      operatorId: args.operator.id,
+      action: 'appointment.rescheduled',
+      resourceType: 'appointment',
+      resourceId: appt.id,
+      metadata: { from: appt.scheduled_for_start, to: args.startIso, by: 'ai' },
+    });
+
+    if (args.conversationId && args.operator.twilio_number_e164) {
+      const body = rescheduleConfirmationSms({
+        businessName: args.operator.business_name,
+        friendlyTime: this.friendlyTime(args.startIso, args.operator.timezone),
+        icsUrl: this.icsUrl(appt.id),
+        callerName: appt.caller_name,
+        category: args.operator.category,
+      });
+      try {
+        const send = await this.twilio.sendSms({
+          from: args.operator.twilio_number_e164,
+          to: args.callerPhoneE164,
+          body,
+        });
+        await this.conversations.appendMessage({
+          conversationId: args.conversationId,
+          role: 'system',
+          body: 'sid' in send ? body : `[skipped: ${send.skipped}] ${body}`,
+          ...('sid' in send ? { twilioMessageSid: send.sid } : {}),
+        });
+      } catch (err) {
+        this.logger.warn(
+          { appointmentId: appt.id, err: (err as Error).message },
+          'reschedule SMS failed (non-fatal — appointment is moved)',
+        );
+      }
+    }
+
+    return { appointmentId: appt.id, previousStartIso: appt.scheduled_for_start };
+  }
+
+  private friendlyTime(iso: string, timeZone: string): string {
+    return new Date(iso).toLocaleString('en-US', {
+      timeZone,
+      weekday: 'short',
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+    });
+  }
+
+  /**
    * Validate a candidate slot against the operator's business hours (in their
    * timezone) and basic sanity. Throws `ValidationError` — the AI tool layer
    * catches it and feeds the reason back to the model to re-propose, so a
@@ -278,6 +389,8 @@ export class BookingsService {
     operator: OperatorRow,
     startIso: string,
     endIso: string,
+    /** Reschedule: the appointment being moved doesn't block its own new slot. */
+    excludeAppointmentId?: string,
   ): Promise<void> {
     const startMs = new Date(startIso).getTime();
     const endMs = new Date(endIso).getTime();
@@ -306,13 +419,13 @@ export class BookingsService {
     const { data: rows, error } = await this.supabase
       .db()
       .from('appointments')
-      .select('scheduled_for_start, scheduled_for_end')
+      .select('id, scheduled_for_start, scheduled_for_end')
       .eq('operator_id', operator.id)
       .in('status', ['proposed', 'confirmed'])
       .lt('scheduled_for_start', overlapTo)
       .gt('scheduled_for_end', overlapFrom);
     if (error) throw error;
-    const existing = (rows ?? []).map((r) => ({
+    const existing = (rows ?? []).filter((r) => r.id !== excludeAppointmentId).map((r) => ({
       start: new Date(r.scheduled_for_start).getTime(),
       end: new Date(r.scheduled_for_end).getTime(),
     }));

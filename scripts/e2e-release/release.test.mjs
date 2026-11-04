@@ -492,6 +492,39 @@ await stage(`7. free-trial cap (${TRIAL_CAP} people): 80% and 100% emails, then 
   );
 });
 
+await stage('7b. caller reschedules by text → the SAME appointment moves (no duplicate)', async () => {
+  // Regression (prod, 2026-11-04): "reschedule to Saturday" created a second
+  // appointment and left the original standing.
+  const before = S.appt;
+  if (!before) return fail('no appointment to reschedule');
+  const patchesBefore = captured('google_event_patch').length;
+  let say = 'Hi, something came up. Can I move my appointment to a different day? A later day that week would be better.';
+  const transcript = [];
+  let moved = null;
+  for (let turn = 0; turn < 6 && !moved; turn += 1) {
+    const since = new Date().toISOString();
+    await sleep(50);
+    await sms(S.opId, S.maria, say);
+    transcript.push(`CALLER: ${say}`);
+    const replies = await botRepliesAfter(S.opId, S.maria, since, 90_000);
+    if (!replies) { fail(`no bot reply within 90s on reschedule turn ${turn + 1}`); break; }
+    const last = replies.map((m) => m.body).join(' ');
+    transcript.push(`BOT:    ${last}`);
+    const { data: row } = await db.from('appointments').select('*').eq('id', before.id).maybeSingle();
+    if (row && row.scheduled_for_start !== before.scheduled_for_start) moved = row;
+    say = /\b(am|pm)\b|slot|which (time|one)|available|work/i.test(last) ? 'The first time you offered works for me' : 'Yes please';
+  }
+  console.log(transcript.map((l) => `      ${l}`).join('\n'));
+  const { data: live } = await db.from('appointments').select('id, status, scheduled_for_start').eq('operator_id', S.opId).eq('caller_phone_e164', S.maria).neq('status', 'cancelled');
+  check(moved, 'the original appointment row now has the new time', transcript.slice(-2).join(' | '));
+  check(live?.length === 1 && live[0].id === before.id, `still exactly ONE appointment for the caller (${live?.length})`, JSON.stringify(live));
+  check(captured('google_event_patch').length > patchesBefore, 'the existing Google Calendar event was moved (PATCH), not a new one inserted');
+  const texts = (await messages(S.opId, S.maria)).msgs.filter((m) => m.role === 'system' && /has been moved to/.test(m.body));
+  check(texts.length >= 1, 'caller got the "your appointment has been moved" text', texts.at(-1)?.body);
+  check(moved && moved.reminder_sent_at == null, 'the 24h reminder is re-armed for the new time');
+  if (moved) S.appt = moved;
+});
+
 await stage('8. end trial early → first Solo charge (test card) → fresh window at the full Solo limit', async () => {
   const before = (await operatorRow(S.opId)).current_period_start;
   check(await advanceClock(S.clockId, Math.floor(Date.now() / 1000) - 5), 'test clock brought to the real present (1 day into the trial)');

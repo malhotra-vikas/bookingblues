@@ -122,6 +122,24 @@ export function bookingConfirmationSms(args: {
   );
 }
 
+/** The caller's existing appointment was MOVED (not a second booking). */
+export function rescheduleConfirmationSms(args: {
+  businessName: string;
+  friendlyTime: string;
+  icsUrl: string;
+  callerName?: string | null;
+  category?: string | null;
+}): string {
+  const fn = firstName(args.callerName);
+  const lead = fn ? `✅ ${fn}, your appointment` : '✅ Your appointment';
+  return (
+    `${lead} with ${args.businessName} has been moved to ${args.friendlyTime}. ` +
+    `Your earlier time is cancelled.` +
+    bringListLine(args.category) +
+    ` Updated calendar link: ${args.icsUrl}`
+  );
+}
+
 /** Final acknowledgement after the caller provides their property address. */
 export function addressConfirmedSms(friendlyTime: string): string {
   return `Perfect — got your address. You're all set for ${friendlyTime}. See you then!`;

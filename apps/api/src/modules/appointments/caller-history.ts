@@ -106,6 +106,35 @@ export function formatCallerJobsForPrompt(jobs: CallerJob[], timezone: string): 
 }
 
 /**
+ * Office categories (insurance): the caller's UPCOMING confirmed appointments,
+ * with ids, INCLUDING one booked earlier in this same conversation — so a
+ * "can we move it to Saturday?" moves it (reschedule_appointment) instead of
+ * booking a duplicate. Null when there are none.
+ */
+export function formatUpcomingAppointmentsForPrompt(
+  jobs: CallerJob[],
+  timezone: string,
+  nowMs: number = Date.now(),
+): string | null {
+  const upcoming = jobs
+    .filter((j) => j.status === 'confirmed' && j.scheduledForStart && new Date(j.scheduledForStart).getTime() > nowMs)
+    .sort((a, b) => (a.scheduledForStart! < b.scheduledForStart! ? -1 : 1));
+  if (upcoming.length === 0) return null;
+  return [
+    'UPCOMING APPOINTMENTS — this caller is already booked:',
+    ...upcoming.map((j) => `- id ${j.id}: ${formatWhen(j.scheduledForStart, timezone)} — "${j.jobSummary ?? 'appointment'}"`),
+    '',
+    'The caller already has this appointment — do NOT book another one.',
+    '- If they want a different day or time: ask when, check availability, offer open',
+    '  slots, and once they pick one call reschedule_appointment with the id above.',
+    '  The same appointment is moved; their old time is released.',
+    '- If they want to cancel, or want an additional separate appointment, call',
+    '  escalate_to_human with the reason — the agency will handle it.',
+    '- Otherwise just answer their question about the appointment.',
+  ].join('\n');
+}
+
+/**
  * Caller-history context for the #hitl escalation alarm so the human has the
  * full picture. Returns null when there are no jobs on file.
  */

@@ -32,6 +32,7 @@ import type {
   MarkSpamArgs,
   ProposeSlotsArgs,
   RequestPaymentLinkArgs,
+  RescheduleAppointmentArgs,
   SaveIntakeAnswersArgs,
 } from './tool-definitions';
 import { describeServiceArea, isZipInServiceArea, parseRadiusZones } from './service-area';
@@ -196,11 +197,78 @@ async function intakeAnswersSaved(ctx: ToolContext): Promise<boolean> {
   return Boolean(data?.intake_answers_enc);
 }
 
+/** The caller's upcoming confirmed appointments with this operator (any conversation). */
+async function upcomingAppointments(ctx: ToolContext): Promise<Array<{ id: string; scheduled_for_start: string }>> {
+  const { data, error } = await ctx.supabase
+    .db()
+    .from('appointments')
+    .select('id, scheduled_for_start')
+    .eq('operator_id', ctx.operator.id)
+    .eq('caller_phone_e164', ctx.callerPhoneE164)
+    .eq('status', 'confirmed')
+    .gt('scheduled_for_start', new Date().toISOString())
+    .order('scheduled_for_start', { ascending: true });
+  if (error) throw error;
+  return data ?? [];
+}
+
+/**
+ * Office categories: move the caller's existing appointment (same row, same
+ * calendar event). Never creates a second appointment.
+ */
+export async function rescheduleAppointment(
+  args: RescheduleAppointmentArgs,
+  ctx: ToolContext,
+): Promise<ToolResult> {
+  // Trades keep the existing rule (changes to an existing job → escalate_to_human).
+  if (!isOfficeAppointmentCategory(ctx.operator.category)) {
+    return { content: { error: 'not_available', message: 'Rescheduling is not available here. Use escalate_to_human.' } };
+  }
+  try {
+    await ctx.bookings.reschedule({
+      operator: ctx.operator,
+      appointmentId: args.appointment_id,
+      callerPhoneE164: ctx.callerPhoneE164,
+      conversationId: ctx.conversation.id,
+      startIso: localWallTimeToUtcIso(args.start, ctx.operator.timezone),
+      endIso: localWallTimeToUtcIso(args.end, ctx.operator.timezone),
+    });
+    return {
+      content: { appointment_id: args.appointment_id, status: 'rescheduled' },
+      // reschedule() already texted the caller the new time.
+      state: 'completed',
+      outcome: 'booked',
+    };
+  } catch (err) {
+    if (err instanceof ConflictError) {
+      return { content: { error: 'slot_unavailable', message: err.message } };
+    }
+    if (err instanceof ValidationError) {
+      return { content: { error: 'invalid_request', message: err.message } };
+    }
+    throw err;
+  }
+}
+
 /**
  * Office-appointment booking (Insurance Agencies): no deposit, no address step,
  * no emergency handling. Confirms and completes the conversation in one go.
  */
 async function bookOfficeAppointment(args: BookAppointmentArgs, ctx: ToolContext): Promise<ToolResult> {
+  // A caller who already has an upcoming appointment is changing it, not booking
+  // a second one — "reschedule to Saturday" used to leave Sunday AND add Saturday.
+  const upcoming = await upcomingAppointments(ctx);
+  if (upcoming.length > 0) {
+    return {
+      content: {
+        error: 'already_booked',
+        message:
+          `This caller already has an upcoming appointment (id ${upcoming[0]!.id}). To change its day or time, ` +
+          'call reschedule_appointment with that id — never book a second one. If they clearly want an ' +
+          'ADDITIONAL, separate appointment, call escalate_to_human so the agency can arrange it.',
+      },
+    };
+  }
   if (collectsIntakeAnswers(ctx.operator.category) && !(await intakeAnswersSaved(ctx))) {
     return {
       content: {

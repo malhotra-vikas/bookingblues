@@ -51,6 +51,14 @@ export const BookAppointmentArgs = z.object({
 });
 export type BookAppointmentArgs = z.infer<typeof BookAppointmentArgs>;
 
+/** Office categories: move the caller's existing upcoming appointment (never a second booking). */
+export const RescheduleAppointmentArgs = z.object({
+  appointment_id: z.string().uuid(),
+  start: LocalDateTime,
+  end: LocalDateTime,
+});
+export type RescheduleAppointmentArgs = z.infer<typeof RescheduleAppointmentArgs>;
+
 export const RequestPaymentLinkArgs = z.object({
   appointment_id: z.string().uuid(),
 });
@@ -269,6 +277,25 @@ const SAVE_INTAKE_ANSWERS_TOOL: OpenAI.Chat.Completions.ChatCompletionTool = {
   },
 };
 
+const RESCHEDULE_APPOINTMENT_TOOL: OpenAI.Chat.Completions.ChatCompletionTool = {
+  type: 'function',
+  function: {
+    name: 'reschedule_appointment',
+    description:
+      "Move the caller's EXISTING upcoming appointment (listed under UPCOMING APPOINTMENTS in the prompt) to a new agreed slot. Use this — never book_appointment — whenever the caller wants to change the day or time of an appointment they already have. The same appointment is moved (no duplicate), the operator's calendar updates and the caller is texted the new time. Check availability first. `start`/`end` are LOCAL wall-clock time in the operator's timezone, `YYYY-MM-DDTHH:MM`, no offset, within business hours. On error \"slot_unavailable\", propose other open slots.",
+    parameters: {
+      type: 'object',
+      properties: {
+        appointment_id: { type: 'string', description: 'id of the appointment to move, from UPCOMING APPOINTMENTS' },
+        start: { type: 'string', description: 'New start, local YYYY-MM-DDTHH:MM' },
+        end: { type: 'string', description: 'New end, local YYYY-MM-DDTHH:MM' },
+      },
+      required: ['appointment_id', 'start', 'end'],
+      additionalProperties: false,
+    },
+  },
+};
+
 /** Field-visit-only tools that office-appointment categories never get. */
 const FIELD_ONLY_TOOLS: ReadonlySet<string> = new Set(['check_service_area', 'collect_service_address']);
 
@@ -300,5 +327,6 @@ export function toolDefinitionsFor(
       },
     };
   });
-  return collectsIntakeAnswers(category) ? [SAVE_INTAKE_ANSWERS_TOOL, ...tools] : tools;
+  const withReschedule = [...tools, RESCHEDULE_APPOINTMENT_TOOL];
+  return collectsIntakeAnswers(category) ? [SAVE_INTAKE_ANSWERS_TOOL, ...withReschedule] : withReschedule;
 }
