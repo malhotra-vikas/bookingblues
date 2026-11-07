@@ -60,4 +60,11 @@ export class AdvanceSchedulerService {
     }, DEBOUNCE_MS);
     this.timers.set(conversationId, timer);
   }
+
+  /** Drop a pending run, if any (e.g. the caller texted STOP inside the window). */
+  cancel(conversationId: string): void {
+    const existing = this.timers.get(conversationId);
+    if (existing) clearTimeout(existing);
+    this.timers.delete(conversationId);
+  }
 }

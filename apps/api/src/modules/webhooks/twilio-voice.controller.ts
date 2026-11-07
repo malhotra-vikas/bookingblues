@@ -16,17 +16,13 @@ import { PinoLogger } from 'nestjs-pino';
 
 import { SupabaseService } from '../../common/supabase/supabase.service';
 import { TwilioService } from '../../common/twilio/twilio.service';
-import {
-  VOICE_CONSENT_REPROMPT_TEXT,
-  VOICE_CONSENT_TEXT,
-  VOICE_CONSENT_VERSION,
-} from '../consent/sms-consent.dto';
-import { openingSms, usageLimitOpeningSms } from '../conversations/templates/sms-templates';
-import { UsageService } from '../usage/usage.service';
+import { VOICE_CONSENT_REPROMPT_TEXT, VOICE_CONSENT_TEXT } from '../consent/sms-consent.dto';
 import { WebhookIdempotencyService } from '../../common/webhooks/webhook-idempotency.service';
 import { ENV_TOKEN } from '../../config/config.module';
 import type { Env } from '../../config/env';
 import { ConversationsService } from '../conversations/conversations.service';
+
+import { ConversationOpeningService } from './conversation-opening.service';
 import {
   callerConsentedFromGather,
   escapeXml,
@@ -56,7 +52,7 @@ export class TwilioVoiceController {
     private readonly twilio: TwilioService,
     private readonly conversations: ConversationsService,
     private readonly idempotency: WebhookIdempotencyService,
-    private readonly usage: UsageService,
+    private readonly opening: ConversationOpeningService,
     private readonly logger: PinoLogger,
     @Inject(ENV_TOKEN) private readonly env: Env,
   ) {
@@ -214,11 +210,9 @@ export class TwilioVoiceController {
   }
 
   /**
-   * Persist durable proof of verbal opt-in (source 'voice_ivr'). Stores the
-   * exact disclosure the caller heard + how they affirmed. Best-effort row:
-   * the disclosure text is also the carrier-submitted transcript, so this is
-   * the audit trail behind that claim. `name` is null for voice (no name
-   * collected) — see migration 20260623000001.
+   * Persist durable proof of verbal opt-in (source 'voice_ivr'): the exact
+   * disclosure the caller heard + how they affirmed. The disclosure text is also
+   * the carrier-submitted transcript, so this is the audit trail behind it.
    */
   private async recordVoiceConsent(
     operatorId: string,
@@ -227,26 +221,12 @@ export class TwilioVoiceController {
     if (!form.From) return;
     const affirmation =
       form.Digits?.trim() === '1' ? 'pressed 1' : `said "${form.SpeechResult ?? ''}"`;
-    const { error } = await this.supabase
-      .db()
-      .from('sms_consents')
-      .insert({
-        name: null,
-        phone_e164: form.From,
-        trade: null,
-        source: 'voice_ivr',
-        consent_version: VOICE_CONSENT_VERSION,
-        consent_text: VOICE_CONSENT_TEXT,
-        ip_address: null,
-        user_agent: `twilio-voice-ivr (${affirmation})`,
-      });
-    if (error) {
-      // Loud, but don't block the SMS the caller just consented to.
-      this.logger.error(
-        { err: error.message, operatorId },
-        'voice: verbal consent insert failed',
-      );
-    }
+    await this.opening.recordConsent({
+      operatorId,
+      callerPhoneE164: form.From,
+      channel: 'call',
+      affirmation,
+    });
   }
 
   private async startConversationFromCall(
@@ -263,39 +243,13 @@ export class TwilioVoiceController {
       resumeCompleted: false,
       freshIfBooked: true,
     });
-    // A2P 10DLC requires the first message in any conversation to disclose
-    // opt-out + message-rate language (CTIA + carrier guidelines). Twilio
-    // enforces STOP/UNSTOP automatically once a recipient sends those words;
-    // we just need the human-readable disclosure on the first turn.
-    // PROGRESS.md Slice 16(15). Template carries the disclosure.
-    // Plan usage (#usage-metering): a NEW caller on a Solo plan that's at its
-    // limit gets a polite "we'll follow up" text instead of the AI invite.
-    const admitted = await this.usage.wouldAdmit(operator.id, callerPhone);
-    const opening = admitted
-      ? openingSms(operator.business_name, operator.category)
-      : usageLimitOpeningSms(operator.business_name);
-
-    const send = await this.twilio.sendSms({
-      from: operator.twilio_number_e164,
-      to: callerPhone,
-      body: opening,
+    // First SMS carries the A2P opt-out disclosure and the plan-usage check;
+    // shared with the text-first path so both start the same conversation.
+    await this.opening.sendOpening({
+      operator,
+      conversationId: convo.id,
+      callerPhoneE164: callerPhone,
+      channel: 'call',
     });
-
-    if ('sid' in send) {
-      await this.conversations.appendMessage({
-        conversationId: convo.id,
-        role: 'bot',
-        body: opening,
-        twilioMessageSid: send.sid,
-      });
-    } else {
-      // Skipped by allowlist — still record the message so the conversation
-      // shows what we'd send. Useful in dev/staging.
-      await this.conversations.appendMessage({
-        conversationId: convo.id,
-        role: 'bot',
-        body: `[skipped: ${send.skipped}] ${opening}`,
-      });
-    }
   }
 }

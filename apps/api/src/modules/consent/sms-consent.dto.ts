@@ -45,6 +45,17 @@ export const VOICE_CONSENT_TEXT =
  * the caller who was still deciding; without it one silent beat ended the call
  * with "we will not text you".
  */
+/**
+ * Consent record for a caller who TEXTS the business number first. Texting in
+ * is the caller asking us to reply (consumer-initiated), so there is no
+ * separate opt-in step; what we store is the basis for replying plus the
+ * disclosure the opening SMS carries. Bump the version if either changes.
+ */
+export const SMS_INBOUND_CONSENT_VERSION = 'sms-inbound-2026-11-07';
+export const SMS_INBOUND_CONSENT_TEXT =
+  'Caller texted the business number first, requesting a reply. The opening reply ' +
+  'discloses: Reply STOP to opt out. Msg & data rates may apply.';
+
 export const VOICE_CONSENT_REPROMPT_TEXT =
   'Still there? Press 1, or say yes, and we will text you right now to get you scheduled.';
 
