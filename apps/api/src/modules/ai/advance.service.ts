@@ -492,7 +492,8 @@ export class AdvanceService {
 
   // ── helpers ──────────────────────────────────────────────────────────────
 
-  private toolCtx(
+  /** Shared with the voice bridge (modules/voice), which runs the same tools. */
+  toolCtx(
     operator: OperatorRow,
     conversation: ConversationRow,
     callerPhoneE164: string,
@@ -513,45 +514,34 @@ export class AdvanceService {
     };
   }
 
+  /**
+   * System prompt for a conversation: frame + operator block + category
+   * template + caller history. Loads the category itself. The voice bridge
+   * appends its own voice rules to this (modules/voice/voice-prompt.ts).
+   */
+  async buildSystemPrompt(
+    operator: OperatorRow,
+    conversationId: string,
+    callerPhoneE164: string,
+  ): Promise<string> {
+    const { data: category } = operator.category
+      ? await this.supabase
+          .db()
+          .from('categories')
+          .select('*')
+          .eq('slug', operator.category)
+          .maybeSingle()
+      : { data: null };
+    return this.systemPromptFor(operator, category, conversationId, callerPhoneE164);
+  }
+
   private async buildMessages(
     operator: OperatorRow,
     category: Tables<'categories'> | null,
     conversationId: string,
     callerPhoneE164: string,
   ): Promise<OpenAI.Chat.Completions.ChatCompletionMessageParam[]> {
-    // Caller history lets the bot recognise a returning caller who already has
-    // a job on file and escalate (instead of double-booking) when they want to
-    // discuss/change an existing one. Best-effort — never block the reply.
-    let callerHistory: string | null = null;
-    try {
-      const jobs = await fetchCallerJobs(this.supabase.db(), operator.id, callerPhoneE164);
-      // (1) Every UPCOMING confirmed appointment — this conversation's included —
-      //     with ids, so "can we move it to Saturday?" calls reschedule_appointment
-      //     instead of booking a duplicate (prod 2026-11-04). The block tells the
-      //     model to continue a pending step (address/deposit), so the trades'
-      //     post-booking address turn still works.
-      // (2) Other jobs (past / unconfirmed) from EARLIER conversations — the
-      //     existing escalate-to-discuss rule. This conversation's own are
-      //     excluded, as before, so its pending hold isn't treated as "existing".
-      const now = Date.now();
-      const upcoming = formatUpcomingAppointmentsForPrompt(jobs, operator.timezone, now, {
-        office: isOfficeAppointmentCategory(operator.category),
-      });
-      const otherJobs = jobs.filter((j) => !isUpcomingConfirmed(j, now) && j.conversationId !== conversationId);
-      const other = formatCallerJobsForPrompt(otherJobs, operator.timezone);
-      callerHistory = [upcoming, other].filter(Boolean).join('\n\n') || null;
-    } catch (err) {
-      this.logger.warn(
-        { conversationId, err: (err as Error).message },
-        'caller-history fetch failed (non-fatal); prompt omits it',
-      );
-    }
-    const system = assembleSystemPrompt({
-      operator,
-      category,
-      nowIso: new Date().toISOString(),
-      callerHistory,
-    });
+    const system = await this.systemPromptFor(operator, category, conversationId, callerPhoneE164);
     // 'system' rows are texts the caller DID receive but the model didn't write
     // (booking confirmation, reminders, human-agent replies). Office appointments
     // (insurance) complete in one step with that confirmation, so the model must see
@@ -580,7 +570,49 @@ export class AdvanceService {
     return [{ role: 'system', content: system }, ...turns];
   }
 
-  private async dispatchTool(
+  private async systemPromptFor(
+    operator: OperatorRow,
+    category: Tables<'categories'> | null,
+    conversationId: string,
+    callerPhoneE164: string,
+  ): Promise<string> {
+    // Caller history lets the bot recognise a returning caller who already has
+    // a job on file and escalate (instead of double-booking) when they want to
+    // discuss/change an existing one. Best-effort — never block the reply.
+    let callerHistory: string | null = null;
+    try {
+      const jobs = await fetchCallerJobs(this.supabase.db(), operator.id, callerPhoneE164);
+      // (1) Every UPCOMING confirmed appointment — this conversation's included —
+      //     with ids, so "can we move it to Saturday?" calls reschedule_appointment
+      //     instead of booking a duplicate (prod 2026-11-04). The block tells the
+      //     model to continue a pending step (address/deposit), so the trades'
+      //     post-booking address turn still works.
+      // (2) Other jobs (past / unconfirmed) from EARLIER conversations — the
+      //     existing escalate-to-discuss rule. This conversation's own are
+      //     excluded, as before, so its pending hold isn't treated as "existing".
+      const now = Date.now();
+      const upcoming = formatUpcomingAppointmentsForPrompt(jobs, operator.timezone, now, {
+        office: isOfficeAppointmentCategory(operator.category),
+      });
+      const otherJobs = jobs.filter((j) => !isUpcomingConfirmed(j, now) && j.conversationId !== conversationId);
+      const other = formatCallerJobsForPrompt(otherJobs, operator.timezone);
+      callerHistory = [upcoming, other].filter(Boolean).join('\n\n') || null;
+    } catch (err) {
+      this.logger.warn(
+        { conversationId, err: (err as Error).message },
+        'caller-history fetch failed (non-fatal); prompt omits it',
+      );
+    }
+    return assembleSystemPrompt({
+      operator,
+      category,
+      nowIso: new Date().toISOString(),
+      callerHistory,
+    });
+  }
+
+  /** Zod-validated tool dispatch. Shared with the voice bridge. */
+  async dispatchTool(
     name: string,
     rawArgs: string,
     ctx: ToolContext,
@@ -665,7 +697,7 @@ export class AdvanceService {
     }
   }
 
-  private async applyTerminal(conversationId: string, result: ToolResult): Promise<void> {
+  async applyTerminal(conversationId: string, result: ToolResult): Promise<void> {
     if (!result.state) return;
     const status = result.state === 'escalated' ? 'escalated' : 'completed';
     const update: { status: typeof status; completed_at?: string; outcome?: Outcome } = {

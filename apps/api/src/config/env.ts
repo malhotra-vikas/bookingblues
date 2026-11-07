@@ -163,6 +163,25 @@ const baseSchema = z.object({
   // critical-path doc this is the single highest-conversion activation
   // lever. Empty = button hidden.
   SETUP_CALL_BOOKING_URL: z.string().url().or(z.literal('')).optional(),
+
+  // Voice AI spike (spike/voice-ai-realtime, docs/spikes/voice-ai-realtime.md).
+  // Operators whose missed calls go to a live AI voice conversation instead of
+  // the press-1 IVR -> SMS flow. Comma-separated operator ids, or `*` for all.
+  // Unset = off for everyone (the existing IVR flow).
+  VOICE_AI_OPERATOR_IDS: z.string().optional(),
+  OPENAI_REALTIME_MODEL: z.string().default('gpt-realtime'),
+  OPENAI_REALTIME_VOICE: z.string().default('marin'),
+  OPENAI_REALTIME_TRANSCRIBE_MODEL: z.string().default('gpt-4o-mini-transcribe'),
+  // Turn detection is the biggest latency knob: how long after the caller stops
+  // talking the model decides it's its turn. Tune these on real calls.
+  VOICE_TURN_DETECTION: z.enum(['semantic_vad', 'server_vad']).default('semantic_vad'),
+  VOICE_VAD_EAGERNESS: z.enum(['low', 'medium', 'high', 'auto']).default('auto'),
+  VOICE_VAD_SILENCE_MS: z.coerce.number().int().min(100).max(2000).default(500),
+  VOICE_MAX_CALL_SECONDS: z.coerce.number().int().min(60).max(3600).default(600),
+  VOICE_RECORD_CALLS: z
+    .enum(['true', 'false'])
+    .default('true')
+    .transform((v) => v === 'true'),
 });
 
 /**

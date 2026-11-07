@@ -124,6 +124,7 @@ The API is the only service that talks to Twilio, OpenAI, Stripe, and Google. Th
 | Logging | Pino with redaction config | Structured JSON, PII redaction built-in |
 | Error tracking | Sentry | Both API and Web |
 | Observability | Railway logs + Sentry for MVP. Add OpenTelemetry post-MVP. | |
+| Voice AI (spike only) | OpenAI Realtime (`gpt-realtime`) over Twilio Media Streams, `ws` | Branch `spike/voice-ai-realtime`, see `docs/spikes/voice-ai-realtime.md`. Not an ADR yet; ADR 0007 (SMS-only) still stands. |
 
 Do not introduce new top-level dependencies without updating this file and the architecture decision record.
 

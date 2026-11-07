@@ -27,6 +27,7 @@ import { WebhookIdempotencyService } from '../../common/webhooks/webhook-idempot
 import { ENV_TOKEN } from '../../config/config.module';
 import type { Env } from '../../config/env';
 import { ConversationsService } from '../conversations/conversations.service';
+import { VoiceCallService } from '../voice/voice-call.service';
 import {
   callerConsentedFromGather,
   escapeXml,
@@ -57,6 +58,7 @@ export class TwilioVoiceController {
     private readonly conversations: ConversationsService,
     private readonly idempotency: WebhookIdempotencyService,
     private readonly usage: UsageService,
+    private readonly voiceCalls: VoiceCallService,
     private readonly logger: PinoLogger,
     @Inject(ENV_TOKEN) private readonly env: Env,
   ) {
@@ -69,6 +71,7 @@ export class TwilioVoiceController {
   async handle(
     @Req() req: Request,
     @Param('operatorId') operatorId: string,
+    @Query('fallback') fallback: string | undefined,
     @Body() form: TwilioVoiceForm,
   ): Promise<string> {
     verifyTwilioSignature({
@@ -83,6 +86,26 @@ export class TwilioVoiceController {
       operatorId,
       to: form.To,
     });
+
+    // Voice AI spike: a live AI conversation instead of the IVR, for enabled
+    // operators. `fallback=1` is the voice bridge sending a call back here after
+    // OpenAI failed, so it must get the IVR. Any error here also falls through
+    // to the IVR: the caller is never left without a path.
+    if (fallback !== '1' && form.CallSid && form.From) {
+      try {
+        const twiml = await this.voiceCalls.tryStart({
+          operatorId: operator.id,
+          callSid: form.CallSid,
+          callerPhoneE164: form.From,
+        });
+        if (twiml) return twiml;
+      } catch (err) {
+        this.logger.error(
+          { operatorId: operator.id, err: err instanceof Error ? err.message : String(err) },
+          'voice AI start failed; using IVR',
+        );
+      }
+    }
 
     // No side effects here: A2P 10DLC requires affirmative opt-in before we
     // text. We disclose + ask the caller to press 1 / say yes; the SMS is only

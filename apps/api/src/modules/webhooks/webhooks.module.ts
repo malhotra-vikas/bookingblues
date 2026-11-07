@@ -10,6 +10,7 @@ import { BillingModule } from '../billing/billing.module';
 import { ConversationsModule } from '../conversations/conversations.module';
 import { SlackModule } from '../slack/slack.module';
 import { UsageModule } from '../usage/usage.module';
+import { VoiceModule } from '../voice/voice.module';
 
 import { StripeConnectController } from './stripe-connect.controller';
 import { StripeEventProcessor } from './stripe-event-processor.service';
@@ -32,6 +33,7 @@ import { WebhookReplayService } from './webhook-replay.service';
     BillingModule,
     SlackModule,
     UsageModule,
+    VoiceModule,
   ],
   controllers: [
     StripePlatformController,
