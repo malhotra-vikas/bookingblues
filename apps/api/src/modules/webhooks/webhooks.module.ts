@@ -11,6 +11,7 @@ import { ConversationsModule } from '../conversations/conversations.module';
 import { SlackModule } from '../slack/slack.module';
 import { UsageModule } from '../usage/usage.module';
 
+import { ConversationOpeningService } from './conversation-opening.service';
 import { StripeConnectController } from './stripe-connect.controller';
 import { StripeEventProcessor } from './stripe-event-processor.service';
 import { StripePlatformController } from './stripe-platform.controller';
@@ -41,6 +42,6 @@ import { WebhookReplayService } from './webhook-replay.service';
     TwilioStatusController,
     WebhookReplayController,
   ],
-  providers: [StripeEventProcessor, WebhookReplayService],
+  providers: [StripeEventProcessor, WebhookReplayService, ConversationOpeningService],
 })
 export class WebhooksModule {}

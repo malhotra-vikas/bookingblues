@@ -34,6 +34,26 @@ export function openingSms(businessName: string, category?: string | null): stri
 }
 
 /**
+ * Opening SMS when the caller TEXTS the business number first instead of
+ * calling. Same job as `openingSms` (first message of the conversation, carries
+ * the opt-out disclosure), but "thanks for calling" would read wrong after a
+ * text.
+ */
+export function textOpeningSms(businessName: string, category?: string | null): string {
+  if (category === 'insurance') {
+    return (
+      `Hi, this is ${businessName}, thanks for your text! Are you looking at Medicare ` +
+      `or another plan, reviewing your current coverage, or have a question? Reply here and ` +
+      `we'll set up a time with one of our agents. ${STOP_DISCLOSURE}`
+    );
+  }
+  return (
+    `Hi! Thanks for texting ${businessName}. What can we help with today? ` +
+    `Reply here and we'll get you on the schedule. ${STOP_DISCLOSURE}`
+  );
+}
+
+/**
  * What the caller is actually charged at Checkout, itemised. The platform fee
  * is charged ON TOP of the deposit, so quoting only the deposit made the SMS
  * disagree with the Checkout page (E2E test 2026-10-28: "$10.00" vs $11.50).

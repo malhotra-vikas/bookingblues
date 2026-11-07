@@ -440,19 +440,12 @@ The Web app uses the anon key and reads via RLS. The API uses the service role a
 ### 9.2 Inbound call to SMS handoff (the critical path)
 
 1. Caller dials Operator's mobile, no answer, carrier forwards to the Operator's Twilio number.
-2. Twilio POSTs to `/webhooks/twilio/voice/:operatorId`. We respond with TwiML:
-   ```xml
-   <Response>
-     <Say voice="Polly.Joanna">Thanks for calling {business_name}. They are with another customer. We will text you right away to schedule.</Say>
-     <Hangup/>
-   </Response>
-   ```
-3. Same handler enqueues a `conversation.start` job. The job:
-   - Creates or resumes a `conversations` row (status `awaiting_bot`).
-   - Sends the opening SMS via Twilio Messaging API. Opening message is category-specific and includes Operator business name.
-   - Logs an `audit_log` entry.
+2. Twilio POSTs to `/webhooks/twilio/voice/:operatorId`. We answer with a `<Gather>` asking the caller to press 1 or say yes to get a text (A2P 10DLC opt-in; wording in `consent/sms-consent.dto.ts`). No answer is re-asked once; a second non-answer ends the call and nothing is sent.
+3. On yes, `/webhooks/twilio/voice/:operatorId/consent` records a `sms_consents` row (`voice_ivr`), creates the conversation, and sends the opening SMS (category-specific, business name, STOP disclosure; the limit-reached text instead when the plan is full). Shared code: `webhooks/conversation-opening.service.ts`.
 4. Caller replies via SMS. Twilio POSTs to `/webhooks/twilio/sms/:operatorId`.
-5. Webhook handler validates signature, finds or creates conversation, persists message, enqueues `conversation.advance` job.
+5. Webhook handler validates signature, finds or creates conversation, persists message, opens/echoes the `#convos` thread, runs emergency detection, then schedules the AI advance (3s debounce).
+
+   **Text-first contact**: if the caller texts the number instead of calling, the conversation has no bot message yet, so the handler starts it the way a call does: `sms_consents` row (`sms_inbound`, texting in is the consent), then the opening SMS (`textOpeningSms`, "thanks for texting"). The AI does not answer that first text; it starts on the caller's next reply with the first text in history. A burst of first texts sends one opening (same debounce). A first text that is a carrier keyword (STOP, HELP, START...) gets nothing, since Twilio answers those.
 6. Worker calls OpenAI with conversation history + tools (see 9.3). Persists bot response and any tool results. Sends bot SMS reply via Twilio.
 7. Loop continues until tool `book_appointment` succeeds, or bot determines `out_of_scope` / `spam` / max-turn threshold reached.
 

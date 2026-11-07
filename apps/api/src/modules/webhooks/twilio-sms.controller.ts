@@ -26,6 +26,7 @@ import { ConversationsService } from '../conversations/conversations.service';
 import { detectEmergencyKeyword } from '../conversations/emergency-detection';
 import { EmergencyClassifierService } from '../conversations/emergency-classifier.service';
 import { EscalationsService } from '../slack/escalations.service';
+import { ConversationOpeningService, isCarrierKeyword } from './conversation-opening.service';
 import { resolveOperatorForWebhook, verifyTwilioSignature } from './twilio-helpers';
 
 interface TwilioSmsForm {
@@ -48,6 +49,7 @@ export class TwilioSmsController {
     private readonly advanceScheduler: AdvanceSchedulerService,
     private readonly escalations: EscalationsService,
     private readonly idempotency: WebhookIdempotencyService,
+    private readonly opening: ConversationOpeningService,
     private readonly logger: PinoLogger,
     @Inject(ENV_TOKEN) private readonly env: Env,
   ) {
@@ -256,6 +258,17 @@ export class TwilioSmsController {
           const openEsc = await this.escalations.findOpenForConversation(convoFull.id);
           if (openEsc) {
             // Human is on it; the echo above already informed the team.
+          } else if (!(await this.opening.hasBotMessage(convoFull.id))) {
+            // Text-first contact: the caller texted the business number instead
+            // of calling. Start the conversation exactly as a missed call does
+            // (consent record + opening SMS with the STOP disclosure); the AI
+            // picks up on their next reply and sees this first text in history.
+            this.scheduleTextOpening({
+              operator: operatorRow,
+              conversationId: convoFull.id,
+              callerPhoneE164: form.From,
+              body: form.Body,
+            });
           } else {
             // Debounce 2s — rapid-fire caller SMS bursts (common: "I need
             // someone" / "kitchen flood" / "08820") collapse into one advance
@@ -279,6 +292,50 @@ export class TwilioSmsController {
     }
 
     return this.emptyResponse();
+  }
+
+  /**
+   * Opening for a text-first caller. Goes through the same per-conversation
+   * debounce as the AI advance, so a burst ("hi" / "need a plumber") sends ONE
+   * opening, and re-checks for a bot message right before sending in case a
+   * call's opening (or another replica) got there first. A first text that is a
+   * carrier keyword (STOP, HELP, START...) gets nothing: Twilio answers those.
+   */
+  private scheduleTextOpening(args: {
+    operator: {
+      id: string;
+      business_name: string;
+      category: string | null;
+      twilio_number_e164: string | null;
+    };
+    conversationId: string;
+    callerPhoneE164: string;
+    body: string;
+  }): void {
+    const { operator, conversationId, callerPhoneE164, body } = args;
+    if (isCarrierKeyword(body)) {
+      this.advanceScheduler.cancel(conversationId);
+      this.logger.info(
+        { operatorId: operator.id, conversationId },
+        'text-first contact was a carrier keyword; no opening sent',
+      );
+      return;
+    }
+    this.advanceScheduler.schedule(conversationId, async () => {
+      if (await this.opening.hasBotMessage(conversationId)) return;
+      await this.opening.recordConsent({
+        operatorId: operator.id,
+        callerPhoneE164,
+        channel: 'text',
+      });
+      await this.opening.sendOpening({
+        operator,
+        conversationId,
+        callerPhoneE164,
+        channel: 'text',
+      });
+      this.logger.info({ operatorId: operator.id, conversationId }, 'text-first opening sent');
+    });
   }
 
   /**
