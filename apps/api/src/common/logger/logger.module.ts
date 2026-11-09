@@ -34,6 +34,17 @@ const REDACT_PATHS = [
   '*.slack_token',
 ];
 
+/**
+ * Emit the level as text ("error") instead of Pino's default number (50).
+ * Railway reads the JSON `level` field only as a string, so numeric levels were
+ * all shown as [INFO]: the 2026-11-09 booking failure was logged with
+ * logger.error and still appeared as INFO. Prod only; pino-pretty in dev
+ * formats levels itself.
+ */
+export function jsonLevelLabel(label: string): { level: string } {
+  return { level: label };
+}
+
 @Module({
   imports: [
     ConfigModule,
@@ -52,7 +63,7 @@ const REDACT_PATHS = [
                   options: { singleLine: true, translateTime: 'SYS:HH:MM:ss.l' },
                 },
               }
-            : {}),
+            : { formatters: { level: jsonLevelLabel } }),
           autoLogging: {
             // Skip noisy infra-level requests. Dashboard polling and the
             // health check shouldn't be in the log feed; we still log the

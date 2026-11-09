@@ -280,13 +280,19 @@ export default async function DashboardPage({
         </section>
       ) : (
         (() => {
-          // Split by whether the visit is still ahead of now. Upcoming: soonest
-          // first. Past: most recent first.
+          // Cancelled appointments get their own section, past or future, so a
+          // cancelled booking never reads as upcoming (prod 2026-11-09). The
+          // rest split by whether the visit is still ahead of now. Upcoming:
+          // soonest first. Past and cancelled: most recent first.
           const now = Date.now();
-          const upcoming = appointmentsR.data
+          const active = appointmentsR.data.filter((a) => a.status !== 'cancelled');
+          const cancelled = appointmentsR.data
+            .filter((a) => a.status === 'cancelled')
+            .sort((x, y) => +new Date(y.scheduled_for_start) - +new Date(x.scheduled_for_start));
+          const upcoming = active
             .filter((a) => new Date(a.scheduled_for_start).getTime() >= now)
             .sort((x, y) => +new Date(x.scheduled_for_start) - +new Date(y.scheduled_for_start));
-          const past = appointmentsR.data
+          const past = active
             .filter((a) => new Date(a.scheduled_for_start).getTime() < now)
             .sort((x, y) => +new Date(y.scheduled_for_start) - +new Date(x.scheduled_for_start));
           return (
@@ -298,6 +304,9 @@ export default async function DashboardPage({
                 emptyBody="No upcoming appointments. New bookings the AI makes will appear here."
               />
               {past.length > 0 ? <AppointmentsTable title="Past appointments" rows={past} timeZone={operatorTz} muted /> : null}
+              {cancelled.length > 0 ? (
+                <AppointmentsTable title="Cancelled appointments" rows={cancelled} timeZone={operatorTz} muted />
+              ) : null}
             </>
           );
         })()
