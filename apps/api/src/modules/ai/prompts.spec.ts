@@ -112,6 +112,15 @@ describe('assembleSystemPrompt', () => {
     expect(prompt.split('---')).toHaveLength(3);
   });
 
+  it('gives the model a dated calendar so it never maps weekdays itself (prod 2026-11-04)', () => {
+    const prompt = assembleSystemPrompt({ operator: baseOperator, category: null, nowIso: '2026-11-04T21:55:00Z' });
+    // Wed Nov 4 in New York → next Tuesday is Nov 10, not Nov 11.
+    expect(prompt).toContain('Wed 2026-11-04 (today), Thu 2026-11-05 (tomorrow)');
+    expect(prompt).toContain('Tue 2026-11-10');
+    expect(prompt).toContain('Wed 2026-11-11');
+    expect(prompt).toContain('NEVER work out which date a weekday falls on yourself');
+  });
+
   it('renders Now in the operator timezone, not UTC', () => {
     const prompt = assembleSystemPrompt({
       operator: baseOperator,

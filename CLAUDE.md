@@ -482,6 +482,7 @@ The Web app uses the anon key and reads via RLS. The API uses the service role a
 - Times in tool args and results are the operator's **local wall-clock time** (`YYYY-MM-DDTHH:MM`, no offset; caller and operator share the timezone). The prompt's `Now` is local too. The server converts to/from UTC in `calendar/zoned-time.ts`, so the model never does DST math; any offset it emits is stripped.
 - `book_appointment` is wrapped in a Postgres advisory lock keyed on `(operator_id, slot_start)` to prevent double-booking when two callers race.
 - Every tool call writes to `messages.ai_tool_calls`.
+- The operator block carries a dated `Calendar` line (next 21 days with weekdays); the model must look dates up there, never compute weekday→date itself. `check_availability` returns `days_in_window` labels; `book_appointment` / `reschedule_appointment` echo `booked_for` / `moved_to` ("Tue, Nov 10, 11:00 AM").
 
 **Guardrails**:
 - Hard turn cap of 20 caller messages per conversation. After cap, `escalate_to_human` is forced.

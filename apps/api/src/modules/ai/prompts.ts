@@ -1,7 +1,7 @@
 import type { Tables } from '@bookingblues/db-types';
 
 import { asBusinessHours, describeBusinessHours } from '../calendar/business-hours';
-import { describeLocalNow } from '../calendar/zoned-time';
+import { describeLocalNow, describeUpcomingDates } from '../calendar/zoned-time';
 import { bringListFor } from '../conversations/templates/sms-templates';
 import { isOfficeAppointmentCategory } from './category-profile';
 import { describeServiceArea } from './service-area';
@@ -114,7 +114,11 @@ closed days named). This is a HARD constraint:
 TIME HANDLING — when the caller mentions a relative or vague time:
 - Anchor all resolution to \`Now\` and \`Timezone\` from the operator block. "Friday"
   means the NEXT Friday on or after the date in \`Now\`. "Tomorrow" is the day
-  after \`Now\`.
+  after \`Now\`. "Next week Tuesday" means the Tuesday of the following week.
+- NEVER work out which date a weekday falls on yourself: look the date up in the
+  \`Calendar\` line of the operator block. When you offer or confirm a time, say
+  the weekday AND the date (e.g. "Tue, Nov 10 at 11am") exactly as the tool
+  results label them.
 - Only ever resolve times to days the operator is OPEN (see Business hours). If
   a relative ask lands on a closed day, shift to the nearest open day.
 - For single-day asks, call check_availability with that day's open window in
@@ -226,7 +230,12 @@ closed days named). This is a HARD constraint:
 
 TIME HANDLING:
 - Anchor all resolution to \`Now\` and \`Timezone\` from the operator block.
-  "Friday" means the NEXT Friday on or after \`Now\`; "tomorrow" is the day after.
+  "Friday" means the NEXT Friday on or after \`Now\`; "tomorrow" is the day after;
+  "next week Tuesday" means the Tuesday of the following week.
+- NEVER work out which date a weekday falls on yourself: look the date up in the
+  \`Calendar\` line of the operator block. When you offer or confirm a time, say
+  the weekday AND the date (e.g. "Tue, Nov 10 at 11am") exactly as the tool
+  results label them.
 - Every time is the operator's LOCAL wall-clock time. Datetimes you pass to tools
   are \`YYYY-MM-DDTHH:MM\` local time with NO \`Z\` and NO UTC offset. Never
   convert to UTC — the system handles timezones and daylight saving.
@@ -277,6 +286,7 @@ export function operatorBlock(operator: OperatorRow, nowIso: string): string {
     `Category: ${operator.category ?? 'unspecified'}`,
     `Timezone: ${operator.timezone}`,
     `Now: ${describeLocalNow(new Date(nowIso), operator.timezone)} (local time, ${operator.timezone})`,
+    `Calendar (use ONLY this to map a weekday to a date): ${describeUpcomingDates(new Date(nowIso), operator.timezone)}`,
     `Visit length: ${operator.visit_duration_min ?? 60} minutes (every appointment is exactly this long — propose and book slots of this duration).`,
     `Business hours (${operator.timezone}): ${businessHours}`,
     // Office appointments have no service area (callers come to / call the office).

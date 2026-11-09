@@ -75,3 +75,39 @@ export function describeLocalNow(now: Date, timeZone: string): string {
   const weekday = new Intl.DateTimeFormat('en-US', { timeZone, weekday: 'short' }).format(now);
   return `${weekday} ${utcToLocalWallTime(now.toISOString(), timeZone).replace('T', ' ')}`;
 }
+
+const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const;
+
+/** Weekday of a local calendar date `YYYY-MM-DD` (pure date math, no timezone). */
+export function weekdayOfLocalDate(ymd: string): (typeof WEEKDAYS)[number] {
+  const [y, m, d] = ymd.split('-').map(Number);
+  return WEEKDAYS[new Date(Date.UTC(y!, m! - 1, d!)).getUTCDay()]!;
+}
+
+/**
+ * The next `days` local dates starting today in `timeZone`, each with its
+ * weekday: "Wed 2026-11-04 (today), Thu 2026-11-05, …". Given to the model so
+ * it never maps a weekday to a date itself — it booked "next Tuesday" on a
+ * Wednesday (prod 2026-11-04).
+ */
+export function describeUpcomingDates(now: Date, timeZone: string, days = 21): string {
+  const today = utcToLocalWallTime(now.toISOString(), timeZone).slice(0, 10);
+  const [y, m, d] = today.split('-').map(Number);
+  const out: string[] = [];
+  for (let i = 0; i < days; i += 1) {
+    const ymd = new Date(Date.UTC(y!, m! - 1, d! + i)).toISOString().slice(0, 10);
+    const label = `${weekdayOfLocalDate(ymd)} ${ymd}`;
+    out.push(i === 0 ? `${label} (today)` : i === 1 ? `${label} (tomorrow)` : label);
+  }
+  return out.join(', ');
+}
+
+/** "Tue, Nov 10, 11:00 AM" for a local wall time `YYYY-MM-DDTHH:MM`. */
+export function describeLocalWallTime(local: string): string {
+  const ymd = local.slice(0, 10);
+  const [, mo, d] = ymd.split('-').map(Number);
+  const [h, min] = local.slice(11, 16).split(':').map(Number);
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const h12 = ((h! + 11) % 12) + 1;
+  return `${weekdayOfLocalDate(ymd)}, ${months[mo! - 1]} ${d}, ${h12}:${String(min).padStart(2, '0')} ${h! < 12 ? 'AM' : 'PM'}`;
+}

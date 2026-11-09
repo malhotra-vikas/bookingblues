@@ -37,7 +37,25 @@ import type {
 } from './tool-definitions';
 import { describeServiceArea, isZipInServiceArea, parseRadiusZones } from './service-area';
 import { fullyBookedIntervals, travelBufferMinFor } from '../appointments/capacity';
-import { localWallTimeToUtcIso, utcToLocalWallTime } from '../calendar/zoned-time';
+import {
+  describeLocalWallTime,
+  localWallTimeToUtcIso,
+  utcToLocalWallTime,
+  weekdayOfLocalDate,
+} from '../calendar/zoned-time';
+
+/** Every local date in [start, end] with its weekday — `[{ date, weekday }]`, max 31. */
+export function daysInWindow(startLocal: string, endLocal: string): Array<{ date: string; weekday: string }> {
+  const out: Array<{ date: string; weekday: string }> = [];
+  const [y, m, d] = startLocal.slice(0, 10).split('-').map(Number);
+  const end = endLocal.slice(0, 10);
+  for (let i = 0; i < 31; i += 1) {
+    const ymd = new Date(Date.UTC(y!, m! - 1, d! + i)).toISOString().slice(0, 10);
+    if (ymd > end) break;
+    out.push({ date: ymd, weekday: weekdayOfLocalDate(ymd) });
+  }
+  return out;
+}
 
 type OperatorRow = Tables<'operators'>;
 type ConversationRow = Tables<'conversations'>;
@@ -147,6 +165,8 @@ export async function checkAvailability(
       truck_count: truckCount,
       busy,
       window: { start: args.window_start, end: args.window_end },
+      // Weekday of every date in the window, so offers name the right day.
+      days_in_window: daysInWindow(args.window_start, args.window_end),
     },
   };
 }
@@ -232,7 +252,7 @@ export async function rescheduleAppointment(
       endIso: localWallTimeToUtcIso(args.end, ctx.operator.timezone),
     });
     return {
-      content: { appointment_id: args.appointment_id, status: 'rescheduled' },
+      content: { appointment_id: args.appointment_id, status: 'rescheduled', moved_to: describeLocalWallTime(args.start) },
       // reschedule() already texted the caller the new time.
       state: 'completed',
       outcome: 'booked',
@@ -273,7 +293,7 @@ async function bookOfficeAppointment(args: BookAppointmentArgs, ctx: ToolContext
       endIso: localWallTimeToUtcIso(args.end, ctx.operator.timezone),
     });
     return {
-      content: { appointment_id: result.appointmentId, status: 'confirmed' },
+      content: { appointment_id: result.appointmentId, status: 'confirmed', booked_for: describeLocalWallTime(args.start) },
       // book() already texted the confirmation — finish without another SMS.
       state: 'completed',
       outcome: 'booked',
@@ -402,6 +422,7 @@ export async function bookAppointment(
     return {
       content: {
         appointment_id: appointmentId,
+        booked_for: describeLocalWallTime(args.start),
         payment_required: true,
         fee_cents: operatorTakeCents,
         // What the caller actually pays (deposit + service fee on top) — quote
@@ -433,6 +454,7 @@ export async function bookAppointment(
     return {
       content: {
         appointment_id: result.appointmentId,
+        booked_for: describeLocalWallTime(args.start),
         ics_url: result.icsUrl,
         booking_fee_required: false,
         status: 'confirmed_awaiting_address',
