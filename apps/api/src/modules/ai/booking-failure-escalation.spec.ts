@@ -92,9 +92,9 @@ describe('booking failures escalate to a human', () => {
     // NOT be misread as a caller-requested hand-off.
     expect(call.reason).toBe('bot_stuck');
     expect(call.openedBy).toBe('bot');
-    expect(call.reasonText).toContain('Booking failed (book) for Fri, Nov 13, 11:00 AM');
-    expect(call.reasonText).toContain('events.insert failed: 403');
-    expect(call.reasonText).not.toContain('\n');
+    expect(call.reasonText).toContain('The caller picked *Fri, Nov 13, 11:00 AM*');
+    expect(call.reasonText).toContain('without permission to add appointments');
+    expect(call.reasonText).toContain('Technical: book step · external.google 403');
   });
 
   it('trades (no fee): an unexpected failure escalates', async () => {
@@ -120,7 +120,7 @@ describe('booking failures escalate to a human', () => {
     });
     const result = await bookAppointment(ARGS, ctx);
     expect(result.state).toBe('escalated');
-    expect(open.mock.calls[0]?.[0].reasonText).toContain('Booking failed (fee_checkout)');
+    expect(open.mock.calls[0]?.[0].reasonText).toContain('payment link couldn');
   });
 
   it('a taken slot is NOT escalated — the model re-offers times', async () => {
@@ -146,6 +146,6 @@ describe('booking failures escalate to a human', () => {
       ctx,
     );
     expect(result.state).toBe('escalated');
-    expect(open.mock.calls[0]?.[0].reasonText).toContain('Booking failed (reschedule)');
+    expect(open.mock.calls[0]?.[0].reasonText).toContain('asked to move their appointment');
   });
 });

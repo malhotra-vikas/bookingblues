@@ -17,6 +17,11 @@ import {
   reservationHoldSms,
 } from '../conversations/templates/sms-templates';
 import { ConflictError, ValidationError } from '../../common/errors/app-error';
+import {
+  bookingFailureBrief,
+  classifyBookingFailure,
+  type BookingFailureStage,
+} from './booking-failure-message';
 import type { ConversationsService } from '../conversations/conversations.service';
 import type { PaymentsService } from '../payments/payments.service';
 import type { EscalationsService } from '../slack/escalations.service';
@@ -656,28 +661,32 @@ async function openHumanHandoff(
  * unavailable slots are NOT routed here: the model re-offers times for those.
  */
 async function escalateFailedBooking(
-  stage: 'book' | 'reserve' | 'fee_checkout' | 'reschedule',
+  stage: BookingFailureStage,
   requestedLocal: string,
   err: unknown,
   ctx: ToolContext,
 ): Promise<ToolResult> {
   const message = err instanceof Error ? err.message : String(err);
-  const firstLine = message.split('\n')[0] ?? message;
   ctx.logger.error(
     {
       operatorId: ctx.operator.id,
       conversationId: ctx.conversation.id,
       stage,
+      kind: classifyBookingFailure(stage, err),
       err: message.slice(0, 500),
     },
     'booking failed — escalating to a human',
   );
-  const reason =
-    `Booking failed (${stage}) for ${describeLocalWallTime(requestedLocal)}: ${firstLine}`.slice(0, 240) +
-    ' — book it manually and confirm with the caller.';
-  // Explicit enum: the error text is free-form and could trip normaliseReason
-  // (e.g. "Request …" + "caller" would read as caller_requested).
-  return openHumanHandoff('bot_stuck', reason, ctx);
+  // Plain-English brief for ops staff (not engineers): what the caller wanted,
+  // why it failed, what to do. Explicit enum: the error text is free-form and
+  // could trip normaliseReason ("Request …" + "caller" reads as caller_requested).
+  const brief = bookingFailureBrief({
+    stage,
+    err,
+    businessName: ctx.operator.business_name,
+    requestedTime: describeLocalWallTime(requestedLocal),
+  });
+  return openHumanHandoff('bot_stuck', brief, ctx);
 }
 
 /** Map free-form reason text from the model to the closed enum the DB expects. */
