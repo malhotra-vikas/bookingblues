@@ -10,6 +10,7 @@ import { collectsIntakeAnswers } from '../ai/category-profile';
 import { fetchCallerJobs, formatCallerJobsForSlack } from '../appointments/caller-history';
 import { ConversationsService } from '../conversations/conversations.service';
 import { type FeeCharge, paymentLinkSms } from '../conversations/templates/sms-templates';
+import { slackTextToSms } from './slack-text-to-sms';
 import { PaymentsService } from '../payments/payments.service';
 
 import { SlackApiClient } from './slack-api.client';
@@ -706,10 +707,13 @@ export class EscalationsService {
       return { delivered: false, reason: 'no_operator_number' };
     }
 
+    // Slack markup (*bold*, <url|label>) must not reach the caller's phone.
+    const smsBody = slackTextToSms(args.text);
+    if (!smsBody) return { delivered: false, reason: 'empty_after_formatting' };
     const send = await this.twilio.sendSms({
       from: op.twilio_number_e164,
       to: callerPhoneE164,
-      body: args.text,
+      body: smsBody,
     });
     if ('skipped' in send) return { delivered: false, reason: `skipped:${send.skipped}` };
     this.lastSmsAt.set(conversationId, now);
@@ -718,7 +722,7 @@ export class EscalationsService {
     await this.conversations.appendMessage({
       conversationId,
       role: 'system',
-      body: args.text,
+      body: smsBody,
       twilioMessageSid: send.sid,
     });
     // Stamp (channel, ts) so the status webhook can swap the delivery
@@ -902,17 +906,19 @@ export class EscalationsService {
     if (opErr) throw opErr;
     if (!op?.twilio_number_e164) return { delivered: false, reason: 'no_operator_number' };
 
+    const smsBody = slackTextToSms(args.text);
+    if (!smsBody) return { delivered: false, reason: 'empty_after_formatting' };
     const send = await this.twilio.sendSms({
       from: op.twilio_number_e164,
       to: esc.caller_phone_e164,
-      body: args.text,
+      body: smsBody,
     });
     if ('skipped' in send) return { delivered: false, reason: `skipped:${send.skipped}` };
 
     await this.conversations.appendMessage({
       conversationId: esc.conversation_id,
       role: 'system',
-      body: args.text,
+      body: smsBody,
       twilioMessageSid: send.sid,
     });
     return { delivered: true };

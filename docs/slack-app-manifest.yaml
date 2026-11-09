@@ -44,7 +44,7 @@ features:
     - command: /bb
       url: https://api.keeprsteady.com/webhooks/slack/commands
       description: KeeprSteady commands — try `/bb help`
-      usage_hint: "[resolve | back-to-bot | close-spam | show-number | book <ISO>]"
+      usage_hint: "[resolve booked|not-booked | back-to-bot | close-spam | show-number | book]"
       should_escape: false
 
 oauth_config:

@@ -46,6 +46,7 @@ import type {
 } from './tool-definitions';
 import { describeServiceArea, isZipInServiceArea, parseRadiusZones } from './service-area';
 import { fullyBookedIntervals, travelBufferMinFor } from '../appointments/capacity';
+import { earliestBookableMs } from '../appointments/lead-time';
 import {
   describeLocalWallTime,
   localWallTimeToUtcIso,
@@ -166,6 +167,22 @@ export async function checkAvailability(
     end: utcToLocalWallTime(new Date(iv.end).toISOString(), tz),
   }));
 
+  // Minimum notice (lead-time.ts): nothing before `earliest_bookable` may be
+  // offered (prod 2026-11-09 offered "today at 4:30pm" at 4:30 PM). Shown as a
+  // busy block too, so slot-picking from `busy` alone also skips it.
+  const earliestMs = earliestBookableMs(ctx.operator);
+  const earliestLocal = utcToLocalWallTime(new Date(earliestMs).toISOString(), tz);
+  const tooSoon =
+    earliestMs > windowStartMs
+      ? [
+          {
+            start: args.window_start,
+            end: utcToLocalWallTime(new Date(Math.min(earliestMs, windowEndMs)).toISOString(), tz),
+            reason: 'too_soon',
+          },
+        ]
+      : [];
+
   // Everything the model sees is local wall-clock time (no offsets) — it
   // round-trips through book_appointment without the model doing DST math.
   return {
@@ -174,7 +191,9 @@ export async function checkAvailability(
       times_are: 'local wall-clock time in the operator timezone',
       business_hours: ctx.operator.business_hours,
       truck_count: truckCount,
-      busy,
+      earliest_bookable: earliestLocal,
+      earliest_bookable_rule: `Never offer or book a start before ${describeLocalWallTime(earliestLocal)} (minimum notice).`,
+      busy: [...tooSoon, ...busy],
       window: { start: args.window_start, end: args.window_end },
       // Weekday of every date in the window, so offers name the right day.
       days_in_window: daysInWindow(args.window_start, args.window_end),

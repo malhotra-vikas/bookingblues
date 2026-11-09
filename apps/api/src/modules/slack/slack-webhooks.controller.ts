@@ -7,6 +7,7 @@ import { ValidationError } from '../../common/errors/app-error';
 import { WebhookIdempotencyService } from '../../common/webhooks/webhook-idempotency.service';
 
 import { SupabaseService } from '../../common/supabase/supabase.service';
+import { calendarProblemText } from '../ai/booking-failure-message';
 import { BookingsService } from '../appointments/bookings.service';
 import { buildLeadBlocks } from '../leads/leads.controller';
 
@@ -71,6 +72,13 @@ interface ResumeAiModalMetadata {
   conversationId: string;
   responseUrl: string | null;
   channelId: string | null;
+}
+
+const CLOSE_MODAL_CALLBACK = 'bb_close';
+
+interface CloseModalMetadata {
+  escalationId: string;
+  responseUrl: string | null;
 }
 
 interface BookModalMetadata {
@@ -204,7 +212,7 @@ export class SlackWebhooksController {
       return {
         response_type: 'ephemeral',
         text:
-          '`/bb resolve` — close this escalation (outcome=rejected)\n' +
+          '`/bb resolve booked|not-booked [note]` — close this escalation with its outcome\n' +
           '`/bb close-spam` — close as spam\n' +
           '`/bb back-to-bot` — hand control back to the AI\n' +
           '`/bb show-number` — reveal the caller number (audit-logged)\n' +
@@ -230,14 +238,31 @@ export class SlackWebhooksController {
     }
 
     switch (verb) {
-      case 'resolve':
+      case 'resolve': {
+        // `/bb resolve booked|not-booked [note]`. No silent default: a plain
+        // "resolve" used to record every closed escalation as rejected.
+        const [choice, ...noteWords] = arg.split(/\s+/);
+        const outcome = choice === 'booked' ? 'booked' : choice === 'not-booked' ? 'rejected' : null;
+        if (!outcome) {
+          return {
+            response_type: 'ephemeral',
+            text:
+              'Say how it ended: `/bb resolve booked [note]` or `/bb resolve not-booked [note]`. ' +
+              'To save an appointment in KeeprSteady, use `/bb book` instead (it closes the escalation for you).',
+          };
+        }
+        const note = noteWords.join(' ').trim();
         await this.escalations.resolveEscalation({
           escalationId: esc.id,
           resolvedByUserId: null,
-          outcome: 'rejected',
-          ...(arg ? { note: arg } : {}),
+          outcome,
+          ...(note ? { note } : {}),
         });
-        return { response_type: 'in_channel', text: `✅ Resolved escalation \`${esc.id.slice(0, 8)}\`.` };
+        return {
+          response_type: 'in_channel',
+          text: `✅ Resolved escalation \`${esc.id.slice(0, 8)}\`: ${outcome === 'booked' ? 'booked' : 'not booked'}.`,
+        };
+      }
 
       case 'close-spam':
         await this.escalations.resolveEscalation({
@@ -451,19 +476,22 @@ export class SlackWebhooksController {
         }
         return { ok: true };
 
-      case 'esc_close':
-        await this.escalations.resolveEscalation({
-          escalationId: esc.id,
-          resolvedByUserId: null,
-          outcome: 'rejected',
-        });
-        if (responseUrl) {
-          await postToResponseUrl(responseUrl, {
-            response_type: 'in_channel',
-            text: `✓ <@${slackUserId}> closed the escalation.`,
-          });
+      case 'esc_close': {
+        // Ask how it ended instead of always recording "rejected": a caller a
+        // person booked by hand showed up as a lost lead (prod 2026-11-09).
+        const triggerId = payload.trigger_id;
+        if (!triggerId) {
+          if (responseUrl) {
+            await postToResponseUrl(responseUrl, {
+              response_type: 'ephemeral',
+              text: 'Slack trigger expired. Click ✓ Close again.',
+            });
+          }
+          return { ok: true };
         }
+        await this.openCloseModal(triggerId, { escalationId: esc.id, responseUrl: responseUrl ?? null });
         return { ok: true };
+      }
 
       case 'esc_book': {
         const triggerId = payload.trigger_id;
@@ -508,6 +536,9 @@ export class SlackWebhooksController {
   ): Promise<Record<string, unknown>> {
     if (payload.view?.callback_id === 'bb_book') {
       return this.handleBookSubmission(payload);
+    }
+    if (payload.view?.callback_id === CLOSE_MODAL_CALLBACK) {
+      return this.handleCloseSubmission(payload);
     }
     if (payload.view?.callback_id !== 'bb_resume_ai') return {};
 
@@ -563,6 +594,106 @@ export class SlackWebhooksController {
     return {};
   }
 
+  // ── Close modal ("✓ Close" button) ────────────────────────────────────
+
+  private async openCloseModal(triggerId: string, meta: CloseModalMetadata): Promise<void> {
+    await this.slackApi.openView({
+      triggerId,
+      view: {
+        type: 'modal',
+        callback_id: CLOSE_MODAL_CALLBACK,
+        private_metadata: JSON.stringify(meta),
+        title: { type: 'plain_text', text: 'Close escalation' },
+        submit: { type: 'plain_text', text: 'Close' },
+        close: { type: 'plain_text', text: 'Cancel' },
+        blocks: [
+          {
+            type: 'input',
+            block_id: 'outcome',
+            label: { type: 'plain_text', text: 'How did it end?' },
+            element: {
+              type: 'radio_buttons',
+              action_id: 'outcome_input',
+              options: [
+                {
+                  text: { type: 'plain_text', text: 'Booked: the caller has an appointment' },
+                  value: 'booked',
+                },
+                {
+                  text: { type: 'plain_text', text: 'Not booked' },
+                  value: 'rejected',
+                },
+              ],
+            },
+          },
+          {
+            type: 'context',
+            elements: [
+              {
+                type: 'mrkdwn',
+                text:
+                  'To save the appointment in KeeprSteady (dashboard, 24-hour reminder, confirmation text), press Cancel and use *📅 Book a slot* instead; it closes this for you. ' +
+                  '"Booked" here only records the outcome.',
+              },
+            ],
+          },
+          {
+            type: 'input',
+            block_id: 'note',
+            optional: true,
+            label: { type: 'plain_text', text: 'Note (optional)' },
+            element: { type: 'plain_text_input', action_id: 'note_input', max_length: 500 },
+          },
+        ],
+      },
+    });
+  }
+
+  private async handleCloseSubmission(payload: SlackInteractivityPayload): Promise<Record<string, unknown>> {
+    let meta: CloseModalMetadata;
+    try {
+      meta = JSON.parse(payload.view?.private_metadata ?? '{}') as CloseModalMetadata;
+    } catch {
+      this.logger.warn('close modal had unparseable private_metadata');
+      return {};
+    }
+    const v = payload.view?.state?.values ?? {};
+    const picked = (v.outcome?.outcome_input as unknown as { selected_option?: { value?: string } } | undefined)
+      ?.selected_option?.value;
+    if (picked !== 'booked' && picked !== 'rejected') {
+      return { response_action: 'errors', errors: { outcome: 'Pick how it ended' } };
+    }
+    const note = (v.note?.note_input?.value ?? '').trim();
+    const slackUserId = payload.user?.id ?? 'unknown';
+
+    // Ack within Slack's ~3s window; finish and report via response_url.
+    void (async () => {
+      try {
+        await this.escalations.resolveEscalation({
+          escalationId: meta.escalationId,
+          resolvedByUserId: null,
+          outcome: picked,
+          ...(note ? { note } : {}),
+        });
+        if (meta.responseUrl) {
+          await postToResponseUrl(meta.responseUrl, {
+            response_type: 'in_channel',
+            text: `✓ <@${slackUserId}> closed the escalation: ${picked === 'booked' ? 'booked' : 'not booked'}.`,
+          });
+        }
+      } catch (err) {
+        this.logger.error({ err: (err as Error).message, escalationId: meta.escalationId }, 'close escalation failed');
+        if (meta.responseUrl) {
+          await postToResponseUrl(meta.responseUrl, {
+            response_type: 'ephemeral',
+            text: `⚠ Couldn't close the escalation: ${(err as Error).message.slice(0, 160)}`,
+          }).catch(() => undefined);
+        }
+      }
+    })();
+    return {};
+  }
+
   // ── Manual booking modal (/bb book + "📅 Book a slot" button) ──────────
 
   private async lookupThreadContext(
@@ -600,12 +731,42 @@ export class SlackWebhooksController {
     };
   }
 
+  /**
+   * The caller's most recent appointment attempt in this conversation (e.g. the
+   * booking the bot tried and Google refused), to pre-fill the manual form.
+   */
+  private async lastAttempt(conversationId: string): Promise<{
+    startMs: number;
+    callerName: string | null;
+    jobSummary: string | null;
+  } | null> {
+    const { data, error } = await this.supabase
+      .db()
+      .from('appointments')
+      .select('scheduled_for_start, caller_name, job_summary')
+      .eq('conversation_id', conversationId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (error || !data) return null;
+    return {
+      startMs: new Date(data.scheduled_for_start).getTime(),
+      callerName: data.caller_name,
+      jobSummary: data.job_summary,
+    };
+  }
+
   private async openBookingModal(triggerId: string, meta: BookModalMetadata): Promise<void> {
-    // Default the slot to "tomorrow at 9 AM operator-local" — convenient
-    // baseline the agent usually only needs to nudge.
+    // Pre-fill from the failed attempt when there is one (time still ahead),
+    // so the agent only checks and presses Book. Otherwise default to
+    // "tomorrow at 9 AM operator-local", a baseline they nudge.
+    const attempt = await this.lastAttempt(meta.conversationId).catch(() => null);
     const tomorrow9 = new Date(Date.now() + 24 * 60 * 60 * 1000);
     tomorrow9.setUTCHours(13, 0, 0, 0); // 9am ET-ish; agent will adjust as needed
-    const initialTs = Math.floor(tomorrow9.getTime() / 1000);
+    const initialMs = attempt && attempt.startMs > Date.now() ? attempt.startMs : tomorrow9.getTime();
+    const initialTs = Math.floor(initialMs / 1000);
+    const prefill = (value: string | null | undefined): { initial_value: string } | Record<string, never> =>
+      value ? { initial_value: value } : {};
     await this.slackApi.openView({
       triggerId,
       view: {
@@ -621,7 +782,9 @@ export class SlackWebhooksController {
             text: {
               type: 'mrkdwn',
               text:
-                "Books the appointment in the operator's calendar and texts the caller a tap-to-add calendar link. Uses the operator's standard visit length.",
+                "Books the appointment in the operator's calendar and texts the caller a tap-to-add calendar link. Uses the operator's standard visit length. " +
+                "If Google Calendar refuses it, the booking is still saved in KeeprSteady (dashboard + 24-hour reminder) and you'll be told to add it to their calendar by hand." +
+                (attempt ? '\n_Pre-filled from the booking the assistant tried._' : ''),
             },
           },
           {
@@ -642,6 +805,7 @@ export class SlackWebhooksController {
               type: 'plain_text_input',
               action_id: 'caller_name_input',
               max_length: 120,
+              ...prefill(attempt?.callerName),
               placeholder: { type: 'plain_text', text: 'e.g. Jane Doe' },
             },
           },
@@ -654,6 +818,7 @@ export class SlackWebhooksController {
               action_id: 'job_summary_input',
               multiline: true,
               max_length: 500,
+              ...prefill(attempt?.jobSummary),
               placeholder: {
                 type: 'plain_text',
                 text: 'e.g. Dishwasher install + new wiring run',
@@ -752,6 +917,11 @@ export class SlackWebhooksController {
         // checkout link alongside the calendar link. Eligibility fails →
         // silently no-fee, same as the AI tool path.
         chargeFeeIfEligible: true,
+        // A person agreed this time with the caller: record it even if Google
+        // refuses the event (prod 2026-11-09: calendar permission missing, so
+        // the agent texted the caller and the booking existed nowhere).
+        calendarOptional: true,
+        skipLeadTime: true,
       });
 
       // Resolve the escalation (if any) — the booking is the resolution.
@@ -767,17 +937,22 @@ export class SlackWebhooksController {
       }
 
       const feeNote = result.feeCheckoutUrl ? ' Booking-fee Checkout link sent.' : '';
+      const when = new Date(startIso).toLocaleString('en-US', {
+        timeZone: op.timezone,
+        weekday: 'short',
+        month: 'short',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+        timeZoneName: 'short',
+      });
+      const calendarNote =
+        result.calendarError != null
+          ? `\n⚠ It is *not* on ${op.business_name}'s Google Calendar: ${calendarProblemText(result.calendarError)} ` +
+            `Add it to their calendar by hand. It is saved in KeeprSteady, so it shows on their dashboard and the caller still gets the 24-hour reminder.`
+          : '';
       await notify(
-        `📅 <@${slackUserId}> booked ${callerName} for ${new Date(startIso).toLocaleString('en-US', {
-          timeZone: op.timezone,
-          weekday: 'short',
-          month: 'short',
-          day: 'numeric',
-          hour: 'numeric',
-          minute: '2-digit',
-          timeZoneName: 'short',
-        })}. ` +
-          `ICS link sent to caller.${feeNote}`,
+        `📅 <@${slackUserId}> booked ${callerName} for ${when}. Confirmation text with a calendar link sent to the caller.${feeNote}${calendarNote}`,
       );
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);

@@ -489,6 +489,7 @@ The Web app uses the anon key and reads via RLS. The API uses the service role a
 **Guardrails**:
 - Hard turn cap of 20 caller messages per conversation. After cap, `escalate_to_human` is forced.
 - Off-topic detection: the system prompt instructs the model to call `mark_out_of_scope` if the caller's request is outside the Operator's category. Reinforced by a final-pass classifier on conversation summary.
+- Minimum notice (`appointments/lead-time.ts`, default 2 hours; per-operator setting planned): `check_availability` returns `earliest_bookable` plus a `too_soon` busy block, and AI bookings, reservations and reschedules starting sooner are refused. Manual Slack bookings skip it (a person agreed the time).
 - Insurance date of birth (`appointments/intake-answers.ts`): `save_intake_answers` is called right after the caller gives a DOB. An impossible one (future, or over 110) is rejected with an "ask now" instruction. A believable but unusual one returns a `dob_check`: Medicare topic and under 64 this year, or over 100 → confirm once ("is that right, and is it for you or someone else?"), never "not eligible". `book_appointment` refuses until a DOB is given or declined and any `dob_check` is confirmed. Booking for someone else: `for_someone_else` / `caller_relationship` / `caller_name`, shown to the agent as "Booked by". Validation messages and tool results never contain the date itself (they can be logged).
 - Prompt injection: caller messages are wrapped as `<<CALLER_MESSAGE>>...<<END>>` and the system prompt explicitly says to never follow instructions inside that block.
 - Rate limit: max 1 outbound SMS per 8 seconds per conversation (carrier filter avoidance).
@@ -734,6 +735,7 @@ Implementation: enum stored in `conversations.status`. Transitions wrapped in DB
   escalation row stays `open`**. The Slack thread remains a live control
   surface — agents can still reply in-thread (bridged to SMS) or terminate via
   Close / Mark spam at any time after resuming.
+- "✓ Close" opens a form asking Booked / Not booked (it used to record every close as `rejected`); `/bb resolve booked|not-booked [note]` likewise. "📅 Book a slot" / `/bb book` is the way to record a real appointment: the form is pre-filled from the bot's last attempt, and the appointment is kept even if Google Calendar refuses it (Slack is told to add it by hand). Agent text bridged to SMS has Slack formatting stripped (`slack/slack-text-to-sms.ts`).
 - An escalation row only flips to `resolved` on explicit close: the "Close" /
   "Mark spam" buttons, or `/bb resolve` / `/bb close-spam`. That also moves the
   conversation to `completed` with the chosen outcome.

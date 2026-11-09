@@ -13,7 +13,9 @@ import type { Env } from '../../config/env';
 import { CalendarService } from '../calendar/calendar.service';
 import { asBusinessHours, slotWithinBusinessHours } from '../calendar/business-hours';
 import { isOfficeAppointmentCategory } from '../ai/category-profile';
+import { describeLocalWallTime, utcToLocalWallTime } from '../calendar/zoned-time';
 import { hasCapacity, travelBufferMinFor } from './capacity';
+import { earliestBookableMs, minLeadMinutesFor } from './lead-time';
 import { type IntakeAnswers, intakeAnswersText } from './intake-answers';
 import { IntakeAnswersService } from './intake-answers.service';
 import { ConversationsService } from '../conversations/conversations.service';
@@ -92,8 +94,20 @@ export class BookingsService {
     collectPaymentOnSite?: boolean;
     /** Amount owed, recorded on the appointment (used with collectPaymentOnSite). */
     feeCents?: number;
-  }): Promise<BookResult & { feeCheckoutUrl: string | null }> {
-    await this.assertSlotBookable(args.operator, args.startIso, args.endIso);
+    /**
+     * Manual (Slack) bookings: keep the appointment when the Google Calendar
+     * insert fails, instead of cancelling it. A person has already agreed the
+     * time with the caller, so the booking must be recorded (reminder,
+     * dashboard, confirmation); the result says the calendar step failed so
+     * Slack can ask for it to be added by hand. The AI path keeps the rollback.
+     */
+    calendarOptional?: boolean;
+    /** Manual (Slack) bookings: skip the minimum notice (lead-time.ts); a person agreed the time. */
+    skipLeadTime?: boolean;
+  }): Promise<BookResult & { feeCheckoutUrl: string | null; calendarError: unknown }> {
+    await this.assertSlotBookable(args.operator, args.startIso, args.endIso, undefined, {
+      skipLeadTime: args.skipLeadTime === true,
+    });
 
     // 1. Insert appointment row. Capacity (≤ truck_count concurrent, with travel
     //    buffer) is enforced in assertSlotBookable above; the old exact-start
@@ -134,8 +148,10 @@ export class BookingsService {
     }
 
     // 2. Google Calendar event — roll back the appointment if Google rejects
-    //    so we never leave a phantom booking the operator can't see.
+    //    so we never leave a phantom booking the operator can't see. (Manual
+    //    bookings with calendarOptional keep it: a person agreed the time.)
     let operatorEventUrl: string | null = null;
+    let calendarError: unknown = null;
     try {
       const calendarRes = await this.calendar.insertEvent({
         operatorId: args.operator.id,
@@ -160,16 +176,24 @@ export class BookingsService {
         .update({ google_event_id: calendarRes.id })
         .eq('id', appointmentId);
     } catch (err) {
-      await this.supabase
-        .db()
-        .from('appointments')
-        .update({ status: 'cancelled' })
-        .eq('id', appointmentId);
-      this.logger.error(
-        { appointmentId, err: (err as Error).message },
-        'Calendar insert failed; appointment cancelled',
-      );
-      throw err;
+      if (args.calendarOptional) {
+        calendarError = err;
+        this.logger.warn(
+          { appointmentId, err: (err as Error).message },
+          'Calendar insert failed; manual booking kept (not on Google Calendar)',
+        );
+      } else {
+        await this.supabase
+          .db()
+          .from('appointments')
+          .update({ status: 'cancelled' })
+          .eq('id', appointmentId);
+        this.logger.error(
+          { appointmentId, err: (err as Error).message },
+          'Calendar insert failed; appointment cancelled',
+        );
+        throw err;
+      }
     }
 
     const icsUrl = this.icsUrl(appointmentId);
@@ -238,6 +262,7 @@ export class BookingsService {
           start: args.startIso,
           end: args.endIso,
           caller_name: args.callerName,
+          on_google_calendar: calendarError == null,
         },
       });
     }
@@ -265,7 +290,7 @@ export class BookingsService {
       );
     });
 
-    return { appointmentId, icsUrl, operatorEventUrl, feeCheckoutUrl };
+    return { appointmentId, icsUrl, operatorEventUrl, feeCheckoutUrl, calendarError };
   }
 
   /**
@@ -397,11 +422,23 @@ export class BookingsService {
     endIso: string,
     /** Reschedule: the appointment being moved doesn't block its own new slot. */
     excludeAppointmentId?: string,
+    /** Manual (Slack) bookings: a person agreed the time, so no minimum notice. */
+    opts: { skipLeadTime?: boolean } = {},
   ): Promise<void> {
     const startMs = new Date(startIso).getTime();
     const endMs = new Date(endIso).getTime();
     if (endMs <= startMs) {
       throw new ValidationError('Appointment end must be after start');
+    }
+    if (!opts.skipLeadTime) {
+      const earliest = earliestBookableMs(operator);
+      if (startMs < earliest) {
+        const local = utcToLocalWallTime(new Date(earliest).toISOString(), operator.timezone);
+        throw new ValidationError(
+          `That time is too soon: appointments need at least ${minLeadMinutesFor(operator) / 60} hours' notice. ` +
+            `The earliest bookable time is ${describeLocalWallTime(local)}. Offer later times.`,
+        );
+      }
     }
     const check = slotWithinBusinessHours(
       startIso,

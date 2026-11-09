@@ -104,7 +104,7 @@ export const TOOL_DEFINITIONS: ReadonlyArray<OpenAI.Chat.Completions.ChatComplet
     function: {
       name: 'check_availability',
       description:
-        "Returns the operator's free time (busy intervals + business hours) between window_start and window_end so you can offer slots of the operator's visit length (see \"Visit length\" in the operator block). All times — inputs and outputs — are LOCAL wall-clock time in the operator's timezone, format `YYYY-MM-DDTHH:MM`, with NO `Z` and NO offset. Example: `2026-11-03T09:00`. The tool returns slots within the operator's business hours and not already booked.",
+        "Returns the operator's free time (busy intervals + business hours) between window_start and window_end so you can offer slots of the operator's visit length (see \"Visit length\" in the operator block). All times — inputs and outputs — are LOCAL wall-clock time in the operator's timezone, format `YYYY-MM-DDTHH:MM`, with NO `Z` and NO offset. Example: `2026-11-03T09:00`. The tool returns slots within the operator's business hours and not already booked. Never offer a start earlier than `earliest_bookable` in the result (minimum notice); booking an earlier time is refused.",
       parameters: {
         type: 'object',
         properties: {

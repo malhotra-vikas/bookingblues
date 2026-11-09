@@ -31,6 +31,23 @@ export function classifyBookingFailure(stage: BookingFailureStage, err: unknown)
   return 'internal';
 }
 
+/**
+ * One plain sentence on why a calendar insert failed, for Slack notes on a
+ * manual booking that was saved anyway (calendarOptional).
+ */
+export function calendarProblemText(err: unknown): string {
+  switch (classifyBookingFailure('book', err)) {
+    case 'calendar_permissions':
+      return 'their Google Calendar is connected without permission to add appointments (ask them to reconnect it with every box ticked).';
+    case 'calendar_disconnected':
+      return 'their Google Calendar is disconnected (ask them to reconnect it).';
+    case 'calendar_error':
+      return 'Google Calendar refused the event (usually temporary).';
+    default:
+      return 'the calendar step failed on our side.';
+  }
+}
+
 /** Short technical tail for whoever debugs it later (no JSON dumps). */
 function technicalNote(stage: BookingFailureStage, err: unknown): string {
   const message = err instanceof Error ? err.message : String(err);
