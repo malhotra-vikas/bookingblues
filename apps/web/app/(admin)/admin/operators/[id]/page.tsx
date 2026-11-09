@@ -4,6 +4,7 @@ import { notFound } from 'next/navigation';
 import { OperatorActions } from '../../../../../components/admin/OperatorActions';
 import { OperatorTabs } from '../../../../../components/admin/OperatorTabs';
 import { SpecialPricingCard } from '../../../../../components/admin/SpecialPricingCard';
+import { TrialEndCard } from '../../../../../components/admin/TrialEndCard';
 import { apiAsUser } from '../../../../../lib/api';
 
 interface Operator {
@@ -105,6 +106,17 @@ export default async function DossierPage({
           has_twilio: op.twilio_number_e164 != null,
         }}
       />
+
+      {op.subscription_status === 'trialing' ? (
+        <TrialEndCard
+          operator={{
+            id: op.id,
+            trial_ends_at: op.trial_ends_at,
+            timezone: op.timezone,
+            has_subscription: op.stripe_subscription_id != null,
+          }}
+        />
+      ) : null}
 
       <SpecialPricingCard
         operator={{

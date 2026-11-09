@@ -87,6 +87,13 @@ export const SetSpecialPricingSchema = z.object({
 });
 export type SetSpecialPricing = z.infer<typeof SetSpecialPricingSchema>;
 
+/** Admin moves an in-trial operator's trial end (extend or shorten). */
+export const SetTrialEndSchema = z.object({
+  trial_ends_at: z.string().datetime({ offset: true }),
+  reason: z.string().min(1).max(500),
+});
+export type SetTrialEnd = z.infer<typeof SetTrialEndSchema>;
+
 export const ClearSpecialPricingSchema = z.object({
   reason: z.string().min(1).max(500),
 });

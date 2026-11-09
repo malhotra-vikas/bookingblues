@@ -652,6 +652,7 @@ GET    /v1/admin/operators/:id/subscription-charges   # platform subscription ch
 POST   /v1/admin/operators/:id/refund-subscription-charge/:chargeId
 POST   /v1/admin/operators/:id/special-pricing        # $X per mo/yr for N mo/yr on one plan
 POST   /v1/admin/operators/:id/special-pricing/clear
+POST   /v1/admin/operators/:id/trial-end              # in-trial only: move trial end (Stripe sub trial_end, or our row for comped); audited
 POST   /v1/admin/operators/:id/impersonate            # short-lived magic link
 POST   /v1/admin/conversations/:id/force-end
 ```

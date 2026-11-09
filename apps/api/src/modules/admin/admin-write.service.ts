@@ -32,6 +32,10 @@ const LIVE_SUBSCRIPTION_STATUSES: ReadonlySet<string> = new Set([
   'incomplete',
 ]);
 
+/** Bounds for an admin-set trial end (see AdminWriteService.setTrialEnd). */
+const MIN_TRIAL_END_LEAD_MS = 60 * 60 * 1000;
+const MAX_TRIAL_END_DAYS = 730;
+
 export interface AdminActorContext {
   readonly actorUserId: string;
   readonly ipAddress: string | null;
@@ -529,6 +533,86 @@ export class AdminWriteService {
       ipAddress: args.actor.ipAddress,
       userAgent: args.actor.userAgent,
     });
+  }
+
+  /**
+   * Move an in-trial operator's trial end (extend or shorten).
+   * - Stripe trial (has a subscription): Stripe's `trial_end` is what decides
+   *   when the card is charged, so it is changed there first and our row is set
+   *   from Stripe's answer. The subscription.updated webhook re-syncs the same value.
+   * - Comped / sales-rep trial (trialing, no subscription): only our row exists.
+   * The new end must be at least an hour away (ending a trial now is the
+   * operator's "End trial" action) and at most 730 days out (Stripe's limit;
+   * applied to comped trials too, for one rule).
+   */
+  async setTrialEnd(args: {
+    operatorId: string;
+    trialEndsAt: string;
+    reason: string;
+    actor: AdminActorContext;
+    now?: Date;
+  }): Promise<{ trial_ends_at: string; applied_to: 'stripe' | 'comped' }> {
+    const operator = await this.requireOperator(args.operatorId);
+    if (operator.subscription_status !== 'trialing') {
+      throw new ValidationError(
+        `Only an operator in a trial can have its trial end changed (status: ${operator.subscription_status ?? 'none'}).`,
+      );
+    }
+    const nowMs = (args.now ?? new Date()).getTime();
+    const endMs = new Date(args.trialEndsAt).getTime();
+    if (!Number.isFinite(endMs)) throw new ValidationError('Invalid trial end date');
+    if (endMs < nowMs + MIN_TRIAL_END_LEAD_MS) {
+      throw new ValidationError('The new trial end must be at least an hour from now.');
+    }
+    if (endMs > nowMs + MAX_TRIAL_END_DAYS * 86_400_000) {
+      throw new ValidationError(`The new trial end can be at most ${MAX_TRIAL_END_DAYS} days from now.`);
+    }
+
+    const previous = operator.trial_ends_at;
+    let newEndIso = new Date(endMs).toISOString();
+    let appliedTo: 'stripe' | 'comped' = 'comped';
+
+    if (operator.stripe_subscription_id) {
+      const updated = await this.stripe.client().subscriptions.update(operator.stripe_subscription_id, {
+        trial_end: Math.floor(endMs / 1000),
+        // Moving the trial must not create a charge or a proration on its own.
+        proration_behavior: 'none',
+      });
+      if (updated.status !== 'trialing' || updated.trial_end == null) {
+        throw new AppError({
+          code: 'admin.trial_end_not_applied',
+          status: 502,
+          detail: `Stripe did not keep the subscription in trial (status ${updated.status}).`,
+        });
+      }
+      newEndIso = new Date(updated.trial_end * 1000).toISOString();
+      appliedTo = 'stripe';
+    }
+
+    const { error } = await this.supabase
+      .db()
+      .from('operators')
+      .update({ trial_ends_at: newEndIso })
+      .eq('id', operator.id);
+    if (error) throw error;
+
+    await this.audit.write({
+      actorUserId: args.actor.actorUserId,
+      operatorId: operator.id,
+      action: 'subscription.trial_end_changed',
+      resourceType: appliedTo === 'stripe' ? 'stripe.subscription' : 'operator',
+      resourceId: operator.stripe_subscription_id ?? operator.id,
+      metadata: {
+        reason: args.reason,
+        previous_trial_ends_at: previous,
+        new_trial_ends_at: newEndIso,
+        applied_to: appliedTo,
+      },
+      ipAddress: args.actor.ipAddress,
+      userAgent: args.actor.userAgent,
+    });
+
+    return { trial_ends_at: newEndIso, applied_to: appliedTo };
   }
 
   /**

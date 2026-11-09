@@ -29,6 +29,7 @@ import {
   RefundPaymentSchema,
   ReleaseSalesLeadsSchema,
   SetSpecialPricingSchema,
+  SetTrialEndSchema,
   type CancelSubscription,
   type ClearSpecialPricing,
   type DeactivateOperator,
@@ -40,6 +41,7 @@ import {
   type RefundPayment,
   type ReleaseSalesLeads,
   type SetSpecialPricing,
+  type SetTrialEnd,
 } from './admin.dto';
 import { AdminWriteService, type SubscriptionCharge } from './admin-write.service';
 
@@ -201,6 +203,23 @@ export class AdminWriteController {
       cadence: body.cadence,
       priceCents: body.price_cents,
       periods: body.periods,
+      reason: body.reason,
+      actor: { actorUserId: actor.userId, ...ctx },
+    });
+    return { ok: true, ...result };
+  }
+
+  @Post('operators/:id/trial-end')
+  async setTrialEnd(
+    @Req() req: Request,
+    @CurrentUser() actor: AuthenticatedUser,
+    @Param('id', new ParseUUIDPipe()) operatorId: string,
+    @Body(new ZodBodyPipe(SetTrialEndSchema)) body: SetTrialEnd,
+  ): Promise<{ ok: true; trial_ends_at: string; applied_to: 'stripe' | 'comped' }> {
+    const ctx = this.audit.fromRequest(req);
+    const result = await this.write.setTrialEnd({
+      operatorId,
+      trialEndsAt: body.trial_ends_at,
       reason: body.reason,
       actor: { actorUserId: actor.userId, ...ctx },
     });
