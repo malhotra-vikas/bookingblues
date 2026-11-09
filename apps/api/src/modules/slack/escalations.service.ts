@@ -429,10 +429,19 @@ export class EscalationsService {
     reasonText?: string;
     openedBy: 'bot' | 'caller' | 'operator';
     actorUserId?: string | null;
-  }): Promise<{ escalation: EscalationRow; deliveredVia: 'slack' | 'email_fallback' | 'none' }> {
+  }): Promise<{
+    escalation: EscalationRow;
+    deliveredVia: 'slack' | 'email_fallback' | 'none';
+    /** False when an escalation was already open (nothing new was posted). */
+    created: boolean;
+  }> {
     const existing = await this.findOpenForConversation(args.conversation.id);
     if (existing) {
-      return { escalation: existing, deliveredVia: existing.slack_thread_ts ? 'slack' : 'none' };
+      return {
+        escalation: existing,
+        deliveredVia: existing.slack_thread_ts ? 'slack' : 'none',
+        created: false,
+      };
     }
 
     await this.flipConversationStatus(args.conversation.id, 'escalated');
@@ -524,7 +533,7 @@ export class EscalationsService {
       },
     });
 
-    return { escalation, deliveredVia };
+    return { escalation, deliveredVia, created: true };
   }
 
   /**

@@ -37,9 +37,13 @@ function makeCtx(over: {
   bookings?: Record<string, unknown>;
   payments?: Record<string, unknown>;
   supabase?: ToolContext['supabase'];
-}): { ctx: ToolContext; open: jest.Mock } {
-  const open = jest.fn().mockResolvedValue({ escalation: { id: 'esc_1' }, deliveredVia: 'slack' });
+}): { ctx: ToolContext; open: jest.Mock; notify: jest.Mock } {
+  const open = jest
+    .fn()
+    .mockResolvedValue({ escalation: { id: 'esc_1' }, deliveredVia: 'slack', created: true });
+  const notify = jest.fn().mockResolvedValue(undefined);
   const ctx: ToolContext = {
+    handoffNotifier: { notify } as unknown as ToolContext['handoffNotifier'],
     operator: {
       id: 'op_1',
       business_name: 'Acme',
@@ -61,7 +65,7 @@ function makeCtx(over: {
     intakeAnswers: {} as never,
     logger: makeLogger(),
   };
-  return { ctx, open };
+  return { ctx, open, notify };
 }
 
 const ARGS: BookAppointmentArgs = {
@@ -95,6 +99,31 @@ describe('booking failures escalate to a human', () => {
     expect(call.reasonText).toContain('The caller picked *Fri, Nov 13, 11:00 AM*');
     expect(call.reasonText).toContain('without permission to add appointments');
     expect(call.reasonText).toContain('Technical: book step · external.google 403');
+  });
+
+  it('emails the operator (their wording + reconnect step) and admins (technical note)', async () => {
+    const { ctx, notify } = makeCtx({
+      operator: { category: 'insurance', business_name: 'Jamal Insurance' },
+      supabase: makeSupabase({ data: { intake_answers_enc: 'enc' }, error: null }),
+      bookings: { book: jest.fn().mockRejectedValue(GOOGLE_403) },
+    });
+    await bookAppointment(ARGS, ctx);
+    expect(notify).toHaveBeenCalledTimes(1);
+    const { content } = notify.mock.calls[0]?.[0];
+    expect(content.operator.why).toContain('The caller picked Fri, Nov 13, 11:00 AM');
+    expect(content.operator.why).toContain('Your Google Calendar is connected without permission');
+    expect(content.operator.why).not.toContain('*');
+    expect(content.operator.steps.join(' ')).toContain('Reconnect Google Calendar');
+    expect(content.admin.why).toContain("Jamal Insurance's Google Calendar");
+    expect(content.admin.technical).toContain('external.google 403');
+  });
+
+  it('a taken slot sends no email', async () => {
+    const { ctx, notify } = makeCtx({
+      bookings: { book: jest.fn().mockRejectedValue(new ConflictError('That slot was just taken')) },
+    });
+    await bookAppointment(ARGS, ctx);
+    expect(notify).not.toHaveBeenCalled();
   });
 
   it('trades (no fee): an unexpected failure escalates', async () => {

@@ -1,4 +1,5 @@
 import { AppError, NotFoundError } from '../../common/errors/app-error';
+import type { HandoffEmailContent } from '../slack/handoff-emails';
 
 /** Which booking step failed (see escalateFailedBooking in tool-handlers.ts). */
 export type BookingFailureStage = 'book' | 'reserve' | 'fee_checkout' | 'reschedule';
@@ -70,6 +71,69 @@ const RECORD_NOTE: Record<BookingFailureStage, string> = {
   reschedule: "The caller's existing appointment was NOT moved; it is still at its original time.",
 };
 
+/** The operator's own wording ("your calendar") for the handoff email. */
+const OPERATOR_WHAT_WENT_WRONG: Record<BookingFailureKind, string> = {
+  calendar_permissions:
+    "Your Google Calendar is connected without permission to add appointments, so we couldn't save the booking to your calendar.",
+  calendar_disconnected:
+    "Your Google Calendar is disconnected (access was removed or expired), so we couldn't save the booking.",
+  calendar_error: 'Google Calendar failed to save the appointment. This is usually temporary on Google’s side.',
+  payment_link: "We couldn't create the booking-deposit payment link, so the caller wasn't sent a link to pay.",
+  internal: 'Something went wrong on our side while saving the appointment. Our team has been alerted.',
+};
+
+const OPERATOR_FIX: Record<BookingFailureKind, string | null> = {
+  calendar_permissions:
+    'Reconnect Google Calendar (Settings → Integrations) and leave every box ticked on Google’s screen, then press "Run test booking". Until you do, the assistant can’t book any caller.',
+  calendar_disconnected:
+    'Reconnect Google Calendar (Settings → Integrations). Until you do, the assistant can’t book any caller.',
+  calendar_error: null,
+  payment_link: null,
+  internal: null,
+};
+
+/** Slack bold markers out, for email. */
+const plain = (s: string): string => s.replaceAll('*', '');
+
+function wantedLine(stage: BookingFailureStage, requestedTime: string): string {
+  return stage === 'reschedule'
+    ? `The caller asked to move their appointment to *${requestedTime}*, but it couldn't be moved.`
+    : `The caller picked *${requestedTime}*, but the appointment could not be booked.`;
+}
+
+/**
+ * Email copy for the operator and the admins (HandoffNotifierService adds the
+ * caller's number, the "reply to the caller" step and the links).
+ */
+export function bookingFailureEmailContent(args: {
+  stage: BookingFailureStage;
+  err: unknown;
+  businessName: string;
+  requestedTime: string;
+}): HandoffEmailContent {
+  const kind = classifyBookingFailure(args.stage, args.err);
+  const wanted = plain(wantedLine(args.stage, args.requestedTime));
+  const record = plain(RECORD_NOTE[args.stage]);
+  const verb = args.stage === 'reschedule' ? 'move it to' : 'add';
+  return {
+    operator: {
+      why: `${wanted} ${OPERATOR_WHAT_WENT_WRONG[kind]} ${record}`,
+      steps: [
+        `If you confirm the time with the caller, ${verb} ${args.requestedTime} on your calendar yourself.`,
+        ...(OPERATOR_FIX[kind] ? [OPERATOR_FIX[kind]] : []),
+      ],
+    },
+    admin: {
+      why: `${wanted} ${plain(WHAT_WENT_WRONG[kind](args.businessName))} ${record}`,
+      steps: [
+        `Put the appointment on ${args.businessName}'s calendar by hand, or ask them to.`,
+        ...(FIX_FOR_OPERATOR[kind] ? [plain(FIX_FOR_OPERATOR[kind])] : []),
+      ],
+      technical: technicalNote(args.stage, args.err),
+    },
+  };
+}
+
 /**
  * Plain-English #hitl brief for a booking that failed: what the caller wanted,
  * why it failed, what to do, plus a one-line technical note. Read by ops staff
@@ -82,10 +146,7 @@ export function bookingFailureBrief(args: {
   requestedTime: string;
 }): string {
   const kind = classifyBookingFailure(args.stage, args.err);
-  const wanted =
-    args.stage === 'reschedule'
-      ? `The caller asked to move their appointment to *${args.requestedTime}*, but it couldn't be moved.`
-      : `The caller picked *${args.requestedTime}*, but the appointment could not be booked.`;
+  const wanted = wantedLine(args.stage, args.requestedTime);
   const steps = [
     `Reply in this thread to text the caller and confirm their time (they were told someone will reach out).`,
     `Put the appointment on ${args.businessName}'s calendar by hand, or ask them to.`,

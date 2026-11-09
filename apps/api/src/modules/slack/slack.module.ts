@@ -10,6 +10,7 @@ import { ConversationsModule } from '../conversations/conversations.module';
 import { PaymentsModule } from '../payments/payments.module';
 
 import { EscalationsService } from './escalations.service';
+import { HandoffNotifierService } from './handoff-notifier.service';
 import { SlackApiClient } from './slack-api.client';
 import { SlackSignatureGuard } from './slack-signature.guard';
 import { SlackWebhooksController } from './slack-webhooks.controller';
@@ -26,7 +27,7 @@ import { SlackWebhooksController } from './slack-webhooks.controller';
     PaymentsModule,
   ],
   controllers: [SlackWebhooksController],
-  providers: [SlackApiClient, EscalationsService, SlackSignatureGuard],
-  exports: [EscalationsService, SlackApiClient],
+  providers: [SlackApiClient, EscalationsService, SlackSignatureGuard, HandoffNotifierService],
+  exports: [EscalationsService, SlackApiClient, HandoffNotifierService],
 })
 export class SlackModule {}

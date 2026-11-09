@@ -19,6 +19,7 @@ import { BookingsService } from '../appointments/bookings.service';
 import { IntakeAnswersService } from '../appointments/intake-answers.service';
 import { PaymentsService } from '../payments/payments.service';
 import { EscalationsService } from '../slack/escalations.service';
+import { HandoffNotifierService } from '../slack/handoff-notifier.service';
 import { UsageService } from '../usage/usage.service';
 import {
   fetchCallerJobs,
@@ -85,6 +86,7 @@ export class AdvanceService {
     private readonly intakeAnswers: IntakeAnswersService,
     private readonly usage: UsageService,
     private readonly logger: PinoLogger,
+    private readonly handoffNotifier: HandoffNotifierService,
   ) {
     this.logger.setContext(AdvanceService.name);
   }
@@ -507,6 +509,7 @@ export class AdvanceService {
       conversations: this.conversations,
       payments: this.payments,
       escalations: this.escalations,
+      handoffNotifier: this.handoffNotifier,
       bookings: this.bookings,
       intakeAnswers: this.intakeAnswers,
       logger: this.logger,

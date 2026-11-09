@@ -19,9 +19,12 @@ import {
 import { ConflictError, ValidationError } from '../../common/errors/app-error';
 import {
   bookingFailureBrief,
+  bookingFailureEmailContent,
   classifyBookingFailure,
   type BookingFailureStage,
 } from './booking-failure-message';
+import type { HandoffNotifierService } from '../slack/handoff-notifier.service';
+import { botHandoffEmailContent, type HandoffEmailContent } from '../slack/handoff-emails';
 import type { ConversationsService } from '../conversations/conversations.service';
 import type { PaymentsService } from '../payments/payments.service';
 import type { EscalationsService } from '../slack/escalations.service';
@@ -75,6 +78,8 @@ export interface ToolContext {
   readonly conversations: ConversationsService;
   readonly payments: PaymentsService;
   readonly escalations: EscalationsService;
+  /** Emails the operator + admins whenever the bot hands a caller to a person. */
+  readonly handoffNotifier: HandoffNotifierService;
   readonly bookings: BookingsService;
   readonly intakeAnswers: IntakeAnswersService;
   readonly logger: PinoLogger;
@@ -616,16 +621,30 @@ export async function escalateToHuman(
   // to email when Slack isn't configured). Either way the conversation flips
   // to `escalated` so the AI advance loop won't reply on new caller messages —
   // those are bridged to the human's Slack thread instead.
-  return openHumanHandoff(normaliseReason(args.reason), args.reason, ctx);
+  return openHumanHandoff(
+    normaliseReason(args.reason),
+    args.reason,
+    botHandoffEmailContent(args.reason),
+    ctx,
+  );
 }
 
+/**
+ * Every bot handoff (escalate_to_human, turn cap, failed booking) ends with the
+ * caller being told "someone will reach out shortly". Open the #hitl escalation
+ * AND email the operator + admins, so a person actually does.
+ */
 async function openHumanHandoff(
   reasonNorm: ReturnType<typeof normaliseReason>,
   reasonText: string,
+  emailContent: HandoffEmailContent,
   ctx: ToolContext,
 ): Promise<ToolResult> {
+  // Email unless an escalation was already open (that one already notified).
+  // A failed Slack post still emails: then the email is the only alert.
+  let isNew = true;
   try {
-    const { deliveredVia } = await ctx.escalations.openEscalation({
+    const { deliveredVia, created } = await ctx.escalations.openEscalation({
       operator: ctx.operator,
       conversation: ctx.conversation,
       callerPhoneE164: ctx.callerPhoneE164,
@@ -633,8 +652,9 @@ async function openHumanHandoff(
       reasonText,
       openedBy: reasonNorm === 'caller_requested' ? 'caller' : 'bot',
     });
+    isNew = created;
     ctx.logger.info(
-      { conversationId: ctx.conversation.id, reason: reasonText, deliveredVia },
+      { conversationId: ctx.conversation.id, reason: reasonNorm, deliveredVia, created },
       'escalate_to_human opened escalation',
     );
   } catch (err) {
@@ -644,6 +664,14 @@ async function openHumanHandoff(
       { err: (err as Error).message, conversationId: ctx.conversation.id },
       'escalate_to_human failed to open Slack escalation; conversation still flipped',
     );
+  }
+  if (isNew) {
+    await ctx.handoffNotifier.notify({
+      operator: ctx.operator,
+      conversationId: ctx.conversation.id,
+      callerPhoneE164: ctx.callerPhoneE164,
+      content: emailContent,
+    });
   }
   return {
     content: { acknowledged: true, reason: reasonText },
@@ -680,13 +708,18 @@ async function escalateFailedBooking(
   // Plain-English brief for ops staff (not engineers): what the caller wanted,
   // why it failed, what to do. Explicit enum: the error text is free-form and
   // could trip normaliseReason ("Request …" + "caller" reads as caller_requested).
-  const brief = bookingFailureBrief({
+  const failure = {
     stage,
     err,
     businessName: ctx.operator.business_name,
     requestedTime: describeLocalWallTime(requestedLocal),
-  });
-  return openHumanHandoff('bot_stuck', brief, ctx);
+  };
+  return openHumanHandoff(
+    'bot_stuck',
+    bookingFailureBrief(failure),
+    bookingFailureEmailContent(failure),
+    ctx,
+  );
 }
 
 /** Map free-form reason text from the model to the closed enum the DB expects. */

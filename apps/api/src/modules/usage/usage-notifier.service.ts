@@ -2,12 +2,11 @@ import { Inject, Injectable } from '@nestjs/common';
 import { PinoLogger } from 'nestjs-pino';
 
 import { EmailService } from '../../common/email/email.service';
+import { fetchAdminEmails, fetchOperatorEmail } from '../../common/email/staff-recipients';
 import { SupabaseService } from '../../common/supabase/supabase.service';
 import { ENV_TOKEN } from '../../config/config.module';
 import type { Env } from '../../config/env';
 import type { EmailContent, OperatorRef } from './usage-emails';
-
-const ADMIN_PAGE_SIZE = 200;
 
 /**
  * Sends a usage/billing alert to the operator AND every KeeprSteady admin
@@ -85,29 +84,20 @@ export class UsageNotifierService {
   }
 
   private async operatorEmail(userId: string): Promise<string | null> {
-    const { data, error } = await this.supabase.db().auth.admin.getUserById(userId);
-    if (error) {
-      this.logger.error({ err: error.message }, 'usage alert: operator user lookup failed');
+    try {
+      return await fetchOperatorEmail(this.supabase.db(), userId);
+    } catch (err) {
+      this.logger.error({ err: (err as Error).message }, 'usage alert: operator user lookup failed');
       return null;
     }
-    return data.user?.email ?? null;
   }
 
   private async adminEmails(): Promise<string[]> {
-    const out: string[] = [];
-    for (let page = 1; ; page += 1) {
-      const { data, error } = await this.supabase
-        .db()
-        .auth.admin.listUsers({ page, perPage: ADMIN_PAGE_SIZE });
-      if (error) {
-        this.logger.error({ err: error.message }, 'usage alert: admin listing failed');
-        return out;
-      }
-      for (const u of data.users) {
-        const role = (u.app_metadata as { role?: unknown } | undefined)?.role;
-        if (role === 'admin' && u.email) out.push(u.email);
-      }
-      if (data.users.length < ADMIN_PAGE_SIZE) return out;
+    try {
+      return await fetchAdminEmails(this.supabase.db());
+    } catch (err) {
+      this.logger.error({ err: (err as Error).message }, 'usage alert: admin listing failed');
+      return [];
     }
   }
 }
