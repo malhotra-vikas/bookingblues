@@ -140,7 +140,10 @@ export class DashboardService {
         active: convoActive,
       },
       appointments: {
-        total: apptTotal,
+        // Cancelled appointments aren't appointments the operator has; they're
+        // counted separately in `cancelled` (and listed in their own dashboard
+        // section), never in the headline total.
+        total: apptTotal - apptCancelled,
         confirmed: apptConfirmed,
         completed: apptCompleted,
         cancelled: apptCancelled,
