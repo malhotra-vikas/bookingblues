@@ -74,9 +74,12 @@ export class CareersController {
     @UploadedFile() resume?: UploadedResume,
   ): Promise<{ ok: true }> {
     const inbox = this.env.CAREERS_INBOX_EMAIL;
+    // Several recipients may be configured; only ever name the first one to the
+    // applicant (the rest of the distribution list isn't public).
+    const contactAddress = inbox[0]!;
     if (!this.email.isConfigured()) {
       throw new ValidationError(
-        `Applications are temporarily unavailable — please email ${inbox} directly.`,
+        `Applications are temporarily unavailable — please email ${contactAddress} directly.`,
       );
     }
 
@@ -128,7 +131,7 @@ export class CareersController {
     if (!res.delivered) {
       this.logger.warn({ reason: res.reason }, 'careers application email failed');
       throw new ValidationError(
-        `We could not submit your application right now — please email ${inbox} directly.`,
+        `We could not submit your application right now — please email ${contactAddress} directly.`,
       );
     }
     return { ok: true };

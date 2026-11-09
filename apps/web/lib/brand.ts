@@ -20,8 +20,10 @@ export const BRAND = {
   salesEmail: 'sales@keeprsteady.com',
   supportEmail: 'support@keeprsteady.com',
   applyEmail: 'apply@keeprsteady.com',
-  careersBookingUrl: 'https://keeprsteady.zohobookings.com/#/4947805000000052008',
-  demoBookingUrl: 'https://keeprsteady.zohobookings.com/#/4947805000000046045',
+  careersBookingUrl: 'https://cal.com/brandon-sommer-bpg3fw/30min?overlayCalendar=true',
+  demoBookingUrl: 'https://cal.com/brandon-sommer-bpg3fw/30min?overlayCalendar=true',
+  // Inline iframe on /contact: Cal.com's chrome-less `/embed` route.
+  demoBookingEmbedUrl: 'https://cal.com/brandon-sommer-bpg3fw/30min/embed?overlayCalendar=true',
   linkedinUrl: 'https://www.linkedin.com/company/119484231',
   instagramUrl: 'https://www.instagram.com/keeprsteady/',
   xUrl: 'https://x.com/KeeprSteady',

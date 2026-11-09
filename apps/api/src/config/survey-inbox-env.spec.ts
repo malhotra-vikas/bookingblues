@@ -46,3 +46,21 @@ describe('SURVEY_INBOX_EMAIL', () => {
     expect(() => inbox('  ,  ')).toThrow();
   });
 });
+
+describe('CAREERS_INBOX_EMAIL', () => {
+  const careers = (value?: string): ReadonlyArray<string> =>
+    loadEnv({ ...BASE, ...(value === undefined ? {} : { CAREERS_INBOX_EMAIL: value }) })
+      .CAREERS_INBOX_EMAIL;
+
+  it('defaults to the apply inbox', () => {
+    expect(careers()).toEqual(['apply@keeprsteady.com']);
+  });
+
+  it('splits a comma-separated list', () => {
+    expect(careers('a@example.com, b@example.com')).toEqual(['a@example.com', 'b@example.com']);
+  });
+
+  it('refuses to boot on a malformed address', () => {
+    expect(() => careers('a@example.com,nope')).toThrow();
+  });
+});

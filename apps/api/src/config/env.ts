@@ -16,6 +16,22 @@ const NodeEnv = z.enum(['development', 'production', 'test']);
 const LogLevel = z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']);
 
 /**
+ * Comma-separated recipient list → string[]. Every address is validated at
+ * boot, so a typo fails the deploy loudly instead of silently dropping someone.
+ */
+const emailList = (name: string, fallback: string) =>
+  z
+    .string()
+    .default(fallback)
+    .transform((s) =>
+      s
+        .split(',')
+        .map((e) => e.trim())
+        .filter(Boolean),
+    )
+    .pipe(z.array(z.string().email()).min(1, `${name} needs at least one address`));
+
+/**
  * Format: `<version>:<64-hex-chars>` e.g. `1:0123abcd...` (32 raw bytes for AES-256-GCM).
  * Versioning lets us rotate without downtime — see EncryptionService.
  * Multiple keys may be provided as comma-separated `1:hex,2:hex`; the first listed is the
@@ -108,21 +124,13 @@ const baseSchema = z.object({
   // Verified sender. Format: `Display Name <addr@domain>` (Resend requires
   // the domain to be verified in the Resend dashboard).
   EMAIL_FROM: z.string().optional(),
-  // Inbox that receives careers applications from /careers. Override per env.
-  CAREERS_INBOX_EMAIL: z.string().email().default('apply@keeprsteady.com'),
+  // Inbox(es) that receive careers applications from /careers. Comma-separated
+  // for multiple recipients (one To: line). Parsed to a string[].
+  CAREERS_INBOX_EMAIL: emailList('CAREERS_INBOX_EMAIL', 'apply@keeprsteady.com'),
   // Inbox(es) that receive missed-calls questionnaire responses submitted at
   // missedcalls.keeprsteady.com. Comma-separated for multiple recipients — they
   // all go on one To: line, so replies thread to everyone. Parsed to a string[].
-  SURVEY_INBOX_EMAIL: z
-    .string()
-    .default('sales@keeprsteady.com')
-    .transform((s) =>
-      s
-        .split(',')
-        .map((e) => e.trim())
-        .filter(Boolean),
-    )
-    .pipe(z.array(z.string().email()).min(1, 'SURVEY_INBOX_EMAIL needs at least one address')),
+  SURVEY_INBOX_EMAIL: emailList('SURVEY_INBOX_EMAIL', 'sales@keeprsteady.com'),
 
   // Shared secret guarding internal cron endpoints (daily summary etc.).
   // External cron (Railway, EasyCron, etc.) sends `X-Cron-Secret: <value>`.

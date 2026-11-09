@@ -249,6 +249,7 @@ All variables loaded via `apps/api/src/config/env.ts` using `zod` validation. Th
 | `GOOGLE_OAUTH_CLIENT_SECRET` | api | |
 | `GOOGLE_OAUTH_REDIRECT_URI` | api | |
 | `RESEND_API_KEY` | api | |
+| `CAREERS_INBOX_EMAIL` | api | Recipient(s) for `/careers` applications (resume attached, Reply-To = applicant). Comma-separated for several; validated at boot; the first is named to applicants in error messages. Default `apply@keeprsteady.com`. Scheduling links (demo + careers, Cal.com) are hardcoded in `apps/web/lib/brand.ts`, not env. |
 | `SURVEY_INBOX_EMAIL` | api | Recipient(s) for missed-calls questionnaire responses (`missedcalls.keeprsteady.com`). Comma-separated for several; every address validated at boot. Default `sales@keeprsteady.com`. See `docs/SURVEY_SUBDOMAIN.md`. |
 | `ENCRYPTION_KEY` | api | 32-byte hex, AES-256-GCM key for at-rest encryption of Google refresh tokens |
 | `SENTRY_DSN_API` | api | Sentry DSN for the API (server). No-op when unset. |

@@ -29,7 +29,7 @@ export default function ContactPage(): JSX.Element {
             to a plain link if the iframe is blocked.
           */}
           <iframe
-            src={`${BRAND.demoBookingUrl}?embed=true`}
+            src={BRAND.demoBookingEmbedUrl}
             title="Book a demo with KeeprSteady"
             className="w-full"
             style={{ height: '720px', border: '0' }}
