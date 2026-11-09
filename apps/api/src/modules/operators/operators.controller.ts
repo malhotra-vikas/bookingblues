@@ -15,8 +15,14 @@ export class OperatorsController {
   constructor(private readonly service: OperatorsService) {}
 
   @Get()
-  async getMe(@CurrentUser() user: AuthenticatedUser): Promise<OperatorRow> {
-    return this.service.getByUserIdRequired(user.userId);
+  async getMe(
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<OperatorRow & { google_calendar_needs_reconnect: boolean }> {
+    const op = await this.service.getByUserIdRequired(user.userId);
+    return {
+      ...op,
+      google_calendar_needs_reconnect: await this.service.calendarNeedsReconnect(op.id),
+    };
   }
 
   @Patch()

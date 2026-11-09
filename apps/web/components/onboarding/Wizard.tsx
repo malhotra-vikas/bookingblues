@@ -26,6 +26,8 @@ interface Operator extends SpecialPricingFields {
   category: string | null;
   twilio_number_e164: string | null;
   google_calendar_id: string | null;
+  /** Connected, but without the permissions booking needs (or revoked). */
+  google_calendar_needs_reconnect?: boolean;
   stripe_connect_account_id: string | null;
   stripe_connect_charges_enabled: boolean;
   stripe_connect_payouts_enabled: boolean;
@@ -421,7 +423,8 @@ export function Wizard({
   const categoryDone = !!op?.category;
   const office = isOfficeCategory(op?.category);
   const twilioDone = !!op?.twilio_number_e164;
-  const googleDone = !!op?.google_calendar_id;
+  const googleNeedsReconnect = !!op?.google_calendar_id && !!op.google_calendar_needs_reconnect;
+  const googleDone = !!op?.google_calendar_id && !googleNeedsReconnect;
   const stripeConnectDone =
     !!op?.stripe_connect_account_id &&
     op.stripe_connect_charges_enabled &&
@@ -437,6 +440,14 @@ export function Wizard({
   // the real charges_enabled/payouts_enabled flags.
   const searchParams = useSearchParams();
   const connectStatus = searchParams.get('connect');
+  // The Google OAuth callback redirects here with ?error=… on failure.
+  const googleError = searchParams.get('error');
+  const googleErrorMessage =
+    googleError === 'calendar_permissions'
+      ? 'Google Calendar wasn’t connected: we need permission to see when you’re free AND to add appointments to your calendar. Click Connect Google again and leave every box ticked on Google’s screen.'
+      : googleError
+        ? 'Google Calendar wasn’t connected. Please try Connect Google again.'
+        : null;
   const [connectBanner, setConnectBanner] = useState<string | null>(
     connectStatus === 'return'
       ? "Thanks — we're syncing your Stripe payout details. Status updates in a moment."
@@ -899,6 +910,17 @@ export function Wizard({
         description="So the AI knows when you're free and can put new appointments on your calendar automatically."
         done={googleDone}
       >
+        {googleErrorMessage && !googleDone ? (
+          <p className="mb-3 rounded-md border border-red-200 bg-red-50 dark:border-red-900 dark:bg-red-950/40 p-3 text-sm text-red-700 dark:text-red-300">
+            {googleErrorMessage}
+          </p>
+        ) : null}
+        {googleNeedsReconnect ? (
+          <p className="mb-3 rounded-md border border-amber-200 bg-amber-50 dark:border-amber-900 dark:bg-amber-950/40 p-3 text-sm text-amber-800 dark:text-amber-300">
+            Your calendar is connected without permission to add appointments, so bookings can’t
+            be made. Reconnect and leave every box ticked on Google’s screen.
+          </p>
+        ) : null}
         {!googleDone ? (
           <button
             type="button"
@@ -906,7 +928,11 @@ export function Wizard({
             disabled={isBusy('startGoogleConnect')}
             className="rounded-md bg-accent px-4 py-2 text-sm text-white disabled:opacity-50"
           >
-            {isBusy('startGoogleConnect') ? 'Opening Google…' : 'Connect Google'}
+            {isBusy('startGoogleConnect')
+              ? 'Opening Google…'
+              : googleNeedsReconnect
+                ? 'Reconnect Google'
+                : 'Connect Google'}
           </button>
         ) : (
           <button

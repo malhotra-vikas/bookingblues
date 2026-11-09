@@ -9,6 +9,7 @@ import { SupabaseService } from '../../common/supabase/supabase.service';
 import { ConflictError, NotFoundError, ValidationError } from '../../common/errors/app-error';
 import { isOfficeAppointmentCategory } from '../ai/category-profile';
 import { depositModeForPlan } from '../billing/plan-policy';
+import { missingCalendarScopes } from '../calendar/google-oauth.service';
 import type { UpdateOperator } from './operators.dto';
 
 export type OperatorRow = Tables<'operators'>;
@@ -104,6 +105,24 @@ export class OperatorsService {
     }
     this.logger.info({ userId, operatorId: created.id }, 'bootstrapped operator from signup metadata');
     return created;
+  }
+
+  /**
+   * True when the operator has a calendar connection that can't book: revoked,
+   * or saved before the callback enforced REQUIRED_CALENDAR_SCOPES (e.g. the
+   * user unticked "create events" on Google's consent screen). The dashboard
+   * uses it to ask them to reconnect.
+   */
+  async calendarNeedsReconnect(operatorId: string): Promise<boolean> {
+    const { data, error } = await this.supabase
+      .db()
+      .from('calendar_connections')
+      .select('status, scopes')
+      .eq('operator_id', operatorId)
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) return false;
+    return data.status === 'revoked' || missingCalendarScopes(data.scopes).length > 0;
   }
 
   async getByUserIdRequired(userId: string): Promise<OperatorRow> {

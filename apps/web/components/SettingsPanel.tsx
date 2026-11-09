@@ -23,6 +23,8 @@ interface Operator extends SpecialPricingFields {
   personal_phone_e164: string | null;
   twilio_number_e164: string | null;
   google_calendar_id: string | null;
+  /** Connected, but without the permissions booking needs (or revoked). */
+  google_calendar_needs_reconnect?: boolean;
   booking_fee_enabled: boolean;
   booking_fee_cents: number | null;
   emergency_visit_fee_cents: number | null;
@@ -707,6 +709,16 @@ export function SettingsPanel({ operator }: { operator: Operator }): JSX.Element
             ) : null
           }
         />
+        {operator.google_calendar_id && operator.google_calendar_needs_reconnect ? (
+          <p className="mt-2 rounded-md border border-amber-200 bg-amber-50 dark:border-amber-900 dark:bg-amber-950/40 px-3 py-2 text-xs text-amber-800 dark:text-amber-300">
+            Your calendar is connected without permission to add appointments, so bookings can’t
+            be made.{' '}
+            <a href="/onboarding" className="underline">
+              Reconnect Google Calendar →
+            </a>{' '}
+            and leave every box ticked on Google’s screen.
+          </p>
+        ) : null}
         {testBooking ? (
           <p className="mt-2 rounded-md border border-emerald-200 bg-emerald-50 dark:border-emerald-900 dark:bg-emerald-950/30 px-3 py-2 text-xs text-emerald-800 dark:text-emerald-200">
             ✅ Test appointment created for <strong>{testBooking.when}</strong>.{' '}

@@ -483,6 +483,7 @@ The Web app uses the anon key and reads via RLS. The API uses the service role a
 - Times in tool args and results are the operator's **local wall-clock time** (`YYYY-MM-DDTHH:MM`, no offset; caller and operator share the timezone). The prompt's `Now` is local too. The server converts to/from UTC in `calendar/zoned-time.ts`, so the model never does DST math; any offset it emits is stripped.
 - `book_appointment` is wrapped in a Postgres advisory lock keyed on `(operator_id, slot_start)` to prevent double-booking when two callers race.
 - Every tool call writes to `messages.ai_tool_calls`.
+- A booking step (`book_appointment` / `reschedule_appointment`: book, reserve, fee checkout, reschedule) that fails with an error the model can't fix (Google/Stripe/DB) **escalates to #hitl** (`escalateFailedBooking`, reason `bot_stuck`, requested time + error in the alarm) instead of throwing into the generic AI-unavailable fallback. A taken or unavailable slot (`ConflictError`/`ValidationError`) still goes back to the model to re-offer times.
 - The operator block carries a dated `Calendar` line (next 21 days with weekdays); the model must look dates up there, never compute weekday→date itself. `check_availability` returns `days_in_window` labels; `book_appointment` / `reschedule_appointment` echo `booked_for` / `moved_to` ("Tue, Nov 10, 11:00 AM").
 
 **Guardrails**:
@@ -494,6 +495,7 @@ The Web app uses the anon key and reads via RLS. The API uses the service role a
 ### 9.4 Google Calendar integration
 
 - OAuth callback stores refresh token AES-256-GCM encrypted with versioned key.
+- The callback **refuses** a grant missing `calendar.events` or `calendar.freebusy` (`REQUIRED_CALENDAR_SCOPES`; Google's consent screen lets users untick scopes) and redirects with `?error=calendar_permissions`. Connections saved before this check are flagged by `GET /v1/operators/me` → `google_calendar_needs_reconnect`, which the wizard and Settings show as a Reconnect prompt.
 - Access tokens cached in DB until 60 seconds before expiry.
 - `check_availability` uses `freebusy.query` against the Operator's primary calendar, intersected with `operators.business_hours` and Operator timezone.
 - `book_appointment` creates an event with attendees: Operator (self) + caller email if provided. `sendUpdates=all`.

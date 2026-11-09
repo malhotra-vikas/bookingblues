@@ -264,7 +264,7 @@ export async function rescheduleAppointment(
     if (err instanceof ValidationError) {
       return { content: { error: 'invalid_request', message: err.message } };
     }
-    throw err;
+    return escalateFailedBooking('reschedule', args.start, err, ctx);
   }
 }
 
@@ -302,7 +302,7 @@ async function bookOfficeAppointment(args: BookAppointmentArgs, ctx: ToolContext
     if (err instanceof ConflictError || err instanceof ValidationError) {
       return { content: { error: 'slot_unavailable', message: err.message } };
     }
-    throw err;
+    return escalateFailedBooking('book', args.start, err, ctx);
   }
 }
 
@@ -366,7 +366,7 @@ export async function bookAppointment(
       if (err instanceof ConflictError || err instanceof ValidationError) {
         return { content: { error: 'slot_unavailable', message: err.message } };
       }
-      throw err;
+      return escalateFailedBooking('book', args.start, err, ctx);
     }
     return {
       content: {
@@ -395,7 +395,7 @@ export async function bookAppointment(
       if (err instanceof ConflictError || err instanceof ValidationError) {
         return { content: { error: 'slot_unavailable', message: err.message } };
       }
-      throw err;
+      return escalateFailedBooking('reserve', args.start, err, ctx);
     }
 
     let session: Awaited<ReturnType<typeof ctx.payments.createBookingFeeCheckout>>;
@@ -406,9 +406,9 @@ export async function bookAppointment(
         ...(isEmergency ? { emergency: true } : {}),
       });
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      ctx.logger.warn({ appointmentId, err: message }, 'reserve: createBookingFeeCheckout failed');
-      return { content: { error: 'fee_unavailable', message } };
+      // The slot stays held (the hold sweeper expires it if nobody acts); the
+      // human taking over can confirm it or let it lapse.
+      return escalateFailedBooking('fee_checkout', args.start, err, ctx);
     }
 
     const friendlyTime = new Date(common.startIso).toLocaleString('en-US', {
@@ -465,7 +465,7 @@ export async function bookAppointment(
     if (err instanceof ConflictError || err instanceof ValidationError) {
       return { content: { error: 'slot_unavailable', message: err.message } };
     }
-    throw err;
+    return escalateFailedBooking('book', args.start, err, ctx);
   }
 }
 
@@ -611,18 +611,25 @@ export async function escalateToHuman(
   // to email when Slack isn't configured). Either way the conversation flips
   // to `escalated` so the AI advance loop won't reply on new caller messages —
   // those are bridged to the human's Slack thread instead.
-  const reasonNorm = normaliseReason(args.reason);
+  return openHumanHandoff(normaliseReason(args.reason), args.reason, ctx);
+}
+
+async function openHumanHandoff(
+  reasonNorm: ReturnType<typeof normaliseReason>,
+  reasonText: string,
+  ctx: ToolContext,
+): Promise<ToolResult> {
   try {
     const { deliveredVia } = await ctx.escalations.openEscalation({
       operator: ctx.operator,
       conversation: ctx.conversation,
       callerPhoneE164: ctx.callerPhoneE164,
       reason: reasonNorm,
-      reasonText: args.reason,
+      reasonText,
       openedBy: reasonNorm === 'caller_requested' ? 'caller' : 'bot',
     });
     ctx.logger.info(
-      { conversationId: ctx.conversation.id, reason: args.reason, deliveredVia },
+      { conversationId: ctx.conversation.id, reason: reasonText, deliveredVia },
       'escalate_to_human opened escalation',
     );
   } catch (err) {
@@ -634,10 +641,43 @@ export async function escalateToHuman(
     );
   }
   return {
-    content: { acknowledged: true, reason: args.reason },
+    content: { acknowledged: true, reason: reasonText },
     state: 'escalated',
     outboundMessage: escalationHandoffSms(),
   };
+}
+
+/**
+ * A booking step failed with an error the model can't fix by picking another
+ * time (calendar permission/outage, Stripe, DB). Hand the caller to a human
+ * with what they asked for, instead of letting the error escape to the generic
+ * "someone will text you back" fallback, which only alerts the #convos thread
+ * (insurance has none, so nobody was told; prod 2026-11-09). Taken or
+ * unavailable slots are NOT routed here: the model re-offers times for those.
+ */
+async function escalateFailedBooking(
+  stage: 'book' | 'reserve' | 'fee_checkout' | 'reschedule',
+  requestedLocal: string,
+  err: unknown,
+  ctx: ToolContext,
+): Promise<ToolResult> {
+  const message = err instanceof Error ? err.message : String(err);
+  const firstLine = message.split('\n')[0] ?? message;
+  ctx.logger.error(
+    {
+      operatorId: ctx.operator.id,
+      conversationId: ctx.conversation.id,
+      stage,
+      err: message.slice(0, 500),
+    },
+    'booking failed — escalating to a human',
+  );
+  const reason =
+    `Booking failed (${stage}) for ${describeLocalWallTime(requestedLocal)}: ${firstLine}`.slice(0, 240) +
+    ' — book it manually and confirm with the caller.';
+  // Explicit enum: the error text is free-form and could trip normaliseReason
+  // (e.g. "Request …" + "caller" would read as caller_requested).
+  return openHumanHandoff('bot_stuck', reason, ctx);
 }
 
 /** Map free-form reason text from the model to the closed enum the DB expects. */

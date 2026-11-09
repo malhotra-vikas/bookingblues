@@ -21,7 +21,7 @@ import type { Env } from '../../config/env';
 import { TrialGuardService } from '../billing/trial-guard.service';
 import { CalendarService } from './calendar.service';
 import { signState, verifyState } from './calendar-state';
-import { GoogleOAuthService } from './google-oauth.service';
+import { GoogleOAuthService, missingCalendarScopes } from './google-oauth.service';
 
 @Controller()
 export class CalendarController {
@@ -136,6 +136,16 @@ export class CalendarController {
     let connectedEmail: string | null = null;
     try {
       const tokens = await this.google.exchangeCode(code);
+      // Don't store a connection the bot can't book with: the operator would
+      // look "connected" while every booking 403s at events.insert.
+      const missing = missingCalendarScopes(tokens.grantedScopes);
+      if (missing.length > 0) {
+        this.logger.warn(
+          { operatorId: operator.id, missing },
+          'Google connect rejected: required calendar permissions not granted',
+        );
+        return this.redirect(res, { error: 'calendar_permissions' });
+      }
       connectedEmail = tokens.email ?? null;
       await this.calendar.upsertConnection({
         operatorId: operator.id,

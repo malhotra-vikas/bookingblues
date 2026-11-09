@@ -5,15 +5,28 @@ import { AppError } from '../../common/errors/app-error';
 import { ENV_TOKEN } from '../../config/config.module';
 import type { Env } from '../../config/env';
 
-const SCOPES = [
+/**
+ * Calendar scopes a connection cannot work without. Google's consent screen
+ * lets the user untick individual scopes, so a "successful" connect can come
+ * back without them; prod 2026-11-09, an operator granted only freebusy, the
+ * bot offered times and then every booking failed with 403 at events.insert.
+ */
+export const REQUIRED_CALENDAR_SCOPES = [
   // Create/update/delete the appointment events KeeprSteady books.
   'https://www.googleapis.com/auth/calendar.events',
   // Read-only free/busy availability ONLY (freeBusy.query). Narrower than
   // calendar.readonly — easier for Google's sensitive-scope reviewers to
   // approve, and it's all we actually read (see CalendarService.freeBusy).
   'https://www.googleapis.com/auth/calendar.freebusy',
-  'https://www.googleapis.com/auth/userinfo.email',
-];
+] as const;
+
+const SCOPES = [...REQUIRED_CALENDAR_SCOPES, 'https://www.googleapis.com/auth/userinfo.email'];
+
+/** Required calendar scopes that were NOT granted (empty = connection is usable). */
+export function missingCalendarScopes(granted: ReadonlyArray<string> | null | undefined): string[] {
+  const have = new Set(granted ?? []);
+  return REQUIRED_CALENDAR_SCOPES.filter((s) => !have.has(s));
+}
 
 @Injectable()
 export class GoogleOAuthService {
