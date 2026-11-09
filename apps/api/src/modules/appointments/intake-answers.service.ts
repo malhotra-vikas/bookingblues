@@ -21,16 +21,12 @@ export class IntakeAnswersService {
     this.logger.setContext(IntakeAnswersService.name);
   }
 
-  /** Saves the answers, merged over any already stored (a correction sends only what changed). */
-  async saveForConversation(conversationId: string, answers: IntakeAnswers): Promise<void> {
-    const { data, error: readErr } = await this.supabase
-      .db()
-      .from('conversations')
-      .select('intake_answers_enc')
-      .eq('id', conversationId)
-      .maybeSingle();
-    if (readErr) throw readErr;
-    const prev = data?.intake_answers_enc ? this.decrypt(data.intake_answers_enc, { conversationId }) : null;
+  /**
+   * Saves the answers, merged over any already stored (a correction sends only
+   * what changed). Returns the merged answers.
+   */
+  async saveForConversation(conversationId: string, answers: IntakeAnswers): Promise<IntakeAnswers> {
+    const prev = await this.forConversation(conversationId);
     const merged = mergeIntakeAnswers(prev, answers);
     const { error } = await this.supabase
       .db()
@@ -38,6 +34,19 @@ export class IntakeAnswersService {
       .update({ intake_answers_enc: this.encryption.encrypt(JSON.stringify(merged)) })
       .eq('id', conversationId);
     if (error) throw error;
+    return merged;
+  }
+
+  /** The answers saved so far on a conversation (null if none). */
+  async forConversation(conversationId: string): Promise<IntakeAnswers | null> {
+    const { data, error } = await this.supabase
+      .db()
+      .from('conversations')
+      .select('intake_answers_enc')
+      .eq('id', conversationId)
+      .maybeSingle();
+    if (error) throw error;
+    return data?.intake_answers_enc ? this.decrypt(data.intake_answers_enc, { conversationId }) : null;
   }
 
   /** Copy the conversation's answers (if any) onto its appointment. Returns them decrypted. */

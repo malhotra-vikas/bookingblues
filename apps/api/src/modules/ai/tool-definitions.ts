@@ -234,7 +234,7 @@ const SAVE_INTAKE_ANSWERS_TOOL: OpenAI.Chat.Completions.ChatCompletionTool = {
   function: {
     name: 'save_intake_answers',
     description:
-      "Save the caller's intake answers so they're attached to their appointment for the agent. Call once you have them (and again if the caller corrects something — send just the changed field, earlier answers are kept), BEFORE booking. Record ONLY what the caller actually said: never guess, complete or reword a value, and leave a field out if it wasn't given. Never include a Medicare number (MBI), SSN, or payment details.",
+      "Save the caller's intake answers so they're attached to their appointment for the agent. Call it RIGHT AFTER the caller gives a date of birth (with first_name and date_of_birth) so the date is checked before you ask anything else; call it again with the other answers, and whenever the caller corrects something (send just the changed fields, earlier answers are kept). Must be done BEFORE booking. If the result has an error or a dob_check, deal with it before your next question. Record ONLY what the caller actually said: never guess, complete or reword a value, and leave a field out if it wasn't given. If the appointment is for someone else (e.g. a parent), the name, date of birth, doctor and prescriptions are THAT person's. Never include a Medicare number (MBI), SSN, or payment details.",
     parameters: {
       type: 'object',
       properties: {
@@ -251,6 +251,26 @@ const SAVE_INTAKE_ANSWERS_TOOL: OpenAI.Chat.Completions.ChatCompletionTool = {
         date_of_birth_declined: {
           type: 'boolean',
           description: 'True if the caller preferred not to give their date of birth.',
+        },
+        date_of_birth_confirmed: {
+          type: 'boolean',
+          description: 'True once the caller has confirmed a date of birth you were asked to double-check (dob_check).',
+        },
+        about_medicare: {
+          type: 'boolean',
+          description: 'True if the caller wants to talk about Medicare (Advantage, Supplement, Part D, turning 65).',
+        },
+        for_someone_else: {
+          type: 'boolean',
+          description: 'True if the appointment is for someone other than the person texting (e.g. their mother).',
+        },
+        caller_relationship: {
+          type: 'string',
+          description: 'When for_someone_else: how the caller is related, in their words ("daughter", "son", "spouse").',
+        },
+        caller_name: {
+          type: 'string',
+          description: "When for_someone_else: the caller's own name, if given.",
         },
         doctor: {
           type: 'string',

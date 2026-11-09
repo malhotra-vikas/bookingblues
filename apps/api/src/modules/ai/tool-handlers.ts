@@ -3,6 +3,7 @@ import type { Tables } from '@bookingblues/db-types';
 
 import type { BookingsService } from '../appointments/bookings.service';
 import type { IntakeAnswersService } from '../appointments/intake-answers.service';
+import { dobCheck, dobCheckInstruction } from '../appointments/intake-answers';
 import type { CalendarService } from '../calendar/calendar.service';
 import { collectsIntakeAnswers, isOfficeAppointmentCategory } from './category-profile';
 import { isBookingFeeCollectible } from './prompts';
@@ -211,20 +212,40 @@ export async function saveIntakeAnswers(
   if (!collectsIntakeAnswers(ctx.operator.category)) {
     return { content: { error: 'not_available', message: 'This business does not collect intake answers.' } };
   }
-  await ctx.intakeAnswers.saveForConversation(ctx.conversation.id, args);
+  const merged = await ctx.intakeAnswers.saveForConversation(ctx.conversation.id, args);
+  // An unusual-but-possible date of birth: tell the model to confirm it once,
+  // now, with the exact wording rules (the server does the age math).
+  const check = dobCheck(merged);
+  if (check) {
+    return { content: { saved: true, dob_check: { ...check, instruction: dobCheckInstruction(check, merged) } } };
+  }
   return { content: { saved: true } };
 }
 
-async function intakeAnswersSaved(ctx: ToolContext): Promise<boolean> {
-  // Read fresh: save_intake_answers may have run earlier in this same advance turn.
-  const { data, error } = await ctx.supabase
-    .db()
-    .from('conversations')
-    .select('intake_answers_enc')
-    .eq('id', ctx.conversation.id)
-    .maybeSingle();
-  if (error) throw error;
-  return Boolean(data?.intake_answers_enc);
+/**
+ * Why an office booking can't go ahead yet, from the saved intake answers (read
+ * fresh: save_intake_answers may have run earlier in this same turn). Null = OK.
+ */
+async function intakeBlocker(ctx: ToolContext): Promise<{ error: string; message: string } | null> {
+  const answers = await ctx.intakeAnswers.forConversation(ctx.conversation.id);
+  if (!answers) {
+    return {
+      error: 'intake_missing',
+      message: 'Collect the intake answers and call save_intake_answers before booking.',
+    };
+  }
+  if (!answers.date_of_birth && !answers.date_of_birth_declined) {
+    return {
+      error: 'date_of_birth_missing',
+      message:
+        'No date of birth is saved. Ask for it (or, if the caller would rather not share, save date_of_birth_declined=true), then book.',
+    };
+  }
+  const check = dobCheck(answers);
+  if (check) {
+    return { error: 'date_of_birth_unconfirmed', message: dobCheckInstruction(check, answers) };
+  }
+  return null;
 }
 
 /** The caller's upcoming confirmed appointments with this operator (any conversation). */
@@ -283,13 +304,9 @@ export async function rescheduleAppointment(
  * no emergency handling. Confirms and completes the conversation in one go.
  */
 async function bookOfficeAppointment(args: BookAppointmentArgs, ctx: ToolContext): Promise<ToolResult> {
-  if (collectsIntakeAnswers(ctx.operator.category) && !(await intakeAnswersSaved(ctx))) {
-    return {
-      content: {
-        error: 'intake_missing',
-        message: 'Collect the intake answers and call save_intake_answers before booking.',
-      },
-    };
+  if (collectsIntakeAnswers(ctx.operator.category)) {
+    const blocker = await intakeBlocker(ctx);
+    if (blocker) return { content: blocker };
   }
   try {
     const result = await ctx.bookings.book({

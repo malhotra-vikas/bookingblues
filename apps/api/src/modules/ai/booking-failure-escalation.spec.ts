@@ -1,7 +1,7 @@
 import type { PinoLogger } from 'nestjs-pino';
 
 import { ConflictError, ExternalServiceError } from '../../common/errors/app-error';
-import { bookAppointment, rescheduleAppointment } from './tool-handlers';
+import { bookAppointment, rescheduleAppointment, saveIntakeAnswers } from './tool-handlers';
 import type { ToolContext } from './tool-handlers';
 import type { BookAppointmentArgs } from './tool-definitions';
 
@@ -62,7 +62,12 @@ function makeCtx(over: {
     payments: (over.payments ?? {}) as unknown as ToolContext['payments'],
     escalations: { openEscalation: open } as unknown as ToolContext['escalations'],
     bookings: (over.bookings ?? {}) as unknown as ToolContext['bookings'],
-    intakeAnswers: {} as never,
+    // Insurance bookings read the saved intake first (a valid, Medicare-age DOB here).
+    intakeAnswers: {
+      forConversation: jest
+        .fn()
+        .mockResolvedValue({ first_name: 'Pat', date_of_birth: '1950-03-15', prescriptions: [] }),
+    } as unknown as ToolContext['intakeAnswers'],
     logger: makeLogger(),
   };
   return { ctx, open, notify };
@@ -85,7 +90,6 @@ describe('booking failures escalate to a human', () => {
   it('insurance: a calendar failure escalates (bot_stuck) instead of throwing', async () => {
     const { ctx, open } = makeCtx({
       operator: { category: 'insurance' },
-      supabase: makeSupabase({ data: { intake_answers_enc: 'enc' }, error: null }),
       bookings: { book: jest.fn().mockRejectedValue(GOOGLE_403) },
     });
     const result = await bookAppointment(ARGS, ctx);
@@ -104,7 +108,6 @@ describe('booking failures escalate to a human', () => {
   it('emails the operator (their wording + reconnect step) and admins (technical note)', async () => {
     const { ctx, notify } = makeCtx({
       operator: { category: 'insurance', business_name: 'Jamal Insurance' },
-      supabase: makeSupabase({ data: { intake_answers_enc: 'enc' }, error: null }),
       bookings: { book: jest.fn().mockRejectedValue(GOOGLE_403) },
     });
     await bookAppointment(ARGS, ctx);
@@ -116,6 +119,46 @@ describe('booking failures escalate to a human', () => {
     expect(content.operator.steps.join(' ')).toContain('Reconnect Google Calendar');
     expect(content.admin.why).toContain("Jamal Insurance's Google Calendar");
     expect(content.admin.technical).toContain('external.google 403');
+  });
+
+  it('insurance: no booking without a date of birth (given or declined)', async () => {
+    const book = jest.fn();
+    const { ctx } = makeCtx({ operator: { category: 'insurance' }, bookings: { book } });
+    (ctx.intakeAnswers.forConversation as jest.Mock).mockResolvedValue({ first_name: 'Pat', prescriptions: [] });
+    const result = await bookAppointment(ARGS, ctx);
+    expect(result.content).toMatchObject({ error: 'date_of_birth_missing' });
+    expect(book).not.toHaveBeenCalled();
+
+    (ctx.intakeAnswers.forConversation as jest.Mock).mockResolvedValue({
+      first_name: 'Pat',
+      date_of_birth_declined: true,
+      prescriptions: [],
+    });
+    book.mockResolvedValue({ appointmentId: 'a1' });
+    expect((await bookAppointment(ARGS, ctx)).outcome).toBe('booked');
+  });
+
+  it('insurance: an unconfirmed unusual Medicare DOB blocks booking until confirmed', async () => {
+    const book = jest.fn().mockResolvedValue({ appointmentId: 'a1' });
+    const { ctx } = makeCtx({ operator: { category: 'insurance' }, bookings: { book } });
+    const young = { first_name: 'Pat', about_medicare: true, date_of_birth: '1990', prescriptions: [] };
+    (ctx.intakeAnswers.forConversation as jest.Mock).mockResolvedValue(young);
+    const blocked = await bookAppointment(ARGS, ctx);
+    expect(blocked.content).toMatchObject({ error: 'date_of_birth_unconfirmed' });
+    expect(book).not.toHaveBeenCalled();
+
+    (ctx.intakeAnswers.forConversation as jest.Mock).mockResolvedValue({ ...young, date_of_birth_confirmed: true });
+    expect((await bookAppointment(ARGS, ctx)).outcome).toBe('booked');
+  });
+
+  it('save_intake_answers returns a dob_check for the model to act on', async () => {
+    const { ctx } = makeCtx({ operator: { category: 'insurance' } });
+    const merged = { first_name: 'Pat', about_medicare: true, date_of_birth: '1990', prescriptions: [] };
+    (ctx.intakeAnswers as unknown as { saveForConversation: jest.Mock }).saveForConversation = jest
+      .fn()
+      .mockResolvedValue(merged);
+    const r = await saveIntakeAnswers({ ...merged }, ctx);
+    expect(r.content).toMatchObject({ saved: true, dob_check: { kind: 'confirm_young_for_medicare' } });
   });
 
   it('a taken slot sends no email', async () => {
