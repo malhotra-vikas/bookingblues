@@ -995,45 +995,6 @@ export class BookingsService {
     return `${this.env.API_URL}/cal/${compactUuid(appointmentId)}`;
   }
 
-  /**
-   * Build a VCALENDAR/VEVENT body for the caller. Wide-compat plain text —
-   * Apple Calendar, Google Calendar, Outlook all accept this format.
-   */
-  buildIcsBody(args: {
-    appointmentId: string;
-    operatorName: string;
-    jobSummary: string;
-    startIso: string;
-    endIso: string;
-    callerPhoneE164: string;
-  }): string {
-    const dt = (iso: string): string =>
-      iso.replace(/[-:]/g, '').replace(/\.\d{3}/, '').replace(/Z$/, 'Z');
-    const escape = (s: string): string =>
-      s.replace(/\\/g, '\\\\').replace(/,/g, '\\,').replace(/;/g, '\\;').replace(/\n/g, '\\n');
-
-    const lines = [
-      'BEGIN:VCALENDAR',
-      'VERSION:2.0',
-      'PRODID:-//KeeprSteady//EN',
-      'CALSCALE:GREGORIAN',
-      'METHOD:PUBLISH',
-      'BEGIN:VEVENT',
-      `UID:${args.appointmentId}@bookingblues`,
-      `DTSTAMP:${dt(new Date().toISOString())}`,
-      `DTSTART:${dt(args.startIso)}`,
-      `DTEND:${dt(args.endIso)}`,
-      `SUMMARY:${escape(args.operatorName)} appointment`,
-      `DESCRIPTION:${escape(args.jobSummary)}`,
-      `LOCATION:${escape(args.callerPhoneE164)}`,
-      'STATUS:CONFIRMED',
-      'END:VEVENT',
-      'END:VCALENDAR',
-    ];
-    // RFC 5545 uses CRLF line endings.
-    return lines.join('\r\n') + '\r\n';
-  }
-
   private dollars(cents: number): string {
     return `$${(cents / 100).toFixed(2)}`;
   }

@@ -12,6 +12,7 @@ import { PaymentsModule } from '../payments/payments.module';
 import { BookingHoldsController } from './booking-holds.controller';
 import { BookingsService } from './bookings.service';
 import { CalShortLinkController } from './cal-shortlink.controller';
+import { CalendarLinkService } from './calendar-link.service';
 import { IcsController } from './ics.controller';
 import { IntakeAnswersService } from './intake-answers.service';
 
@@ -27,7 +28,7 @@ import { IntakeAnswersService } from './intake-answers.service';
     EncryptionModule,
   ],
   controllers: [IcsController, BookingHoldsController, CalShortLinkController],
-  providers: [BookingsService, IntakeAnswersService],
+  providers: [BookingsService, IntakeAnswersService, CalendarLinkService],
   exports: [BookingsService, IntakeAnswersService],
 })
 export class AppointmentsModule {}
