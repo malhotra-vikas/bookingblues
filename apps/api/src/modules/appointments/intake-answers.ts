@@ -133,6 +133,38 @@ export type SaveIntakeAnswersArgs = z.infer<typeof SaveIntakeAnswersArgs>;
 
 const StoredIntakeAnswers = z.object({ ...intakeFields, date_of_birth: StoredDateOfBirth.optional() });
 
+/**
+ * A caller correcting a detail on an appointment that's already booked
+ * (update_appointment_details): only the changed fields, same rules as intake
+ * (impossible dates rejected, no government IDs), plus an email address.
+ * Switching who the appointment is for is not allowed here (hand-off instead).
+ */
+export const UpdateAppointmentDetailsArgs = z.object({
+  appointment_id: z.string().uuid(),
+  first_name: text(60).optional(),
+  last_name: text(60).optional(),
+  date_of_birth: DateOfBirth.optional(),
+  date_of_birth_declined: z.boolean().optional(),
+  date_of_birth_confirmed: z.boolean().optional(),
+  doctor: text(200).optional(),
+  doctor_declined: z.boolean().optional(),
+  prescriptions: z.array(text(120)).max(40).optional(),
+  prescriptions_declined: z.boolean().optional(),
+  caller_email: z.string().trim().email().max(200).optional(),
+});
+export type UpdateAppointmentDetailsArgs = z.infer<typeof UpdateAppointmentDetailsArgs>;
+
+/** Which details changed, as labels for the operator's email (never the values). */
+export function changedDetailLabels(u: UpdateAppointmentDetailsArgs): string[] {
+  const labels: string[] = [];
+  if (u.first_name !== undefined || u.last_name !== undefined) labels.push('Name');
+  if (u.date_of_birth !== undefined || u.date_of_birth_declined !== undefined) labels.push('Date of birth');
+  if (u.doctor !== undefined || u.doctor_declined !== undefined) labels.push('Doctor / office');
+  if (u.prescriptions !== undefined || u.prescriptions_declined !== undefined) labels.push('Prescriptions');
+  if (u.caller_email !== undefined) labels.push('Email');
+  return labels;
+}
+
 /** The stored shape (what gets encrypted). */
 export interface IntakeAnswers {
   readonly first_name: string;

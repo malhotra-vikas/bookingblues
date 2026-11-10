@@ -3,7 +3,7 @@ import { z } from 'zod';
 
 import { collectsIntakeAnswers, isOfficeAppointmentCategory } from './category-profile';
 
-export { SaveIntakeAnswersArgs } from '../appointments/intake-answers';
+export { SaveIntakeAnswersArgs, UpdateAppointmentDetailsArgs } from '../appointments/intake-answers';
 
 /**
  * Operator-local wall-clock datetime, `YYYY-MM-DDTHH:MM[:SS]`, no zone. The
@@ -318,6 +318,43 @@ const RESCHEDULE_APPOINTMENT_TOOL: OpenAI.Chat.Completions.ChatCompletionTool = 
 };
 
 /** Field-visit-only tools that office-appointment categories never get. */
+const UPDATE_APPOINTMENT_DETAILS_TOOL: OpenAI.Chat.Completions.ChatCompletionTool = {
+  type: 'function',
+  function: {
+    name: 'update_appointment_details',
+    description:
+      "Correct or add a detail on the caller's EXISTING upcoming appointment (listed under UPCOMING APPOINTMENTS): name, date of birth, doctor, prescriptions, or an email address. Send the appointment_id and ONLY the changed fields; everything else is kept. Record exactly what the caller said, never guess. The operator is told what changed. If the result has a dob_check, follow its instruction. Not for changing the time (use reschedule_appointment), cancelling (escalate_to_human), or changing who the appointment is for (escalate_to_human).",
+    parameters: {
+      type: 'object',
+      properties: {
+        appointment_id: { type: 'string', description: 'id of the appointment, from UPCOMING APPOINTMENTS' },
+        first_name: { type: 'string' },
+        last_name: { type: 'string' },
+        date_of_birth: {
+          type: 'string',
+          description: 'Exactly as precise as said: YYYY-MM-DD, YYYY-MM or YYYY.',
+        },
+        date_of_birth_declined: { type: 'boolean' },
+        date_of_birth_confirmed: {
+          type: 'boolean',
+          description: 'True once the caller confirmed a date of birth you were asked to double-check.',
+        },
+        doctor: { type: 'string' },
+        doctor_declined: { type: 'boolean' },
+        prescriptions: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'The full, current list in the caller\'s own words (replaces the old list).',
+        },
+        prescriptions_declined: { type: 'boolean' },
+        caller_email: { type: 'string', description: 'Only if the caller gave one.' },
+      },
+      required: ['appointment_id'],
+      additionalProperties: false,
+    },
+  },
+};
+
 const FIELD_ONLY_TOOLS: ReadonlySet<string> = new Set(['check_service_area', 'collect_service_address']);
 
 /**
@@ -349,5 +386,7 @@ export function toolDefinitionsFor(
     };
   });
   const withReschedule = [...tools, RESCHEDULE_APPOINTMENT_TOOL];
-  return collectsIntakeAnswers(category) ? [SAVE_INTAKE_ANSWERS_TOOL, ...withReschedule] : withReschedule;
+  return collectsIntakeAnswers(category)
+    ? [SAVE_INTAKE_ANSWERS_TOOL, UPDATE_APPOINTMENT_DETAILS_TOOL, ...withReschedule]
+    : withReschedule;
 }

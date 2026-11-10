@@ -34,6 +34,20 @@ export function openingSms(businessName: string, category?: string | null): stri
 }
 
 /**
+ * Opening SMS for a missed call from someone who already has an upcoming
+ * appointment: name it and ask whether this is about it (reschedule / change)
+ * or something new, instead of starting a fresh intake. Carries the opt-out
+ * disclosure (first message of the conversation). `when` = "Tue, Nov 10, 9:00 AM".
+ */
+export function returningCallerOpeningSms(businessName: string, when: string): string {
+  return (
+    `Hi, this is ${businessName} — sorry we missed your call! We see your appointment on ${when}. ` +
+    `Is this about that appointment (to reschedule or change something), or something new? ` +
+    `Just reply here. ${STOP_DISCLOSURE}`
+  );
+}
+
+/**
  * What the caller is actually charged at Checkout, itemised. The platform fee
  * is charged ON TOP of the deposit, so quoting only the deposit made the SMS
  * disagree with the Checkout page (E2E test 2026-10-28: "$10.00" vs $11.50).
@@ -338,12 +352,12 @@ export function formatUsPhone(e164: string | null | undefined): string {
 }
 
 /**
- * 1-hour-before appointment reminder to the caller (CLAUDE.md §9.6).
+ * Appointment reminder to the caller (CLAUDE.md §9.6).
  *
- * The AI does NOT handle reschedule/cancellation, so we must NOT invite the
- * caller to "reply here" for changes (that reopens a completed conversation and
- * the bot fumbles it). Instead, direct reschedule/cancel requests to the
- * operator directly, on the business number they registered at signup.
+ * Invites a reply for changes: the bot sees the caller's upcoming appointment
+ * (UPCOMING APPOINTMENTS in the prompt), moves it with reschedule_appointment,
+ * and hands cancellations to the team. The operator's registered business
+ * number stays as an alternative.
  */
 export function appointmentReminderSms(
   businessName: string,
@@ -358,9 +372,11 @@ export function appointmentReminderSms(
       bringListLine(category, { forCall: true })
     : `Reminder: your appointment with ${businessName} is coming up at ${friendlyTime}.` +
       bringListLine(category);
+  // The bot now reschedules by text (and hands cancellations to the team), so
+  // replying here works; the business number stays as an alternative.
   const phone = formatUsPhone(operatorPhoneE164);
   const change = phone
-    ? ` Need to reschedule or cancel? Please call ${businessName} directly at ${phone}.`
-    : ` Need to reschedule or cancel? Please call ${businessName} directly.`;
+    ? ` Need to reschedule or cancel? Just reply to this text, or call ${businessName} at ${phone}.`
+    : ` Need to reschedule or cancel? Just reply to this text.`;
   return base + change;
 }

@@ -70,6 +70,16 @@ export class IntakeAnswersService {
     return this.decrypt(enc, { appointmentId });
   }
 
+  /** Replace an appointment's answers (a caller correcting a detail after booking). */
+  async saveForAppointment(appointmentId: string, answers: IntakeAnswers): Promise<void> {
+    const { error } = await this.supabase
+      .db()
+      .from('appointments')
+      .update({ intake_answers_enc: this.encryption.encrypt(JSON.stringify(answers)) })
+      .eq('id', appointmentId);
+    if (error) throw error;
+  }
+
   async forAppointment(appointmentId: string): Promise<IntakeAnswers | null> {
     const { data, error } = await this.supabase
       .db()

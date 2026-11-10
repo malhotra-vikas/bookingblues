@@ -41,6 +41,7 @@ import {
   requestPaymentLink,
   rescheduleAppointment,
   saveIntakeAnswers,
+  updateAppointmentDetails,
 } from './tool-handlers';
 import type { ToolContext, ToolResult } from './tool-handlers';
 import {
@@ -55,6 +56,7 @@ import {
   RequestPaymentLinkArgs,
   RescheduleAppointmentArgs,
   SaveIntakeAnswersArgs,
+  UpdateAppointmentDetailsArgs,
   toolDefinitionsFor,
 } from './tool-definitions';
 
@@ -618,6 +620,9 @@ export class AdvanceService {
       switch (name) {
         case 'save_intake_answers':
           return await saveIntakeAnswers(SaveIntakeAnswersArgs.parse(parsed), ctx);
+        case 'update_appointment_details':
+          // Intake categories only (toolDefinitionsFor); the handler refuses others.
+          return await updateAppointmentDetails(UpdateAppointmentDetailsArgs.parse(parsed), ctx);
         case 'check_service_area':
           return checkServiceArea(CheckServiceAreaArgs.parse(parsed), ctx);
         case 'check_availability':

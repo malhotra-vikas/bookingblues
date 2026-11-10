@@ -21,7 +21,12 @@ import {
   VOICE_CONSENT_TEXT,
   VOICE_CONSENT_VERSION,
 } from '../consent/sms-consent.dto';
-import { openingSms, usageLimitOpeningSms } from '../conversations/templates/sms-templates';
+import {
+  openingSms,
+  returningCallerOpeningSms,
+  usageLimitOpeningSms,
+} from '../conversations/templates/sms-templates';
+import { fetchCallerJobs, isUpcomingConfirmed } from '../appointments/caller-history';
 import { UsageService } from '../usage/usage.service';
 import { WebhookIdempotencyService } from '../../common/webhooks/webhook-idempotency.service';
 import { ENV_TOKEN } from '../../config/config.module';
@@ -249,8 +254,46 @@ export class TwilioVoiceController {
     }
   }
 
+  /**
+   * "Tue, Nov 10, 9:00 AM" for the caller's soonest upcoming confirmed
+   * appointment with this operator, or null. A lookup failure falls back to the
+   * normal opening (never blocks the text).
+   */
+  private async nextUpcomingAppointment(
+    operator: { id: string; timezone?: string | null },
+    callerPhone: string,
+  ): Promise<string | null> {
+    try {
+      const jobs = await fetchCallerJobs(this.supabase.db(), operator.id, callerPhone);
+      const next = jobs
+        .filter((j) => isUpcomingConfirmed(j))
+        .sort((a, b) => (a.scheduledForStart! < b.scheduledForStart! ? -1 : 1))[0];
+      if (!next?.scheduledForStart) return null;
+      return new Date(next.scheduledForStart).toLocaleString('en-US', {
+        timeZone: operator.timezone ?? 'America/New_York',
+        weekday: 'short',
+        month: 'short',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+      });
+    } catch (err) {
+      this.logger.warn(
+        { operatorId: operator.id, err: (err as Error).message },
+        'voice: upcoming-appointment lookup failed; using the normal opening',
+      );
+      return null;
+    }
+  }
+
   private async startConversationFromCall(
-    operator: { id: string; business_name: string; category?: string | null; twilio_number_e164: string | null },
+    operator: {
+      id: string;
+      business_name: string;
+      category?: string | null;
+      twilio_number_e164: string | null;
+      timezone?: string | null;
+    },
     callerPhone: string | undefined,
   ): Promise<void> {
     if (!callerPhone || !operator.twilio_number_e164) return;
@@ -271,9 +314,14 @@ export class TwilioVoiceController {
     // Plan usage (#usage-metering): a NEW caller on a Solo plan that's at its
     // limit gets a polite "we'll follow up" text instead of the AI invite.
     const admitted = await this.usage.wouldAdmit(operator.id, callerPhone);
-    const opening = admitted
-      ? openingSms(operator.business_name, operator.category)
-      : usageLimitOpeningSms(operator.business_name);
+    // A caller who already has an upcoming appointment is most likely calling
+    // about it: name it and ask, instead of starting a fresh intake.
+    const upcoming = admitted ? await this.nextUpcomingAppointment(operator, callerPhone) : null;
+    const opening = !admitted
+      ? usageLimitOpeningSms(operator.business_name)
+      : upcoming
+        ? returningCallerOpeningSms(operator.business_name, upcoming)
+        : openingSms(operator.business_name, operator.category);
 
     const send = await this.twilio.sendSms({
       from: operator.twilio_number_e164,

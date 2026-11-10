@@ -16,7 +16,15 @@ import { isOfficeAppointmentCategory } from '../ai/category-profile';
 import { describeLocalWallTime, utcToLocalWallTime } from '../calendar/zoned-time';
 import { hasCapacity, travelBufferMinFor } from './capacity';
 import { earliestBookableMs, minLeadMinutesFor } from './lead-time';
-import { type IntakeAnswers, intakeAnswersText } from './intake-answers';
+import {
+  changedDetailLabels,
+  type IntakeAnswers,
+  intakeAnswersText,
+  mergeIntakeAnswers,
+  type UpdateAppointmentDetailsArgs,
+} from './intake-answers';
+import { brandedEmailHtml, escapeHtml } from '../../common/email/email-layout';
+import { fetchOperatorEmail } from '../../common/email/staff-recipients';
 import { IntakeAnswersService } from './intake-answers.service';
 import { ConversationsService } from '../conversations/conversations.service';
 import {
@@ -293,6 +301,136 @@ export class BookingsService {
     });
 
     return { appointmentId, icsUrl, operatorEventUrl, feeCheckoutUrl, calendarError };
+  }
+
+  /**
+   * A returning caller corrects a detail on their upcoming appointment (insurance
+   * intake answers and/or email). Same appointment; the answers are merged and
+   * re-encrypted, the operator's calendar event description is refreshed
+   * (best-effort), and the operator is emailed WHICH details changed, never the
+   * values (health information stays out of email).
+   */
+  async updateDetails(args: {
+    operator: OperatorRow;
+    appointmentId: string;
+    callerPhoneE164: string;
+    changes: UpdateAppointmentDetailsArgs;
+  }): Promise<{ answers: IntakeAnswers | null; changed: string[] }> {
+    const { data: appt, error } = await this.supabase
+      .db()
+      .from('appointments')
+      .select('id, operator_id, caller_phone_e164, caller_name, job_summary, status, scheduled_for_start, scheduled_for_end, google_event_id')
+      .eq('id', args.appointmentId)
+      .maybeSingle();
+    if (error) throw error;
+    if (
+      !appt ||
+      appt.operator_id !== args.operator.id ||
+      appt.caller_phone_e164 !== args.callerPhoneE164 ||
+      appt.status !== 'confirmed' ||
+      new Date(appt.scheduled_for_start).getTime() <= Date.now()
+    ) {
+      throw new ValidationError('No upcoming confirmed appointment with that id for this caller.');
+    }
+
+    const changed = changedDetailLabels(args.changes);
+    const { appointment_id: _id, caller_email: callerEmail, ...intakeChanges } = args.changes;
+    let answers: IntakeAnswers | null = await this.intakeAnswers.forAppointment(appt.id);
+    const touchesIntake = Object.values(intakeChanges).some((v) => v !== undefined);
+    if (touchesIntake) {
+      const next: IntakeAnswers = {
+        ...Object.fromEntries(Object.entries(intakeChanges).filter(([, v]) => v !== undefined)),
+        first_name: intakeChanges.first_name ?? answers?.first_name ?? appt.caller_name ?? 'Caller',
+        prescriptions: intakeChanges.prescriptions ?? [],
+      };
+      answers = mergeIntakeAnswers(answers, next);
+      await this.intakeAnswers.saveForAppointment(appt.id, answers);
+    }
+    if (callerEmail) {
+      const { error: emailErr } = await this.supabase
+        .db()
+        .from('appointments')
+        .update({ caller_email: callerEmail })
+        .eq('id', appt.id);
+      if (emailErr) throw emailErr;
+    }
+
+    // Keep the operator's own calendar event in step (it carries the intake block).
+    if (touchesIntake && appt.google_event_id) {
+      await this.calendar
+        .patchEvent({
+          operatorId: args.operator.id,
+          eventId: appt.google_event_id,
+          description: this.eventDescription({
+            callerName: appt.caller_name ?? 'Caller',
+            callerPhoneE164: appt.caller_phone_e164,
+            jobSummary: appt.job_summary ?? '',
+            office: true,
+            ...(answers ? { intakeText: intakeAnswersText(answers) } : {}),
+          }),
+        })
+        .catch((err) =>
+          this.logger.warn(
+            { appointmentId: appt.id, err: (err as Error).message },
+            'details update: calendar description not refreshed (non-fatal)',
+          ),
+        );
+    }
+
+    await this.audit.write({
+      actorUserId: null,
+      operatorId: args.operator.id,
+      action: 'appointment.details_updated',
+      resourceType: 'appointment',
+      resourceId: appt.id,
+      metadata: { fields: changed, by: 'ai' },
+    });
+
+    void this.emailOperatorDetailsUpdated({
+      operator: args.operator,
+      callerName: appt.caller_name,
+      startIso: appt.scheduled_for_start,
+      changed,
+    }).catch((err) =>
+      this.logger.warn({ appointmentId: appt.id, err: (err as Error).message }, 'details-updated email failed (non-fatal)'),
+    );
+
+    return { answers, changed };
+  }
+
+  /** "Vikas updated: Date of birth, Doctor" with a dashboard link. Labels only, no values. */
+  private async emailOperatorDetailsUpdated(args: {
+    operator: OperatorRow;
+    callerName: string | null;
+    startIso: string;
+    changed: string[];
+  }): Promise<void> {
+    if (!this.email.isConfigured() || args.changed.length === 0) return;
+    const to = await fetchOperatorEmail(this.supabase.db(), args.operator.user_id);
+    if (!to) return;
+    const who = args.callerName?.trim() || 'A caller';
+    const when = this.friendlyTime(args.startIso, args.operator.timezone);
+    const list = args.changed.join(', ');
+    const dashboard = `${this.env.APP_URL.replace(/\/$/, '')}/dashboard`;
+    const res = await this.email.send({
+      to,
+      subject: `Appointment details updated: ${who}, ${when}`,
+      html: brandedEmailHtml({
+        heading: 'Appointment details updated',
+        bodyHtml:
+          `<p style="margin:0 0 14px;">${escapeHtml(who)} updated their details by text for the appointment on ${escapeHtml(when)}.</p>` +
+          `<p style="margin:0;"><strong>Changed:</strong> ${escapeHtml(list)}</p>`,
+        cta: { label: 'See the appointment', href: dashboard },
+        footnoteHtml: 'For privacy, the new details are shown on your dashboard, not in this email.',
+      }),
+      text:
+        `${who} updated their details by text for the appointment on ${when}.\n` +
+        `Changed: ${list}\n\nSee the appointment: ${dashboard}\n` +
+        'For privacy, the new details are shown on your dashboard, not in this email.',
+    });
+    if (!res.delivered) {
+      this.logger.warn({ operatorId: args.operator.id, reason: res.reason }, 'details-updated email NOT sent');
+    }
   }
 
   /**

@@ -141,13 +141,25 @@ export function formatUpcomingAppointmentsForPrompt(
     ),
     '',
     'Never book a second appointment to change the time of one listed above.',
+    '- If it is not yet clear whether they are reaching out about that appointment or',
+    '  something new (e.g. they just said "hi" or "yes"), ask FIRST: "Is this about your',
+    '  appointment on <day, time> (to reschedule or change something), or something new?"',
+    '  Do not start the intake questions for a change to an existing appointment.',
     '- If they want a different day or time: ask when, check availability, offer open',
     '  slots, and once they pick one call reschedule_appointment with the id above.',
     '  The same appointment is moved (any deposit stays with it); their old time is released.',
-    '- If they want to cancel, call escalate_to_human with the reason — the team handles it.',
-    opts.office
-      ? '- If they want an additional, separate appointment, call escalate_to_human.'
-      : '- If they clearly want a separate, additional job (a different problem), you may book it as a new job.',
+    '- If they want to cancel: tell them you\'re passing it to the team, who will confirm the',
+    '  cancellation, and call escalate_to_human with the reason "caller wants to cancel the',
+    '  <day, time> appointment". Never say it is already cancelled.',
+    ...(opts.office
+      ? [
+          '- If they want to correct or add a detail on the appointment (the name, date of birth,',
+          '  doctor, prescriptions, or an email address), call update_appointment_details with the',
+          '  id above and ONLY the changed fields, then confirm it\'s updated. Same rules as intake:',
+          '  record exactly what they said, never guess.',
+          '- If they want an additional, separate appointment, call escalate_to_human.',
+        ]
+      : ['- If they clearly want a separate, additional job (a different problem), you may book it as a new job.']),
     '- If a step for a listed appointment is still pending (e.g. collecting the service',
     '  address or the deposit), continue it. Otherwise just answer their question.',
   ].join('\n');

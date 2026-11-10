@@ -11,17 +11,16 @@ describe('formatUsPhone', () => {
 });
 
 describe('appointmentReminderSms', () => {
-  it('directs reschedule/cancel to the operator number — never invites a bot reply', () => {
+  // The bot reschedules by text (and hands cancellations to the team), so the
+  // reminder invites a reply; the business number stays as an alternative.
+  it('invites a reply to reschedule or cancel, with the business number as an alternative', () => {
     const body = appointmentReminderSms('Zeus Plumbing', 'Tue 2:00 PM', '+14155551234');
     expect(body).toContain('coming up at Tue 2:00 PM');
-    expect(body).toContain('call Zeus Plumbing directly at (415) 555-1234');
-    // The bot can't reschedule — must not tell the caller to reply for it.
-    expect(body.toLowerCase()).not.toContain('reply here');
+    expect(body).toContain('Need to reschedule or cancel? Just reply to this text, or call Zeus Plumbing at (415) 555-1234.');
   });
 
-  it('still directs to the operator when no phone is available', () => {
+  it('invites a reply when no business phone is available', () => {
     const body = appointmentReminderSms('Zeus Plumbing', 'Tue 2:00 PM', null);
-    expect(body).toContain('call Zeus Plumbing directly');
-    expect(body.toLowerCase()).not.toContain('reply here');
+    expect(body).toContain('Need to reschedule or cancel? Just reply to this text.');
   });
 });

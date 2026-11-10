@@ -9,6 +9,8 @@ export interface TwilioOperator {
   readonly business_name: string;
   readonly category: string | null;
   readonly twilio_number_e164: string | null;
+  /** IANA timezone, for naming a returning caller's appointment time. */
+  readonly timezone: string;
 }
 
 /**
@@ -23,7 +25,7 @@ export async function resolveOperatorForWebhook(args: {
   const { data, error } = await args.supabase
     .db()
     .from('operators')
-    .select('id, business_name, category, twilio_number_e164')
+    .select('id, business_name, category, twilio_number_e164, timezone')
     .eq('id', args.operatorId)
     .maybeSingle();
   if (error) throw error;

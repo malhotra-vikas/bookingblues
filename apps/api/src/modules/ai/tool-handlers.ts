@@ -3,7 +3,12 @@ import type { Tables } from '@bookingblues/db-types';
 
 import type { BookingsService } from '../appointments/bookings.service';
 import type { IntakeAnswersService } from '../appointments/intake-answers.service';
-import { dobCheck, dobCheckInstruction } from '../appointments/intake-answers';
+import {
+  changedDetailLabels,
+  dobCheck,
+  dobCheckInstruction,
+  type UpdateAppointmentDetailsArgs,
+} from '../appointments/intake-answers';
 import type { CalendarService } from '../calendar/calendar.service';
 import { collectsIntakeAnswers, isOfficeAppointmentCategory } from './category-profile';
 import { isBookingFeeCollectible } from './prompts';
@@ -241,6 +246,42 @@ export async function saveIntakeAnswers(
     return { content: { saved: true, dob_check: { ...check, instruction: dobCheckInstruction(check, merged) } } };
   }
   return { content: { saved: true } };
+}
+
+/**
+ * A returning caller corrects a detail on their upcoming appointment (insurance).
+ * Updates the same appointment; the operator is emailed which fields changed.
+ */
+export async function updateAppointmentDetails(
+  args: UpdateAppointmentDetailsArgs,
+  ctx: ToolContext,
+): Promise<ToolResult> {
+  if (!collectsIntakeAnswers(ctx.operator.category)) {
+    return { content: { error: 'not_available', message: 'This business does not keep appointment details.' } };
+  }
+  if (changedDetailLabels(args).length === 0) {
+    return { content: { error: 'nothing_to_update', message: 'Send only the fields the caller changed.' } };
+  }
+  try {
+    const { answers, changed } = await ctx.bookings.updateDetails({
+      operator: ctx.operator,
+      appointmentId: args.appointment_id,
+      callerPhoneE164: ctx.callerPhoneE164,
+      changes: args,
+    });
+    const check = answers ? dobCheck(answers) : null;
+    return {
+      content: {
+        updated: changed,
+        ...(check ? { dob_check: { ...check, instruction: dobCheckInstruction(check, answers!) } } : {}),
+      },
+    };
+  } catch (err) {
+    if (err instanceof ValidationError) {
+      return { content: { error: 'invalid_request', message: err.message } };
+    }
+    throw err;
+  }
 }
 
 /**
