@@ -372,11 +372,15 @@ export function appointmentReminderSms(
       bringListLine(category, { forCall: true })
     : `Reminder: your appointment with ${businessName} is coming up at ${friendlyTime}.` +
       bringListLine(category);
-  // The bot now reschedules by text (and hands cancellations to the team), so
-  // replying here works; the business number stays as an alternative.
+  // The bot reschedules by text (and hands cancellations to the team), so
+  // replying works; the business number stays as an alternative. The reply is
+  // asked for as a SENTENCE: a bare "Cancel" (like STOP, END, QUIT) is a
+  // carrier opt-out keyword, so Twilio would unsubscribe the caller from every
+  // text from this number and the bot would never see it.
   const phone = formatUsPhone(operatorPhoneE164);
-  const change = phone
-    ? ` Need to reschedule or cancel? Just reply to this text, or call ${businessName} at ${phone}.`
-    : ` Need to reschedule or cancel? Just reply to this text.`;
+  const reply =
+    ` Need to reschedule or cancel? Reply with a short message, like "Can we move it to Friday?" ` +
+    `or "I need to cancel my appointment"`;
+  const change = phone ? `${reply}, or call ${businessName} at ${phone}.` : `${reply}.`;
   return base + change;
 }

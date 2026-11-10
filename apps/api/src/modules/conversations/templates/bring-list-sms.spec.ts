@@ -28,7 +28,7 @@ describe('bring-list in caller SMS', () => {
   it('insurance reminder repeats the bring-list', () => {
     const body = appointmentReminderSms('Insurance Test', 'Sun 10:00 AM', '+14155551234', 'insurance');
     expect(body).toContain('Please bring your Medicare card');
-    expect(body).toContain('Just reply to this text, or call Insurance Test at (415) 555-1234');
+    expect(body).toContain('or call Insurance Test at (415) 555-1234');
   });
 
   it('insurance gets its own opening text; trades keep theirs', () => {

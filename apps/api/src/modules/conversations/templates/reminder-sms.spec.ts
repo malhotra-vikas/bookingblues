@@ -16,11 +16,20 @@ describe('appointmentReminderSms', () => {
   it('invites a reply to reschedule or cancel, with the business number as an alternative', () => {
     const body = appointmentReminderSms('Zeus Plumbing', 'Tue 2:00 PM', '+14155551234');
     expect(body).toContain('coming up at Tue 2:00 PM');
-    expect(body).toContain('Need to reschedule or cancel? Just reply to this text, or call Zeus Plumbing at (415) 555-1234.');
+    expect(body).toContain('Need to reschedule or cancel? Reply with a short message');
+    expect(body).toContain('or call Zeus Plumbing at (415) 555-1234.');
   });
 
   it('invites a reply when no business phone is available', () => {
     const body = appointmentReminderSms('Zeus Plumbing', 'Tue 2:00 PM', null);
-    expect(body).toContain('Need to reschedule or cancel? Just reply to this text.');
+    expect(body).toContain('"I need to cancel my appointment".');
+  });
+
+  // CANCEL / STOP / END / QUIT alone are carrier opt-out keywords: a bare
+  // "Cancel" reply would unsubscribe the caller. Ask for a sentence instead.
+  it('never invites a one-word "cancel" reply', () => {
+    const body = appointmentReminderSms('Zeus Plumbing', 'Tue 2:00 PM', '+14155551234');
+    expect(body).toContain('"I need to cancel my appointment"');
+    expect(body).not.toMatch(/reply (with )?["']?cancel["']?\b/i);
   });
 });
