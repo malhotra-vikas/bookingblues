@@ -127,6 +127,8 @@ The API is the only service that talks to Twilio, OpenAI, Stripe, and Google. Th
 
 Do not introduce new top-level dependencies without updating this file and the architecture decision record.
 
+Added since: `qrcode` + `@types/qrcode` (web only, ADR 0011) for the Settings "Call-us QR code" card and the printable poster (`/settings/qr-poster`).
+
 ---
 
 ## 5. Repository Layout
@@ -875,5 +877,6 @@ Track significant decisions in `docs/adr/NNNN-title.md`. Initial set:
 - 0006 — pg-boss for queues in MVP, revisit for v2.
 - 0007 — SMS-only AI for MVP, no voice AI.
 - 0008 — Forward-only migrations, no down migrations.
+- 0011 — "Call us" QR code: `tel:` link to the operator's KeeprSteady number (runs the missed-call flow unchanged), generated in the web app with `qrcode`.
 
 When a decision in this file changes, write the next ADR and update the relevant section here.

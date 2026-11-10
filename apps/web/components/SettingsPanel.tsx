@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 
 import { getSupabaseBrowserClient } from '../lib/supabase/browser';
+import { CallQrCard } from './CallQrCard';
 import { publicEnv } from '../lib/env';
 import { PLANS, depositLabel } from '../lib/brand';
 import { isOfficeCategory } from '../lib/category-profile';
@@ -743,6 +744,14 @@ export function SettingsPanel({ operator }: { operator: Operator }): JSX.Element
             operator.twilio_number_e164 ? formatE164(operator.twilio_number_e164) : 'Not provisioned'
           }
         />
+      </Card>
+
+      {/* ── Call-us QR code ──────────────────────────────────────────── */}
+      <Card
+        title="Call-us QR code"
+        description="Customers scan it to call your KeeprSteady number and get a text to book, same as a missed call."
+      >
+        <CallQrCard businessName={operator.business_name} twilioNumberE164={operator.twilio_number_e164} />
       </Card>
 
       {/* ── Billing ──────────────────────────────────────────────────── */}
