@@ -24,13 +24,6 @@ function urlFromEnv(value: string | undefined, fallback: string): string {
   }
 }
 
-/** Cal.com's chrome-less inline view: `/embed` added to the event path, query kept. */
-export function calEmbedUrl(bookingUrl: string): string {
-  const u = new URL(bookingUrl);
-  if (!u.pathname.endsWith('/embed')) u.pathname = `${u.pathname.replace(/\/$/, '')}/embed`;
-  return u.toString();
-}
-
 const demoBookingUrl = urlFromEnv(process.env.NEXT_PUBLIC_DEMO_BOOKING_URL, DEFAULT_DEMO_BOOKING_URL);
 
 export const BRAND = {
@@ -53,8 +46,11 @@ export const BRAND = {
   careersBookingUrl: urlFromEnv(process.env.NEXT_PUBLIC_CAREERS_BOOKING_URL, DEFAULT_CAREERS_BOOKING_URL),
   // Client pitch / demo call (header, home, pricing, FAQ, contact, survey ...).
   demoBookingUrl,
-  // Inline iframe on /contact: derived from the demo link unless overridden.
-  demoBookingEmbedUrl: urlFromEnv(process.env.NEXT_PUBLIC_DEMO_BOOKING_EMBED_URL, calEmbedUrl(demoBookingUrl)),
+  // Inline iframe on /contact: the plain booking page, unless overridden.
+  // NOT Cal.com's `/embed` route: that page stays hidden until Cal's own
+  // embed script on the parent page sets it up, so a plain iframe showed a
+  // blank box (verified in Chrome 2026-11-10). The normal page renders fine.
+  demoBookingEmbedUrl: urlFromEnv(process.env.NEXT_PUBLIC_DEMO_BOOKING_EMBED_URL, demoBookingUrl),
   linkedinUrl: 'https://www.linkedin.com/company/119484231',
   instagramUrl: 'https://www.instagram.com/keeprsteady/',
   xUrl: 'https://x.com/KeeprSteady',

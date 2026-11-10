@@ -262,7 +262,7 @@ All variables loaded via `apps/api/src/config/env.ts` using `zod` validation. Th
 | `ENABLED_CATEGORIES` | api | Comma-separated category slugs operators may pick. Unset = the 5 trades (`DEFAULT_ENABLED_CATEGORIES`). `insurance` is opt-in: add it here AND in `NEXT_PUBLIC_ENABLED_CATEGORIES`. |
 | `NEXT_PUBLIC_ENABLED_CATEGORIES` | web | Same list for the onboarding wizard's category picker. Keep in sync with the API. |
 | `NEXT_PUBLIC_DEMO_BOOKING_URL` | web | Client pitch / demo Cal.com link (header, home, pricing, FAQ, comparison, trade pages, contact, survey). Default `https://cal.com/brandon-sommer-bpg3fw/30min`. Built into the bundle via `next.config.mjs` `env`: a change applies after the web rebuild. |
-| `NEXT_PUBLIC_DEMO_BOOKING_EMBED_URL` | web | Optional: inline calendar on `/contact`. Unset = the demo link + `/embed` (`calEmbedUrl` in `lib/brand.ts`). |
+| `NEXT_PUBLIC_DEMO_BOOKING_EMBED_URL` | web | Optional: inline calendar on `/contact`. Unset = the demo link itself. Never Cal.com's `/embed` URL in a plain iframe: that page stays hidden without Cal's embed script (blank box, 2026-11-10). |
 | `NEXT_PUBLIC_CAREERS_BOOKING_URL` | web | Careers interview / onboarding Cal.com link (careers page). Default `https://cal.com/brandon-sommer-bpg3fw/15min`. |
 | `NEXT_PUBLIC_SETUP_CALL_BOOKING_URL` | web | "Schedule a setup call" banner in the onboarding wizard. Empty = hidden. |
 | `CRON_SHARED_SECRET` | api | `X-Cron-Secret` header value for `/v1/internal/*` cron endpoints (incl. the daily `usage/reconcile-overage` and the 10-minute `webhooks/replay`). Unset = those endpoints refuse every call. |
