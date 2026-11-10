@@ -251,7 +251,7 @@ All variables loaded via `apps/api/src/config/env.ts` using `zod` validation. Th
 | `GOOGLE_OAUTH_CLIENT_SECRET` | api | |
 | `GOOGLE_OAUTH_REDIRECT_URI` | api | |
 | `RESEND_API_KEY` | api | |
-| `CAREERS_INBOX_EMAIL` | api | Recipient(s) for `/careers` applications (resume attached, Reply-To = applicant). Comma-separated for several; validated at boot; the first is named to applicants in error messages. Default `apply@keeprsteady.com`. Scheduling links (demo + careers, Cal.com) are hardcoded in `apps/web/lib/brand.ts`, not env. |
+| `CAREERS_INBOX_EMAIL` | api | Recipient(s) for `/careers` applications (resume attached, Reply-To = applicant). Comma-separated for several; validated at boot; the first is named to applicants in error messages. Default `apply@keeprsteady.com`. Scheduling links are web env vars (below). |
 | `SURVEY_INBOX_EMAIL` | api | Recipient(s) for missed-calls questionnaire responses (`missedcalls.keeprsteady.com`). Comma-separated for several; every address validated at boot. Default `sales@keeprsteady.com`. See `docs/SURVEY_SUBDOMAIN.md`. |
 | `ENCRYPTION_KEY` | api | 32-byte hex, AES-256-GCM key for at-rest encryption of Google refresh tokens |
 | `SENTRY_DSN_API` | api | Sentry DSN for the API (server). No-op when unset. |
@@ -261,6 +261,10 @@ All variables loaded via `apps/api/src/config/env.ts` using `zod` validation. Th
 | `LOG_LEVEL` | api | `info` in prod, `debug` in dev |
 | `ENABLED_CATEGORIES` | api | Comma-separated category slugs operators may pick. Unset = the 5 trades (`DEFAULT_ENABLED_CATEGORIES`). `insurance` is opt-in: add it here AND in `NEXT_PUBLIC_ENABLED_CATEGORIES`. |
 | `NEXT_PUBLIC_ENABLED_CATEGORIES` | web | Same list for the onboarding wizard's category picker. Keep in sync with the API. |
+| `NEXT_PUBLIC_DEMO_BOOKING_URL` | web | Client pitch / demo Cal.com link (header, home, pricing, FAQ, comparison, trade pages, contact, survey). Default `https://cal.com/brandon-sommer-bpg3fw/30min`. Built into the bundle via `next.config.mjs` `env`: a change applies after the web rebuild. |
+| `NEXT_PUBLIC_DEMO_BOOKING_EMBED_URL` | web | Optional: inline calendar on `/contact`. Unset = the demo link + `/embed` (`calEmbedUrl` in `lib/brand.ts`). |
+| `NEXT_PUBLIC_CAREERS_BOOKING_URL` | web | Careers interview / onboarding Cal.com link (careers page). Default `https://cal.com/brandon-sommer-bpg3fw/15min`. |
+| `NEXT_PUBLIC_SETUP_CALL_BOOKING_URL` | web | "Schedule a setup call" banner in the onboarding wizard. Empty = hidden. |
 | `CRON_SHARED_SECRET` | api | `X-Cron-Secret` header value for `/v1/internal/*` cron endpoints (incl. the daily `usage/reconcile-overage` and the 10-minute `webhooks/replay`). Unset = those endpoints refuse every call. |
 | `SLACK_BOT_TOKEN` | api | `xoxb-…` for the single BookingBlues-team workspace (ADR 0010). Must be redacted in logs. |
 | `SLACK_DEFAULT_CHANNEL_ID` | api | `#hitl` — channel where escalation alarms + control buttons post. |

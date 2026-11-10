@@ -18,6 +18,12 @@ const PublicEnv = z.object({
   // call with our team" CTA in the onboarding wizard (PROGRESS.md Slice
   // 18 item 7). Empty/unset = banner hidden.
   NEXT_PUBLIC_SETUP_CALL_BOOKING_URL: z.string().url().or(z.literal('')).optional(),
+  // Cal.com scheduling links used by lib/brand.ts (demo/pitch, its inline
+  // embed, careers interview). Unset = brand.ts defaults; validated here so a
+  // typo fails loudly at boot instead of silently using the default.
+  NEXT_PUBLIC_DEMO_BOOKING_URL: z.string().url().or(z.literal('')).optional(),
+  NEXT_PUBLIC_DEMO_BOOKING_EMBED_URL: z.string().url().or(z.literal('')).optional(),
+  NEXT_PUBLIC_CAREERS_BOOKING_URL: z.string().url().or(z.literal('')).optional(),
 });
 
 export type PublicEnv = z.infer<typeof PublicEnv>;
@@ -36,6 +42,9 @@ export const publicEnv: PublicEnv = (() => {
     NEXT_PUBLIC_DEFAULT_BOOKING_FEE_CENTS: process.env.NEXT_PUBLIC_DEFAULT_BOOKING_FEE_CENTS,
     NEXT_PUBLIC_ENABLED_CATEGORIES: process.env.NEXT_PUBLIC_ENABLED_CATEGORIES,
     NEXT_PUBLIC_SETUP_CALL_BOOKING_URL: process.env.NEXT_PUBLIC_SETUP_CALL_BOOKING_URL,
+    NEXT_PUBLIC_DEMO_BOOKING_URL: process.env.NEXT_PUBLIC_DEMO_BOOKING_URL,
+    NEXT_PUBLIC_DEMO_BOOKING_EMBED_URL: process.env.NEXT_PUBLIC_DEMO_BOOKING_EMBED_URL,
+    NEXT_PUBLIC_CAREERS_BOOKING_URL: process.env.NEXT_PUBLIC_CAREERS_BOOKING_URL,
   });
   if (!parsed.success) {
     throw new Error(

@@ -4,6 +4,35 @@
  * page that imports these constants.
  */
 
+/**
+ * Scheduling links (Cal.com) come from Railway env vars on the web service so
+ * they can change without a code edit. NEXT_PUBLIC_* values are built into the
+ * bundle (next.config.mjs `env`), so a change takes effect after the web
+ * service rebuilds (Railway redeploys on a variable change). The defaults keep
+ * every page working when a variable is unset.
+ */
+const DEFAULT_DEMO_BOOKING_URL = 'https://cal.com/brandon-sommer-bpg3fw/30min';
+const DEFAULT_CAREERS_BOOKING_URL = 'https://cal.com/brandon-sommer-bpg3fw/15min';
+
+function urlFromEnv(value: string | undefined, fallback: string): string {
+  const v = value?.trim();
+  if (!v) return fallback;
+  try {
+    return new URL(v).toString();
+  } catch {
+    return fallback; // a malformed value must not break every marketing page
+  }
+}
+
+/** Cal.com's chrome-less inline view: `/embed` added to the event path, query kept. */
+export function calEmbedUrl(bookingUrl: string): string {
+  const u = new URL(bookingUrl);
+  if (!u.pathname.endsWith('/embed')) u.pathname = `${u.pathname.replace(/\/$/, '')}/embed`;
+  return u.toString();
+}
+
+const demoBookingUrl = urlFromEnv(process.env.NEXT_PUBLIC_DEMO_BOOKING_URL, DEFAULT_DEMO_BOOKING_URL);
+
 export const BRAND = {
   name: 'KeeprSteady',
   // Registered legal entity behind the KeeprSteady product + the A2P 10DLC brand.
@@ -20,10 +49,12 @@ export const BRAND = {
   salesEmail: 'sales@keeprsteady.com',
   supportEmail: 'support@keeprsteady.com',
   applyEmail: 'apply@keeprsteady.com',
-  careersBookingUrl: 'https://cal.com/brandon-sommer-bpg3fw/30min?overlayCalendar=true',
-  demoBookingUrl: 'https://cal.com/brandon-sommer-bpg3fw/30min?overlayCalendar=true',
-  // Inline iframe on /contact: Cal.com's chrome-less `/embed` route.
-  demoBookingEmbedUrl: 'https://cal.com/brandon-sommer-bpg3fw/30min/embed?overlayCalendar=true',
+  // Careers interview / onboarding call (careers page).
+  careersBookingUrl: urlFromEnv(process.env.NEXT_PUBLIC_CAREERS_BOOKING_URL, DEFAULT_CAREERS_BOOKING_URL),
+  // Client pitch / demo call (header, home, pricing, FAQ, contact, survey ...).
+  demoBookingUrl,
+  // Inline iframe on /contact: derived from the demo link unless overridden.
+  demoBookingEmbedUrl: urlFromEnv(process.env.NEXT_PUBLIC_DEMO_BOOKING_EMBED_URL, calEmbedUrl(demoBookingUrl)),
   linkedinUrl: 'https://www.linkedin.com/company/119484231',
   instagramUrl: 'https://www.instagram.com/keeprsteady/',
   xUrl: 'https://x.com/KeeprSteady',
