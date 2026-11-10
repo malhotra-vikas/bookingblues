@@ -22,6 +22,7 @@ import { ConversationsService } from '../conversations/conversations.service';
 import {
   bookingConfirmationSms,
   bookingFeeLine,
+  callWindowFor,
   type FeeCharge,
   holdExpiredSms,
   rescheduleConfirmationSms,
@@ -232,6 +233,7 @@ export class BookingsService {
         conversationId: args.conversationId,
         callerPhoneE164: args.callerPhoneE164,
         startIso: args.startIso,
+        endIso: args.endIso,
         icsUrl,
         feeCheckoutUrl,
         feeCharge,
@@ -374,6 +376,9 @@ export class BookingsService {
         icsUrl: this.icsUrl(appt.id),
         callerName: appt.caller_name,
         category: args.operator.category,
+        ...(isOfficeAppointmentCategory(args.operator.category)
+          ? { callWindow: callWindowFor(args.startIso, args.endIso, args.operator.timezone) }
+          : {}),
       });
       try {
         const send = await this.twilio.sendSms({
@@ -922,6 +927,8 @@ export class BookingsService {
     conversationId: string;
     callerPhoneE164: string;
     startIso: string;
+    /** End of the appointment: office (phone) appointments text the whole call window. */
+    endIso?: string;
     icsUrl: string;
     feeCheckoutUrl: string | null;
     feeCharge?: FeeCharge | null;
@@ -930,6 +937,10 @@ export class BookingsService {
     askAddress?: boolean;
   }): Promise<void> {
     if (!args.operator.twilio_number_e164) return;
+    const callWindow =
+      isOfficeAppointmentCategory(args.operator.category) && args.endIso
+        ? callWindowFor(args.startIso, args.endIso, args.operator.timezone)
+        : undefined;
     const friendlyTime = new Date(args.startIso).toLocaleString('en-US', {
       timeZone: args.operator.timezone,
       weekday: 'short',
@@ -948,6 +959,7 @@ export class BookingsService {
       callerName: args.callerName ?? null,
       ...(args.askAddress ? { askAddress: true } : {}),
       category: args.operator.category,
+      ...(callWindow ? { callWindow } : {}),
     });
     const send = await this.twilio.sendSms({
       from: args.operator.twilio_number_e164,

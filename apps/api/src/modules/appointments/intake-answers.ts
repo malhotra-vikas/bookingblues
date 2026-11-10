@@ -28,8 +28,11 @@ export const CONFIRM_OVER_AGE = 100;
 
 const DOB_FORMAT = /^\d{4}(-\d{2}(-\d{2})?)?$/;
 const DOB_FORMAT_MESSAGE = 'Expected YYYY-MM-DD, YYYY-MM or YYYY — only what the caller said';
+// No example year here: the model copied it verbatim ("did you mean 1976?" for
+// "1765", prod 2026-11-09).
 const ASK_AGAIN =
-  'Ask the caller to check it NOW, before your next question (e.g. "Just to check, did you mean 1976?"). ' +
+  'Ask the caller to check it NOW, before your next question. Suggest a specific year only if the typo is ' +
+  'obvious (one digit off); otherwise ask them to re-type the year. ' +
   'Save it again once they correct it, or save date_of_birth_declined=true if they would rather not share. Do not book until then.';
 
 /** A calendar-valid `YYYY[-MM[-DD]]` (no plausibility rules). */
@@ -195,6 +198,14 @@ export function dobCheckInstruction(check: DobCheck, a: IntakeAnswers): string {
  */
 export function mergeIntakeAnswers(prev: IntakeAnswers | null, next: IntakeAnswers): IntakeAnswers {
   if (!prev) return next;
+  // Switching to "for someone else": everything saved so far described the
+  // CALLER (prod 2026-11-09: the mother got the caller's last name and birth
+  // year). Keep only what this call says about the other person; the booking
+  // gate then makes the bot ask for her date of birth.
+  if (next.for_someone_else && !prev.for_someone_else) {
+    const callerOwnName = [prev.first_name, prev.last_name].filter(Boolean).join(' ');
+    return { ...next, caller_name: next.caller_name ?? callerOwnName };
+  }
   const pick = <K extends keyof IntakeAnswers>(k: K): IntakeAnswers[K] =>
     next[k] !== undefined ? next[k] : prev[k];
   const prescriptions =

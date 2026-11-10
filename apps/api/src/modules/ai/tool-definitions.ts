@@ -241,7 +241,8 @@ const SAVE_INTAKE_ANSWERS_TOOL: OpenAI.Chat.Completions.ChatCompletionTool = {
         first_name: { type: 'string' },
         last_name: {
           type: 'string',
-          description: 'Only if the caller gave it. Omit — never invent — if they gave just a first name or an initial.',
+          description:
+            "Only if the caller gave it. Omit — never invent — if they gave just a first name or an initial. When booking for someone else, never reuse the caller's own last name for them.",
         },
         date_of_birth: {
           type: 'string',

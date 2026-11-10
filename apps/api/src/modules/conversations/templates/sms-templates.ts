@@ -89,11 +89,56 @@ export function bringListFor(category: string | null | undefined): string | null
   return (category && BRING_LISTS[category]?.list) || null;
 }
 
-/** " Please bring …." (+ privacy note) — empty string when the category has no bring-list. */
-export function bringListLine(category: string | null | undefined): string {
+/**
+ * " Please bring …." (+ privacy note) — empty string when the category has no
+ * bring-list. For a phone appointment it's what to have handy for the call.
+ */
+export function bringListLine(
+  category: string | null | undefined,
+  opts: { forCall?: boolean } = {},
+): string {
   const entry = category ? BRING_LISTS[category] : undefined;
   if (!entry) return '';
+  if (opts.forCall) {
+    return (
+      ` For the call, please have handy ${entry.list}.` +
+      (entry.note ? " For your privacy, please don't text us your Medicare number." : '')
+    );
+  }
   return ` Please bring ${entry.list}.` + (entry.note ? ` ${entry.note}` : '');
+}
+
+/**
+ * Office appointments (insurance) are phone calls: the business calls the
+ * caller anytime between the appointment's start and end, so the texts give the
+ * whole window, not just a start time.
+ */
+export interface CallWindow {
+  /** "Tue, Nov 10" */
+  readonly day: string;
+  /** "9:00 AM" */
+  readonly from: string;
+  /** "10:00 AM" */
+  readonly to: string;
+}
+
+export function callWindowFor(startIso: string, endIso: string, timeZone: string): CallWindow {
+  const time = (iso: string): string =>
+    new Date(iso).toLocaleString('en-US', { timeZone, hour: 'numeric', minute: '2-digit' });
+  return {
+    day: new Date(startIso).toLocaleString('en-US', { timeZone, weekday: 'short', month: 'short', day: 'numeric' }),
+    from: time(startIso),
+    to: time(endIso),
+  };
+}
+
+/** "Tue, Nov 10, anytime between 9:00 AM and 10:00 AM" */
+export function describeCallWindow(w: CallWindow): string {
+  return `${w.day}, anytime between ${w.from} and ${w.to}`;
+}
+
+function callWindowSentence(businessName: string, w: CallWindow): string {
+  return ` ${businessName} will call you at this number on ${describeCallWindow(w)}.`;
 }
 
 /** Booking confirmation to the caller. `feeLine` is appended verbatim (may be empty). */
@@ -107,12 +152,23 @@ export function bookingConfirmationSms(args: {
   askAddress?: boolean;
   /** Operator category — adds the "Please bring …" line where one is defined. */
   category?: string | null;
+  /** Phone appointments (office categories): the window the business will call in. */
+  callWindow?: CallWindow;
 }): string {
   const fn = firstName(args.callerName);
   const lead = fn ? `✅ ${fn}, you're booked` : `✅ You're booked`;
   const addressAsk = args.askAddress
     ? ' What is the full property address (street, unit, city, ZIP) so our tech can find you?'
     : '';
+  if (args.callWindow) {
+    return (
+      `${lead} with ${args.businessName}.` +
+      callWindowSentence(args.businessName, args.callWindow) +
+      bringListLine(args.category, { forCall: true }) +
+      ` Add to your calendar: ${args.icsUrl}` +
+      (args.feeLine ?? '')
+    );
+  }
   return (
     `${lead} with ${args.businessName} for ${args.friendlyTime}.` +
     bringListLine(args.category) +
@@ -129,9 +185,20 @@ export function rescheduleConfirmationSms(args: {
   icsUrl: string;
   callerName?: string | null;
   category?: string | null;
+  /** Phone appointments (office categories): the window the business will call in. */
+  callWindow?: CallWindow;
 }): string {
   const fn = firstName(args.callerName);
   const lead = fn ? `✅ ${fn}, your appointment` : '✅ Your appointment';
+  if (args.callWindow) {
+    return (
+      `${lead} with ${args.businessName} has been moved.` +
+      callWindowSentence(args.businessName, args.callWindow) +
+      ` Your earlier time is cancelled.` +
+      bringListLine(args.category, { forCall: true }) +
+      ` Updated calendar link: ${args.icsUrl}`
+    );
+  }
   return (
     `${lead} with ${args.businessName} has been moved to ${args.friendlyTime}. ` +
     `Your earlier time is cancelled.` +
@@ -283,10 +350,14 @@ export function appointmentReminderSms(
   friendlyTime: string,
   operatorPhoneE164?: string | null,
   category?: string | null,
+  /** Phone appointments (office categories): the window the business will call in. */
+  callWindow?: CallWindow,
 ): string {
-  const base =
-    `Reminder: your appointment with ${businessName} is coming up at ${friendlyTime}.` +
-    bringListLine(category);
+  const base = callWindow
+    ? `Reminder: ${businessName} will call you at this number on ${describeCallWindow(callWindow)}.` +
+      bringListLine(category, { forCall: true })
+    : `Reminder: your appointment with ${businessName} is coming up at ${friendlyTime}.` +
+      bringListLine(category);
   const phone = formatUsPhone(operatorPhoneE164);
   const change = phone
     ? ` Need to reschedule or cancel? Please call ${businessName} directly at ${phone}.`

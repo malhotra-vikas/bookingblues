@@ -5,7 +5,8 @@ import type { Tables } from '@bookingblues/db-types';
 import { SupabaseService } from '../../common/supabase/supabase.service';
 import { TwilioService } from '../../common/twilio/twilio.service';
 import { ConversationsService } from '../conversations/conversations.service';
-import { appointmentReminderSms } from '../conversations/templates/sms-templates';
+import { appointmentReminderSms, callWindowFor } from '../conversations/templates/sms-templates';
+import { isOfficeAppointmentCategory } from '../ai/category-profile';
 
 type OperatorRow = Tables<'operators'>;
 
@@ -55,7 +56,7 @@ export class AppointmentRemindersService {
     const { data: due, error } = await this.supabase
       .db()
       .from('appointments')
-      .select('id, operator_id, caller_phone_e164, conversation_id, scheduled_for_start')
+      .select('id, operator_id, caller_phone_e164, conversation_id, scheduled_for_start, scheduled_for_end')
       .eq('status', 'confirmed')
       .is('reminder_sent_at', null)
       .gt('scheduled_for_start', nowIso)
@@ -105,11 +106,16 @@ export class AppointmentRemindersService {
       });
       // Direct reschedule/cancel to the operator's registered business number —
       // the AI doesn't handle those (see appointmentReminderSms).
+      // Office appointments are phone calls: remind them of the whole window.
+      const callWindow = isOfficeAppointmentCategory(operator.category)
+        ? callWindowFor(appt.scheduled_for_start, appt.scheduled_for_end, operator.timezone)
+        : undefined;
       const body = appointmentReminderSms(
         operator.business_name,
         friendlyTime,
         operator.personal_phone_e164,
         operator.category,
+        callWindow,
       );
 
       try {

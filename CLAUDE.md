@@ -580,6 +580,7 @@ If any gate is false, the bot does not call `request_payment_link` and proceeds 
 - Email confirmation to Operator (always) and caller (if email captured) via Resend.
 - 24-hour-before reminder to caller (cron job). The reminder directs reschedule/cancel to the operator's registered business number (`AppointmentRemindersService.REMINDER_LEAD_MINUTES`).
 - Reschedule by text (all categories): the bot moves the caller's upcoming confirmed appointment with `reschedule_appointment` → `BookingsService.reschedule` (same row + Google event, deposit/address kept, capacity check excludes itself, reminder re-armed, "has been moved" SMS, audit `appointment.rescheduled`). The prompt lists UPCOMING APPOINTMENTS with ids (`caller-history.formatUpcomingAppointmentsForPrompt`). `book_appointment` refuses a second booking (`already_booked`): office categories when the caller has any upcoming appointment; trades when one was booked in the same conversation. Cancel is NOT bot-handled (escalate).
+- Office (insurance) appointments are phone calls: the confirmation, reschedule and 24h reminder texts give the whole window ("{Business} will call you at this number on Tue, Nov 10, anytime between 9:00 AM and 10:00 AM", `callWindowFor` in `sms-templates.ts`) and list documents as "have handy for the call". Trades keep the start-time wording.
 - All outbound SMS templates live in `apps/api/src/modules/conversations/templates/`. No inline strings.
 
 ---

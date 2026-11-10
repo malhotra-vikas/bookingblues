@@ -10,6 +10,8 @@ import { isBookingFeeCollectible } from './prompts';
 import {
   addressConfirmedSms,
   addressNoteAddedSms,
+  callWindowFor,
+  describeCallWindow,
   escalationHandoffSms,
   outOfScopeAreaSms,
   outOfScopeGenericSms,
@@ -302,7 +304,12 @@ export async function rescheduleAppointment(
       endIso: localWallTimeToUtcIso(args.end, ctx.operator.timezone),
     });
     return {
-      content: { appointment_id: args.appointment_id, status: 'rescheduled', moved_to: describeLocalWallTime(args.start) },
+      content: {
+        appointment_id: args.appointment_id,
+        status: 'rescheduled',
+        moved_to: describeLocalWallTime(args.start),
+        ...(isOfficeAppointmentCategory(ctx.operator.category) ? { call_window: officeCallWindow(args, ctx) } : {}),
+      },
       // reschedule() already texted the caller the new time.
       state: 'completed',
       outcome: 'booked',
@@ -316,6 +323,14 @@ export async function rescheduleAppointment(
     }
     return escalateFailedBooking('reschedule', args.start, err, ctx);
   }
+}
+
+/** "Tue, Nov 10, anytime between 9:00 AM and 10:00 AM": office appointments are calls. */
+function officeCallWindow(args: { start: string; end: string }, ctx: ToolContext): string {
+  const tz = ctx.operator.timezone;
+  return `${ctx.operator.business_name} calls the caller on ${describeCallWindow(
+    callWindowFor(localWallTimeToUtcIso(args.start, tz), localWallTimeToUtcIso(args.end, tz), tz),
+  )}`;
 }
 
 /**
@@ -339,7 +354,12 @@ async function bookOfficeAppointment(args: BookAppointmentArgs, ctx: ToolContext
       endIso: localWallTimeToUtcIso(args.end, ctx.operator.timezone),
     });
     return {
-      content: { appointment_id: result.appointmentId, status: 'confirmed', booked_for: describeLocalWallTime(args.start) },
+      content: {
+        appointment_id: result.appointmentId,
+        status: 'confirmed',
+        booked_for: describeLocalWallTime(args.start),
+        call_window: officeCallWindow(args, ctx),
+      },
       // book() already texted the confirmation — finish without another SMS.
       state: 'completed',
       outcome: 'booked',

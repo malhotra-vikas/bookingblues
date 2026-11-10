@@ -115,6 +115,34 @@ describe('merging confirmations and someone-else details', () => {
     expect(later).toMatchObject({ for_someone_else: true, caller_relationship: 'son', caller_name: 'Vikas', doctor: 'Dr Lee' });
   });
 
+  it('switching to someone else drops the caller\'s own details (prod 2026-11-09: mom got "M" and 1977)', () => {
+    const callersOwn: IntakeAnswers = {
+      first_name: 'Vikas',
+      last_name: 'M',
+      date_of_birth: '1977',
+      date_of_birth_confirmed: true,
+      about_medicare: true,
+      doctor: 'Dr Uthappa',
+      prescriptions: ['Lisinopril'],
+    };
+    const mom = mergeIntakeAnswers(callersOwn, {
+      first_name: 'Varsha',
+      for_someone_else: true,
+      caller_relationship: 'child',
+      prescriptions: [],
+    });
+    expect(mom.first_name).toBe('Varsha');
+    expect(mom.last_name).toBeUndefined();
+    expect(mom.date_of_birth).toBeUndefined();
+    expect(mom.date_of_birth_confirmed).toBeUndefined();
+    expect(mom.doctor).toBeUndefined();
+    expect(mom.prescriptions).toEqual([]);
+    // The caller's own name becomes "Booked by" when the bot didn't send one.
+    expect(mom.caller_name).toBe('Vikas M');
+    // Later saves for the same person merge normally.
+    expect(mergeIntakeAnswers(mom, { first_name: 'Varsha', date_of_birth: '1942', prescriptions: [] }).caller_name).toBe('Vikas M');
+  });
+
   it('shows "Booked by" first for the agent when it is for someone else', () => {
     const rows = intakeAnswerRows({ ...base, first_name: 'Asha', for_someone_else: true, caller_relationship: 'son', caller_name: 'Vikas' });
     expect(rows[0]).toEqual({ label: 'Booked by', value: 'Vikas (son)' });
